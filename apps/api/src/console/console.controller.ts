@@ -30,26 +30,47 @@ const PAGE = `<!doctype html>
   #msg { font-size: 13px; color: #ffd27a; }
   #graphiql { flex: 1; min-height: 0; }
   .hide { display: none !important; }
+  #gate { flex: 1; display: flex; align-items: center; justify-content: center; background: #f4f7f6; padding: 16px; }
+  #card { width: 100%; max-width: 360px; background: #fff; border-radius: 14px; box-shadow: 0 6px 30px #0b3d2e22; padding: 28px 24px; display: flex; flex-direction: column; gap: 12px; }
+  #card h1 { margin: 0; font-size: 20px; color: #0b3d2e; }
+  #card p { margin: 0 0 4px; font-size: 13px; color: #5b6b66; }
+  #card input { height: 40px; border: 1px solid #cfd8d5; border-radius: 8px; padding: 0 12px; font-size: 15px; }
+  #card button { height: 40px; border: 0; border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer; background: #08a77b; color: #fff; }
+  #card .step { display: flex; flex-direction: column; gap: 12px; }
+  #gmsg { min-height: 18px; font-size: 13px; color: #b3261e; }
 </style>
 </head>
 <body>
-<div id="bar">
+<div id="gate">
+  <form id="card" onsubmit="return false">
+    <h1>The K · API console</h1>
+    <p>For developers. Sign in with your account to explore and test the API.</p>
+    <div id="out" class="step">
+      <input id="u" placeholder="Username" autocomplete="username" autofocus>
+      <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="login" type="submit">Sign in</button>
+    </div>
+    <div id="mfa" class="step hide">
+      <input id="code" inputmode="numeric" maxlength="6" placeholder="6-digit authenticator code" autocomplete="one-time-code">
+      <button id="mfaGo" type="submit">Verify</button>
+    </div>
+    <div id="conf" class="step hide">
+      <p>You're signed in on another device.</p>
+      <button id="force" type="button">Sign that device out and continue</button>
+    </div>
+    <div id="gmsg"></div>
+  </form>
+</div>
+<div id="bar" class="hide">
   <b>The K · API console</b>
-  <span id="out">
-    <input id="u" placeholder="Username" autocomplete="username">
-    <input id="p" type="password" placeholder="Password" autocomplete="current-password">
-    <button id="login">Sign in</button>
-  </span>
-  <span id="mfa" class="hide"><input id="code" inputmode="numeric" maxlength="6" placeholder="6-digit code"><button id="mfaGo">Verify</button></span>
-  <span id="conf" class="hide">Signed in on another device. <button id="force">Sign that device out and continue</button></span>
-  <span id="in" class="hide">
+  <span id="in">
     <button id="step" title="Sensitive actions (approvals, payments, deletes) need this; valid for 5 minutes">Step-up</button>
     <button id="logout" class="ghost">Sign out</button>
   </span>
   <span id="msg"></span>
   <span id="who">Not signed in</span>
 </div>
-<div id="graphiql"></div>
+<div id="graphiql" class="hide"></div>
 <script crossorigin src="${CDN}/react@18.3.1/umd/react.production.min.js"></script>
 <script crossorigin src="${CDN}/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="${CDN}/graphiql@3.7.1/graphiql.min.js"></script>
@@ -65,13 +86,22 @@ const PAGE = `<!doctype html>
     return fetch('/graphql', { method: 'POST', headers: h, credentials: 'same-origin', body: JSON.stringify({ query: query, variables: variables || {} }) })
       .then(function (r) { return r.json(); });
   }
-  function msg(t) { $('msg').textContent = t || ''; }
+  var signedIn = false, rendered = false;
+  function msg(t) { $(signedIn ? 'msg' : 'gmsg').textContent = t || ''; }
   function show(state) {
+    signedIn = state === 'in';
     $('out').classList.toggle('hide', state !== 'out');
     $('mfa').classList.toggle('hide', state !== 'mfa');
     $('conf').classList.toggle('hide', state !== 'conf');
-    $('in').classList.toggle('hide', state !== 'in');
+    // Login page until signed in; then the toolbar and GraphiQL.
+    $('gate').classList.toggle('hide', signedIn);
+    $('bar').classList.toggle('hide', !signedIn);
+    $('graphiql').classList.toggle('hide', !signedIn);
     $('who').textContent = me ? (me.username + ' · ' + me.role + (stepUp && Date.now() < stepUpUntil ? ' · step-up on' : '')) : 'Not signed in';
+    if (signedIn && !rendered) {
+      rendered = true;
+      try { renderGraphiql(); } catch (e) { rendered = false; msg('The query editor did not load (check the connection to cdn.jsdelivr.net) — reload the page.'); }
+    }
   }
   var FIELDS = 'accessToken mfaRequired mfaToken sessionConflict conflictToken user { username role }';
   function handle(d) {
@@ -80,18 +110,16 @@ const PAGE = `<!doctype html>
     var r = d.data[Object.keys(d.data)[0]];
     if (r.sessionConflict) { conflictToken = r.conflictToken; show('conf'); msg(''); return; }
     if (r.mfaRequired) { mfaToken = r.mfaToken; show('mfa'); $('code').focus(); msg(''); return; }
-    token = r.accessToken; me = r.user; $('p').value = ''; show('in');
+    token = r.accessToken; me = r.user; $('p').value = ''; $('gmsg').textContent = ''; show('in');
     msg(me.role === 'SUPER_ADMIN' ? 'Signed in. Super Admins without an authenticator must set one up first (beginMfaEnrollment).' : 'Signed in.');
   }
   $('login').onclick = function () {
     msg('Signing in…');
     post('mutation($u:String!,$p:String!,$d:String){ login(username:$u,password:$p,deviceName:$d){ ' + FIELDS + ' } }', { u: $('u').value, p: $('p').value, d: DEVICE }).then(handle);
   };
-  $('p').onkeydown = function (e) { if (e.key === 'Enter') $('login').click(); };
   $('mfaGo').onclick = function () {
     post('mutation($t:String!,$c:String!,$d:String){ completeMfaLogin(mfaToken:$t, code:$c, deviceName:$d){ ' + FIELDS + ' } }', { t: mfaToken, c: $('code').value, d: DEVICE }).then(function (d) { $('code').value = ''; handle(d); });
   };
-  $('code').onkeydown = function (e) { if (e.key === 'Enter') $('mfaGo').click(); };
   $('force').onclick = function () {
     post('mutation($t:String!,$d:String){ forceLogin(conflictToken:$t, deviceName:$d){ ' + FIELDS + ' } }', { t: conflictToken, d: DEVICE }).then(handle);
   };
@@ -104,11 +132,11 @@ const PAGE = `<!doctype html>
     });
   };
   $('logout').onclick = function () {
-    post('mutation{ logout }').finally(function () { token = null; me = null; stepUp = null; show('out'); msg('Signed out.'); });
+    post('mutation{ logout }').finally(function () { token = null; me = null; stepUp = null; show('out'); msg('Signed out.'); $('u').focus(); });
   };
   var fetcher = function (params) { return post(params.query, params.variables); };
-  var start = '# The K API console\\n#\\n# 1. Sign in with the bar above (authenticator code if asked).\\n# 2. Press the Docs button (top-left) to browse every query and mutation.\\n# 3. Approvals, payments and deletes need "Step-up" first.\\n#\\n# Example: your account and balance\\nquery Me {\\n  me { id username displayName role mfaEnabled }\\n}\\n';
-  ReactDOM.createRoot($('graphiql')).render(React.createElement(GraphiQL, { fetcher: fetcher, defaultQuery: start, defaultEditorToolsVisibility: true }));
+  var start = '# The K API console\\n#\\n# 1. Press the Docs button (top-left) to browse every query and mutation.\\n# 2. Approvals, payments and deletes need "Step-up" first.\\n#\\n# Example: your account and balance\\nquery Me {\\n  me { id username displayName role mfaEnabled }\\n}\\n';
+  function renderGraphiql() { ReactDOM.createRoot($('graphiql')).render(React.createElement(GraphiQL, { fetcher: fetcher, defaultQuery: start, defaultEditorToolsVisibility: true })); }
   show('out');
 })();
 </script>
@@ -117,7 +145,8 @@ const PAGE = `<!doctype html>
 
 @Controller()
 export class ConsoleController {
-  @Get()
+  /** "/" when the API runs on its own; "/api-console" when web and API share one address (single-service deploy). */
+  @Get(['', 'api-console'])
   page(@Res() res: Response) {
     const e = env();
     const on = e.API_CONSOLE ?? e.NODE_ENV !== 'production';

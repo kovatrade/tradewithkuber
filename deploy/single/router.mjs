@@ -1,7 +1,7 @@
 // Single-service router: one public port in front of the API and the web server running in the same container.
 // No dependencies (plain node:http / node:net), streams bodies, and passes WebSocket upgrades straight through.
 //
-//   /graphql (HTTP + WebSocket), /health, /statement.pdf, /integrations/*  → API  (127.0.0.1:API_PORT)
+//   /graphql (HTTP + WebSocket), /health, /statement.pdf, /integrations/*, /api-console  → API  (127.0.0.1:API_PORT)
 //   everything else                                                         → web  (127.0.0.1:WEB_PORT)
 //
 // X-Forwarded-For is passed on unchanged: the API (TRUST_PROXY=true) takes its right-most entry, which is the
@@ -16,7 +16,7 @@ const DROP = ['x-k-proxy-secret', 'x-k-client-ip'];
 
 function targetFor(url = '/') {
   const path = url.split('?')[0];
-  if (path === '/graphql' || path.startsWith('/graphql/') || path === '/health' || path === '/statement.pdf' || path.startsWith('/integrations/')) return API;
+  if (path === '/graphql' || path.startsWith('/graphql/') || path === '/health' || path === '/statement.pdf' || path.startsWith('/integrations/') || path === '/api-console') return API;
   return WEB;
 }
 
