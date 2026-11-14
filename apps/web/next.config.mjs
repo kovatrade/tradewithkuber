@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-const api = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const ws = api.replace(/^http/, 'ws');
 const isDev = process.env.NODE_ENV !== 'production';
+// Empty in a production build = web and API share one address ('self' covers it, wss included).
+const api = process.env.NEXT_PUBLIC_API_URL || (isDev ? 'http://localhost:4000' : '');
+const ws = api.replace(/^http/, 'ws');
 
 /** Strict security headers. No secrets are ever exposed to the client bundle (only NEXT_PUBLIC_API_URL). */
 const csp = [
@@ -12,7 +13,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data:",
-  `connect-src 'self' ${api} ${ws}`,
+  `connect-src 'self'${api ? ` ${api} ${ws}` : ''}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

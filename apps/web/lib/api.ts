@@ -1,7 +1,13 @@
 'use client';
 import { createClient, type Client } from 'graphql-ws';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+/**
+ * Where live updates (WebSocket) and downloads go. Set NEXT_PUBLIC_API_URL when the API has its own address.
+ * Left empty in a production build, the page's own origin is used (web and API behind one address).
+ */
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4000');
 
 export class ApiError extends Error {
   constructor(

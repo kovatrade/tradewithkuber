@@ -54,7 +54,8 @@ async function bootstrap() {
     maxAge: 600,
   });
   app.enableShutdownHooks();
-  await app.listen(cfg.PORT, '0.0.0.0');
+  // LISTEN_HOST=127.0.0.1 when the API runs behind the in-container router (single-service deploy).
+  await app.listen(cfg.PORT, process.env.LISTEN_HOST || '0.0.0.0');
   new Logger('Bootstrap').log(`${cfg.APP_NAME} API listening on :${cfg.PORT}/graphql  (trading mode: SIMULATED)`);
   const url = databaseUrl({ DATABASE_URL: cfg.DATABASE_URL, DATABASE_URL_UNPOOLED: cfg.DATABASE_URL_UNPOOLED });
   new Logger('Bootstrap').log(`database ${databaseHost(url)} (${url === cfg.DATABASE_URL_UNPOOLED ? 'direct, DATABASE_URL_UNPOOLED' : 'DATABASE_URL'})`);
