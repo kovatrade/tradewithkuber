@@ -1072,13 +1072,18 @@ tr.clickable { cursor: pointer; }
 @media (max-width: 720px) { .funds-page { gap: 16px !important; } .fee-card { padding: var(--s3); } }
 
 /* Public app download page */
-.dl-wrap { width: min(760px, 100%); display: flex; flex-direction: column; gap: var(--s4); padding-top: var(--s4); }
+.dl-page { min-height: 100vh; display: flex; justify-content: center; padding: var(--s6) var(--s4) var(--s8); background: radial-gradient(1200px 600px at 15% 0%, var(--brand-soft), transparent 60%), var(--bg-2); }
+.dl-wrap { width: min(760px, 100%); min-width: 0; display: flex; flex-direction: column; gap: var(--s4); }
 .dl-title { margin: var(--s2) 0 0; font-size: 28px; letter-spacing: -0.02em; }
 .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: var(--s4); }
 .dl-card { padding: var(--s5); display: flex; flex-direction: column; gap: var(--s3); background: var(--bg); }
 .dl-card.dl-mine { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .dl-top { display: flex; align-items: center; gap: var(--s3); }
 .dl-top > div { flex: 1; min-width: 0; }
-.dl-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--brand-soft); color: var(--brand); flex: none; }
+.dl-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; }
+.dl-android { background: var(--brand-soft); color: var(--brand); }
+.dl-ios { background: var(--bg-3); color: var(--text); }
+.dl-name { font-size: 17px; }
+@media (max-width: 720px) { .dl-page { padding: var(--s4) var(--s4) var(--s6); } .dl-card { padding: var(--s4); } .dl-title { font-size: 24px; } }
 .dl-btn { justify-content: center; }
 .dl-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); }
