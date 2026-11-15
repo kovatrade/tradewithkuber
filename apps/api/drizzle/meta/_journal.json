@@ -211,6 +211,13 @@
       "when": 1794497000001,
       "tag": "0029_payment_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1794497000002,
+      "tag": "0030_app_releases",
+      "breakpoints": true
     }
   ]
 }

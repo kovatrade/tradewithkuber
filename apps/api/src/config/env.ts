@@ -59,6 +59,9 @@ const schema = z
     DHAN_REDIRECT_URL: z.preprocess(v=>v===''?undefined:v,z.string().url().optional()),
     WEB_APP_URL: z.string().url().default('http://localhost:3000'),
     DHAN_CATALOG_SYNC: z.enum(['on','off']).default('on'),
+    // App downloads page: folder on a persistent disk for uploaded Android APKs (e.g. a Render Disk at /var/data).
+    APP_FILES_DIR: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    APK_MAX_MB: z.coerce.number().int().min(10).max(1024).default(300),
 
     /** 'config' = use trading.marketHours; 'always_open' = ignore sessions (development/testing only). */
     MARKET_HOURS: z.enum(['config', 'always_open']).default('config'),

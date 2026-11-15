@@ -10,6 +10,9 @@ import { JwtService } from '@nestjs/jwt';
 import { sql } from 'drizzle-orm';
 import { ConsentResolver } from './consent/consent.resolver';
 import { StatementController } from './statements/statement.controller';
+import { AppReleasesController } from './app-releases/app-releases.controller';
+import { AppReleasesResolver } from './app-releases/app-releases.resolver';
+import { AppReleasesService } from './app-releases/app-releases.service';
 import { StatementResolver } from './statements/statement.resolver';
 import { StatementService } from './statements/statement.service';
 import type { Request, Response } from 'express';
@@ -202,13 +205,15 @@ function formatError(f: GraphQLFormattedError, err: unknown): GraphQLFormattedEr
     }),
     AuthGuardDeps,
   ],
-  controllers: [DhanIntegrationController, HealthController, StatementController, ConsoleController],
+  controllers: [DhanIntegrationController, HealthController, StatementController, ConsoleController, AppReleasesController],
   providers: [
     { provide: APP_GUARD, useClass: GqlThrottlerGuard },
     { provide: APP_GUARD, useClass: GqlAuthGuard },
     { provide: APP_PIPE, useValue: validationPipe },
     AuthResolver,
     StatementService,
+    AppReleasesService,
+    AppReleasesResolver,
     StatementResolver,
     ConsentResolver,
     MarketResolver,

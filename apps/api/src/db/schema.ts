@@ -743,3 +743,20 @@ export const dhanConnections = pgTable('dhan_connections', {
   expiresAt: ts('expires_at').notNull(),
   createdAt: ts('created_at').notNull().defaultNow(),
 });
+
+/** App downloads page: Android APK files (on the APP_FILES_DIR disk) and iOS TestFlight / App Store links. */
+export const appReleases = pgTable('app_releases', {
+  id: id(),
+  platform: varchar('platform', { length: 8 }).notNull(), // ANDROID | IOS
+  version: varchar('version', { length: 40 }).notNull(),
+  notes: text('notes'),
+  fileName: text('file_name'),
+  fileSize: bigint('file_size', { mode: 'number' }),
+  sha256: char('sha256', { length: 64 }),
+  storageKey: text('storage_key'), // file name inside APP_FILES_DIR (Android)
+  url: text('url'), // TestFlight / App Store link (iOS)
+  active: boolean('active').notNull().default(true),
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('app_releases_latest_idx').on(t.platform, t.active, t.createdAt)]);
+export type AppReleaseRow = typeof appReleases.$inferSelect;
