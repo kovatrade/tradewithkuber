@@ -22,6 +22,7 @@ export const CONFIG_REGISTRY = {
   'trading.carryForwardMarginBps': { schema: z.number().int().min(1).max(10000), default: 167, description: 'Carry-forward margin in basis points of order value.' },
   'trading.maxQtyPerOrder': { schema: z.number().int().min(1).max(100000), default: 50, description: 'Max quantity in a single order ("punch qty").' },
   'trading.maxQtyPerInstrument': { schema: z.number().int().min(1).max(1000000), default: 150, description: 'Max absolute open position per instrument.' },
+  'trading.watchlistExchanges': { schema: z.array(z.string().regex(/^[A-Z_]{2,20}$/)).min(1).max(20), default: ['MCX'], description: 'Exchanges whose scripts traders can add to a watchlist. Every script is still listed in Add script; others show "This script is not applicable for now".' },
   'trading.minQty': { schema: z.number().int().min(1), default: 1, description: 'Minimum order quantity.' },
   'trading.brokeragePerLot': { schema: z.number().min(0).max(100000), default: 250, description: 'Mini lots: brokerage in rupees per lot, charged when the trade is opened and again when it is cut. 1 lot = ₹250 + ₹250; 2 lots = ₹500 + ₹500.' },
   'trading.brokeragePerMegaLot': { schema: z.number().min(0).max(1000000), default: 2500, description: 'Mega lots: brokerage in rupees per lot, charged when the trade is opened and again when it is cut. 1 lot = ₹2,500 + ₹2,500.' },

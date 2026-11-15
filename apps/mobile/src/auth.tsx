@@ -8,7 +8,7 @@ import { requestSplash } from './splash';
 
 export type Role = 'SUPER_ADMIN' | 'BROKER' | 'TRADER';
 export interface Me { id: string; username: string; displayName: string; role: Role; isDemo: boolean; mfaEnabled: boolean; termsAccepted: boolean; /** Traders: broker's WhatsApp digits, e.g. 919876543210. */ brokerWhatsapp?: string | null }
-export interface Settings { appName: string; tickerMessages: string[]; termsRules: string[]; guidelinesHi?: string[]; helplineUrl: string; demoEnabled: boolean; signupEnabled: boolean; maxWatchlists: number; minDeposit?: string; apiVersion: string }
+export interface Settings { appName: string; tickerMessages: string[]; termsRules: string[]; guidelinesHi?: string[]; helplineUrl: string; /** Exchanges whose scripts can be added to a watchlist. */ watchlistExchanges?: string[]; demoEnabled: boolean; signupEnabled: boolean; maxWatchlists: number; minDeposit?: string; apiVersion: string }
 
 export const DEVICE_NAME = `${Device.manufacturer ?? ''} ${Device.modelName ?? 'Mobile'}`.trim();
 
@@ -81,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setSignedOutHandler(() => { setMe(null); if (quickRef.current) showLock(); else router.replace('/login'); });
-    const loadSettings = () => gql<{ appSettings: Settings }>(`{ appSettings { appName tickerMessages termsRules guidelinesHi helplineUrl demoEnabled signupEnabled maxWatchlists minDeposit apiVersion } }`).then((d) => { setSettings(d.appSettings); return true; }).catch(() => false);
+    const loadSettings = () => gql<{ appSettings: Settings }>(`{ appSettings { appName tickerMessages termsRules guidelinesHi helplineUrl watchlistExchanges demoEnabled signupEnabled maxWatchlists minDeposit apiVersion } }`).then((d) => { setSettings(d.appSettings); return true; }).catch(() => false);
     void loadSettings();
     (async () => {
       // Quick unlock on: always open locked. Otherwise resume the saved session, if any.

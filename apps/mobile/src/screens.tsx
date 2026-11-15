@@ -34,9 +34,9 @@ function MarketFilter({ cat, lot, onCat, onLot }: { cat: Cat; lot: Lot; onCat: (
   return (
     <View style={{ gap: S[2] }}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: S[4] }}>
-        <Chips value={cat} onChange={(c) => { onCat(c); onLot(''); }} items={[{ k: '', label: 'All' }, { k: 'FUTURES', label: 'Futures' }, { k: 'MCX', label: 'MCX' }, { k: 'OPTIONS', label: 'Options' }, { k: 'FOREX', label: 'Forex' }, { k: 'CRYPTO', label: 'Crypto' }, { k: 'US_STOCK', label: 'US Stock' }, { k: 'COMEX', label: 'COMEX' }, { k: 'US_INDEX', label: 'US Index' }]} />
+        <Chips value={cat} onChange={(c) => { onCat(c); onLot(c === 'MCX' ? 'MINI' : ''); }} items={[{ k: '', label: 'All' }, { k: 'FUTURES', label: 'Futures' }, { k: 'MCX', label: 'MCX' }, { k: 'OPTIONS', label: 'Options' }, { k: 'FOREX', label: 'Forex' }, { k: 'CRYPTO', label: 'Crypto' }, { k: 'US_STOCK', label: 'US Stock' }, { k: 'COMEX', label: 'COMEX' }, { k: 'US_INDEX', label: 'US Index' }]} />
       </ScrollView>
-      {cat === 'MCX' && <Chips value={lot} onChange={onLot} items={[{ k: '', label: 'All lots' }, { k: 'MINI', label: 'Mini' }, { k: 'MEGA', label: 'Mega' }]} />}
+      {cat === 'MCX' && <Chips value={lot} onChange={onLot} items={[{ k: 'MINI', label: 'Mini' }, { k: 'MEGA', label: 'Mega' }]} />}
     </View>
   );
 }
@@ -106,15 +106,15 @@ export function SearchButton() {
   return <IconButton icon="search" label="Search instruments" onPress={() => router.push('/search')} />;
 }
 
-const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, simple }: { i: Inst; qq?: Quote; inList: boolean; onToggle: (i: Inst) => void; pending: boolean; simple?: boolean }) {
+const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, simple, blocked }: { i: Inst; qq?: Quote; inList: boolean; onToggle: (i: Inst) => void; pending: boolean; simple?: boolean; /** Listed, but its exchange can't be added for now. */ blocked?: boolean }) {
   const t = useTheme();
   const sym = shortSymbol(i.symbol);
   const toggle = (
-    <Pressable disabled={pending} onPress={() => onToggle(i)} accessibilityRole="button" accessibilityLabel={`${inList ? 'Remove from watchlist' : 'Add to watchlist'}: ${i.symbol}`} accessibilityState={{ disabled: pending, selected: inList, busy: pending }}
+    <Pressable disabled={pending} onPress={() => onToggle(i)} accessibilityRole="button" accessibilityLabel={`${inList ? 'Remove from watchlist' : blocked ? 'Not applicable for now' : 'Add to watchlist'}: ${i.symbol}`} accessibilityState={{ disabled: pending, selected: inList, busy: pending }}
       style={({ pressed }) => (inList
         // Added: one tap removes it again (a wrong pick is undone straight away).
         ? { height: 36, paddingHorizontal: 12, flexDirection: 'row', gap: 4, borderWidth: 1, borderColor: t.neg, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? t.negSoft : t.bg, opacity: pending ? 0.5 : 1 }
-        : { width: CTL.tap, height: CTL.tap, borderWidth: 1, borderColor: t.line2, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? t.bg3 : t.bg, opacity: pending ? 0.5 : 1 })}>
+        : { width: CTL.tap, height: CTL.tap, borderWidth: 1, borderColor: t.line2, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? t.bg3 : blocked ? t.bg2 : t.bg, opacity: pending || blocked ? 0.45 : 1 })}>
       {inList ? <><Icon name="x" color={t.neg} size={16} strokeWidth={2} /><T v="sm" w="600" c="neg">Remove</T></> : <Icon name="plus" color={t.text2} size={20} />}
     </Pressable>
   );
@@ -122,7 +122,6 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[3], minHeight: 96, paddingVertical: S[4], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
         <T w="700" numberOfLines={1}>{fullName(i).toUpperCase()}{inList ? <T v="xs" c="brand" w="600">  ✓ Added</T> : null}</T>
-        <T v="sm" c="text2" numberOfLines={1}>{i.symbol}</T>
         <T v="xs">{i.expiry ? `Exp: ${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })}` : `${i.exchange} · ${i.segment}`}{lotText(i) ? ` · ${lotText(i)}` : ''}</T>
       </View>
       {toggle}
@@ -161,6 +160,9 @@ export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; list
     return () => { current = false; clearTimeout(h); };
   }, [q, cat, lot, nonce, addMode]);
   const wl = useQuery<{ watchlist: { instrument: { id: string } }[] }>(`query($l:Int!){ watchlist(listIndex:$l){ instrument{ id } } }`, { l: listIndex });
+  const { settings } = useAuth();
+  const allowed = settings?.watchlistExchanges ?? ['MCX'];
+  const canAdd = useCallback((i: Inst) => allowed.includes(i.exchange), [allowed.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
   const inList = useMemo(() => {
     const selected = new Set((wl.data?.watchlist ?? []).map((w) => w.instrument.id));
     for (const [id, included] of Object.entries(selection)) {
@@ -171,6 +173,8 @@ export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; list
   const quotes = useLiveQuotes(addMode ? [] : (res ?? []).map((i) => i.id));
   const onToggle = useCallback(async (i: Inst) => {
     if (changing.current.has(i.id)) return;
+    // Every script is listed, but only some exchanges (MCX for now) can be added.
+    if (!inList.has(i.id) && !canAdd(i)) { tap(); toast('This script is not applicable for now.', true); return; }
     changing.current.add(i.id);
     setPendingIds((ids) => [...ids, i.id]);
     const remove = inList.has(i.id);
@@ -182,7 +186,7 @@ export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; list
     }
     catch (e) { toast((e as Error).message, true); }
     finally { changing.current.delete(i.id); setPendingIds((ids) => ids.filter((id) => id !== i.id)); }
-  }, [inList, listIndex]);
+  }, [inList, listIndex, canAdd]);
   const pickerHeader = addMode ? (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingHorizontal: S[2], paddingVertical: S[2], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <IconButton icon="chevronLeft" label="Back to watchlist" onPress={() => router.canGoBack() ? router.back() : router.replace('/(trader)/watchlist')} />
@@ -197,8 +201,8 @@ export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; list
   });
   const filters = addMode ? (
     <View style={{ gap: S[2] }}>
-      <Tabs scroll value={cat} onChange={(c) => { setCat(c); setLot(''); }} items={categoryItems} />
-      {cat === 'MCX' && <Chips value={lot} onChange={setLot} items={[{ k: '', label: 'All lots' }, { k: 'MINI', label: 'Mini' }, { k: 'MEGA', label: 'Mega' }]} />}
+      <Tabs scroll value={cat} onChange={(c) => { setCat(c); setLot(c === 'MCX' ? 'MINI' : ''); }} items={categoryItems} />
+      {cat === 'MCX' && <Chips value={lot} onChange={setLot} items={[{ k: 'MINI', label: 'Mini' }, { k: 'MEGA', label: 'Mega' }]} />}
     </View>
   ) : (
     <View style={{ gap: S[3] }}>
@@ -212,7 +216,7 @@ export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; list
         header={<View style={{ gap: S[2] }}>{filters}{wl.error && !wl.data ? <ErrorState error={wl.error} retry={wl.refetch} /> : null}</View>}
         footer={res?.length === 500 ? <T v="xs">Showing the first 500 instruments. Search to narrow the list.</T> : undefined}
         empty={res === null ? <Skeleton rows={5} /> : err ? <ErrorState error={err} retry={() => setNonce((n) => n + 1)} /> : <Empty icon="search" title={q ? `No instruments match “${q}”` : 'Nothing listed here yet'}>{q ? 'Try the symbol, like NIFTY or GOLDM.' : 'Instruments appear here once they are loaded.'}</Empty>}
-        render={(i) => <SearchRow i={i} simple={addMode} qq={quotes[i.id]} inList={inList.has(i.id)} pending={pendingIds.includes(i.id) || !wl.data} onToggle={onToggle} />} />
+        render={(i) => <SearchRow i={i} simple={addMode} qq={quotes[i.id]} inList={inList.has(i.id)} blocked={!canAdd(i)} pending={pendingIds.includes(i.id) || !wl.data} onToggle={onToggle} />} />
     </Screen>
   );
 }

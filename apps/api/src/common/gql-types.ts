@@ -339,6 +339,7 @@ export class AppSettings {
   @Field(() => [String]) termsRules: string[];
   @Field(() => [String], { description: 'MCX guideline in Hindi (the "नियम" button on the mobile Positions screen).' }) guidelinesHi: string[];
   @Field() helplineUrl: string;
+  @Field(() => [String], { description: 'Exchanges whose scripts can be added to a watchlist (others are listed but not addable).' }) watchlistExchanges: string[];
   @Field() demoEnabled: boolean;
   @Field() tradingMode: string;
   @Field() marketFeed: string;

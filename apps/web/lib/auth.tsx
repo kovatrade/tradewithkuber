@@ -22,6 +22,8 @@ export interface Settings {
   tickerMessages: string[];
   termsRules: string[];
   helplineUrl: string;
+  /** Exchanges whose scripts can be added to a watchlist. */
+  watchlistExchanges?: string[];
   demoEnabled: boolean;
   tradingMode: string;
   signupEnabled: boolean;
@@ -68,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.replace('/login');
     });
     (async () => {
-      gql<{ appSettings: Settings }>(`{ appSettings { appName tickerMessages termsRules helplineUrl demoEnabled tradingMode signupEnabled maxWatchlists minDeposit apiVersion } }`)
+      gql<{ appSettings: Settings }>(`{ appSettings { appName tickerMessages termsRules helplineUrl watchlistExchanges demoEnabled tradingMode signupEnabled maxWatchlists minDeposit apiVersion } }`)
         .then((d) => setSettings(d.appSettings))
         .catch(() => undefined);
       if (await refreshSession()) { requestSplash('restore'); await reload(); }

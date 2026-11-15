@@ -755,7 +755,12 @@ describe('statements and watchlists', () => {
 
   it('supports up to 10 watchlists and reports how many scripts each holds', async () => {
     const t = await login('trader.two');
-    const { rows } = await pg.query(`SELECT id FROM instruments ORDER BY symbol LIMIT 2`);
+    const { rows } = await pg.query(`SELECT id FROM instruments WHERE exchange = 'MCX' ORDER BY symbol LIMIT 2`);
+    // Only MCX scripts can be added for now; others are listed but refused.
+    const nse = (await pg.query(`SELECT id FROM instruments WHERE exchange = 'NSE' LIMIT 1`)).rows[0];
+    const refused = await gql(`mutation($i:ID!){ addToWatchlist(listIndex:9, instrumentId:$i) }`, { i: nse.id }, { token: t.accessToken });
+    expect(code(refused)).toBe('BAD_USER_INPUT');
+    expect(refused.errors?.[0].message).toBe('This script is not applicable for now.');
     await gql(`mutation($i:ID!){ addToWatchlist(listIndex:9, instrumentId:$i) }`, { i: rows[0].id }, { token: t.accessToken });
     await gql(`mutation($i:ID!){ addToWatchlist(listIndex:9, instrumentId:$i) }`, { i: rows[1].id }, { token: t.accessToken });
     expect(code(await gql(`mutation($i:ID!){ addToWatchlist(listIndex:10, instrumentId:$i) }`, { i: rows[0].id }, { token: t.accessToken }))).toBe('BAD_USER_INPUT');

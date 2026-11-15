@@ -6,7 +6,7 @@ import { AllowWithoutMfa, Ctx, CurrentActor, lim, Public, Roles } from '../commo
 import { AuditService } from '../audit/audit.service';
 import { badInput, notFound } from '../common/errors';
 import { AppSettings, Candle, CandleIntervalGql, CategoryCount, Instrument, MarketPulseItem, Quote, WatchlistCount, WatchlistEntry } from '../common/gql-types';
-import { categoryOf, type Category } from '../trading/instrument-meta';
+import { categoryOf, uniqueMcx, type Category } from '../trading/instrument-meta';
 import { formatMoney } from '../common/money';
 import type { CandleInterval } from './candles';
 import { API_VERSION } from '../common/version';
@@ -40,6 +40,7 @@ export class MarketResolver {
       termsRules: await this.config.get('ui.termsRules'),
       guidelinesHi: await this.config.get('ui.guidelinesHi'),
       helplineUrl: await this.config.get('ui.helplineUrl'),
+      watchlistExchanges: await this.config.get('trading.watchlistExchanges'),
       demoEnabled: await this.config.get('demo.enabled'),
       tradingMode: env().LIVE_TRADING_ENABLED ? 'LIVE' : 'SIMULATED',
       marketFeed: env().MARKET_FEED.toUpperCase(),
@@ -81,9 +82,11 @@ export class MarketResolver {
         exchange: instruments.exchange,
         segment: instruments.segment,
         symbol: instruments.symbol,
+        lotClass: instruments.lotClass,
       })
       .from(instruments)
-      .where(eq(instruments.active, true));
+      .where(and(eq(instruments.active, true), sql`(${instruments.expiry} IS NULL OR (${instruments.expiry} AT TIME ZONE 'Asia/Kolkata')::date >= (now() AT TIME ZONE 'Asia/Kolkata')::date)`))
+      .orderBy(asc(sql`coalesce(${instruments.expiry}, '9999-12-31')`), asc(instruments.symbol));
 
     const counts: Record<Category, number> = {
       FUTURES: 0,
@@ -98,8 +101,10 @@ export class MarketResolver {
 
     for (const r of rows) {
       const c = categoryOf(r.exchange, r.segment, r.symbol);
-      counts[c] = (counts[c] ?? 0) + 1;
+      if (c !== 'MCX') counts[c] = (counts[c] ?? 0) + 1;
     }
+    // MCX lists one contract per commodity and lot class (see searchInstruments).
+    counts.MCX = uniqueMcx(rows.filter((r) => categoryOf(r.exchange, r.segment, r.symbol) === 'MCX')).length;
 
     return (Object.entries(counts) as [Category, number][]).map(([category, count]) => ({
       category,
@@ -134,8 +139,10 @@ export class MarketResolver {
       .from(instruments)
       .where(and(eq(instruments.active, true), notExpired, query.trim() ? or(ilike(instruments.symbol, s), ilike(instruments.name, s)) : undefined, cat, cls))
       .orderBy(asc(sql`coalesce(${instruments.expiry}, '9999-12-31')`), asc(instruments.symbol))
-      .limit(clampLimit(limit, 50, 500));
-    return rows.map((r) => toInstrument(r, this.market.quote(r.id)));
+      .limit(category === 'MCX' ? 5000 : clampLimit(limit, 50, 500));
+    // MCX: only the 7 listed commodities, one contract each (per lot class), nearest expiry.
+    const list = category === 'MCX' ? uniqueMcx(rows) : rows;
+    return list.map((r) => toInstrument(r, this.market.quote(r.id)));
   }
 
   @AllowWithoutMfa()
@@ -260,7 +267,10 @@ export class MarketResolver {
   @Mutation(() => Boolean)
   async addToWatchlist(@CurrentActor() a: Actor, @Args('listIndex', { type: () => Int }) listIndex: number, @Args('instrumentId', { type: () => ID }) instrumentId: string) {
     if (listIndex < 0 || listIndex >= MAX_LISTS) throw badInput('Invalid watchlist.');
-    if (!this.market.instrument(instrumentId)) throw notFound('Instrument');
+    const inst = this.market.instrument(instrumentId);
+    if (!inst) throw notFound('Instrument');
+    const allowed: string[] = await this.config.get('trading.watchlistExchanges');
+    if (!allowed.includes(inst.exchange)) throw badInput('This script is not applicable for now.');
     const existing = await this.dbs.db.$count(watchlistItems, and(eq(watchlistItems.userId, a.userId), eq(watchlistItems.listIndex, listIndex), isNull(watchlistItems.archivedAt)));
     if (existing >= MAX_PER_LIST) throw badInput(`A watchlist can hold up to ${MAX_PER_LIST} scripts.`);
     await this.dbs.db.insert(watchlistItems).values({ userId: a.userId, listIndex, instrumentId, sortOrder: existing }).onConflictDoUpdate({ target: [watchlistItems.userId, watchlistItems.listIndex, watchlistItems.instrumentId], set: { archivedAt: null, createdAt: new Date() } });

@@ -485,7 +485,11 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
   };
   const inList = useMemo(() => new Set(entries.map((e) => e.instrument.id)), [entries]);
 
+  const { settings } = useAuth();
+  const allowedExchanges = settings?.watchlistExchanges ?? ['MCX'];
   const add = async (i: Instrument) => {
+    // Every script is listed, but only some exchanges (MCX for now) can be added.
+    if (!allowedExchanges.includes(i.exchange)) { toast('This script is not applicable for now.', true); return; }
     setBusy(i.id);
     try {
       await gql(`mutation($l:Int!,$i:ID!){ addToWatchlist(listIndex:$l, instrumentId:$i) }`, { l: list, i: i.id });
@@ -573,7 +577,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
                   key={c.v}
                   className="chip"
                   aria-pressed={cat === c.v}
-                  onClick={() => { setCat(c.v); setLot(''); }}
+                  onClick={() => { setCat(c.v); setLot(c.v === 'MCX' ? 'MINI' : ''); }}
                 >
                   {c.label}{countStr}
                 </button>
@@ -582,7 +586,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
           </div>
           {cat === 'MCX' && (
             <div className="chips" role="group" aria-label="Lot type">
-              {([['', 'All lots'], ['MINI', 'Mini'], ['MEGA', 'Mega']] as const).map(([v, l]) => (
+              {([['MINI', 'Mini'], ['MEGA', 'Mega']] as const).map(([v, l]) => (
                 <button key={v} className="chip" aria-pressed={lot === v} onClick={() => setLot(v)}>{l}</button>
               ))}
             </div>
@@ -598,7 +602,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
         ) : compact ? (
           <div className="list list-pad">
             {hits.map((i) => (
-              <CompactRow removable
+              <CompactRow removable blocked={!allowedExchanges.includes(i.exchange)}
                 key={i.id}
                 e={{ id: i.id, instrument: i }}
                 q={hitQuotes[i.id] ?? i.quote}
@@ -618,7 +622,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
                     <span className="badge">{g.items.length}</span>
                   </div>
                   {g.items.map((it) => (
-                    <CompactRow removable
+                    <CompactRow removable blocked={!allowedExchanges.includes(it.instrument.exchange)}
                       key={it.instrument.id}
                       e={it}
                       q={hitQuotes[it.instrument.id] ?? it.quote ?? it.instrument.quote}
@@ -656,7 +660,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
                         </th>
                       </tr>
                       {g.items.map((it) => (
-                        <FullRow
+                        <FullRow blocked={!allowedExchanges.includes(it.instrument.exchange)}
                           key={it.instrument.id}
                           e={it}
                           q={hitQuotes[it.instrument.id] ?? it.quote ?? it.instrument.quote}
@@ -711,6 +715,7 @@ const CompactRow = memo(function CompactRow({
   isBusy,
   onToggle,
   removable,
+  blocked,
 }: {
   e: { id: string; instrument: Instrument };
   q?: Quote;
@@ -720,6 +725,8 @@ const CompactRow = memo(function CompactRow({
   onToggle?: () => void;
   /** Add-script search: once added, show Remove so a wrong pick can be undone straight away. */
   removable?: boolean;
+  /** Listed, but its exchange can't be added for now. */
+  blocked?: boolean;
 }) {
   const tick = useTick(q?.ltp);
   const href = `/trader/instrument/${e.instrument.id}`;
@@ -752,7 +759,7 @@ const CompactRow = memo(function CompactRow({
         <BidAskBoxes href={href} q={q} label={name} />
       )}
       {!inList && onToggle && (
-        <button className="icon-btn wl-add" disabled={isBusy} onClick={onToggle} aria-label={`Add ${name} to watchlist`} title="Add to watchlist">
+        <button className={`icon-btn wl-add${blocked ? ' is-blocked' : ''}`} disabled={isBusy} onClick={onToggle} aria-label={blocked ? `${name}: not applicable for now` : `Add ${name} to watchlist`} title={blocked ? 'Not applicable for now' : 'Add to watchlist'}>
           <Icon name="plus" size={18} />
         </button>
       )}
@@ -772,6 +779,7 @@ const FullRow = memo(function FullRow({
   isBusy,
   onToggle,
   onRemove,
+  blocked,
 }: {
   e: { id: string; instrument: Instrument };
   q?: Quote;
@@ -779,6 +787,7 @@ const FullRow = memo(function FullRow({
   isBusy?: boolean;
   onToggle?: () => void;
   onRemove?: () => void;
+  blocked?: boolean;
 }) {
   const tick = useTick(q?.ltp);
   const href = `/trader/instrument/${e.instrument.id}`;
@@ -813,7 +822,7 @@ const FullRow = memo(function FullRow({
             <Icon name="x" size={14} />Remove
           </button>
         ) : (
-          <button className="btn btn-sm btn-primary" disabled={isBusy} onClick={action} aria-label={`Add ${name} to watchlist`}>
+          <button className={`btn btn-sm ${blocked ? 'is-blocked' : 'btn-primary'}`} disabled={isBusy} onClick={action} aria-label={blocked ? `${name}: not applicable for now` : `Add ${name} to watchlist`} title={blocked ? 'Not applicable for now' : undefined}>
             <Icon name="plus" size={16} />Add
           </button>
         )}

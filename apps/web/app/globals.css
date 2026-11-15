@@ -1112,3 +1112,4 @@ tr.clickable { cursor: pointer; }
 .icon-btn.wa-btn:hover { background: #1fb957; color: #fff; }
 .btn.wl-remove { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 45%, transparent); white-space: nowrap; }
 .btn.wl-remove:hover { background: var(--neg-soft); }
+.is-blocked { opacity: .45; }

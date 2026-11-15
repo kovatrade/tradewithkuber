@@ -41,6 +41,33 @@ export function categoryOf(exchange: string, segment: string, symbol?: string): 
 /** The underlying: the leading letters of the symbol (GOLDM-05Dec2026-FUT, GOLDM26NOVFUT → GOLDM). */
 export const baseSymbol = (symbol: string) => (/^[A-Z&]+/.exec(symbol.toUpperCase())?.[0] ?? symbol.toUpperCase());
 
+/**
+ * The MCX scripts listed under "MCX" in Add script: 7 commodities, each as its full-size (Mega) and mini contract.
+ * Value = the commodity it belongs to; the order here is the order shown.
+ */
+export const MCX_LISTED: Record<string, string> = {
+  SILVER: 'SILVER', SILVERM: 'SILVER', GOLD: 'GOLD', GOLDM: 'GOLD', CRUDEOIL: 'CRUDEOIL', CRUDEOILM: 'CRUDEOIL',
+  COPPER: 'COPPER', COPPERM: 'COPPER', LEAD: 'LEAD', LEADMINI: 'LEAD', ZINC: 'ZINC', ZINCMINI: 'ZINC', NATURALGAS: 'NATURALGAS', NATGASMINI: 'NATURALGAS',
+};
+const MCX_ORDER = ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'LEAD', 'ZINC', 'NATURALGAS'];
+/**
+ * One contract per listed MCX script and lot class: the nearest expiry that is still open (rows must come sorted by
+ * expiry, then symbol). Other MCX contracts are left out of the MCX list.
+ */
+export function uniqueMcx<T extends { symbol: string; lotClass?: string | null }>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const r of rows) {
+    const base = baseSymbol(r.symbol);
+    if (!MCX_LISTED[base]) continue;
+    const key = `${base}|${r.lotClass ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(r);
+  }
+  return out.sort((a, b) => MCX_ORDER.indexOf(MCX_LISTED[baseSymbol(a.symbol)]) - MCX_ORDER.indexOf(MCX_LISTED[baseSymbol(b.symbol)]));
+}
+
 /** MCX mini/micro versions are MINI; full-size MCX contracts are MEGA; everything else is MINI. */
 const MCX_MINI = /^(GOLDM|GOLDPETAL|GOLDGUINEA|GOLDTEN|SILVERM|SILVERMIC|CRUDEOILM|NATGASMINI|ZINCMINI|LEADMINI|ALUMINI|COPPERM)$/;
 export function defaultLotClass(exchange: string, symbol: string): 'MINI' | 'MEGA' {
