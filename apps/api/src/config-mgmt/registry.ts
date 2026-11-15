@@ -5,6 +5,17 @@ import { z } from 'zod';
  * Values are stored in Postgres (config_versions) and changed through maker-checker.
  * NEVER put secrets (keys, passwords, payment credentials) in here.
  */
+const courseSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]{3,60}$/, 'Use lower-case letters, digits and dashes'),
+  title: z.string().min(3).max(80),
+  level: z.string().min(2).max(30),
+  duration: z.string().min(2).max(30),
+  fee: z.string().regex(/^\d{1,7}$/, 'Fee in whole rupees, e.g. 4999 (0 = free)'),
+  format: z.string().min(3).max(120),
+  summary: z.string().min(10).max(300),
+  outcomes: z.array(z.string().min(3).max(160)).min(1).max(10),
+  modules: z.array(z.object({ title: z.string().min(2).max(80), topics: z.array(z.string().min(2).max(120)).min(1).max(12) })).min(1).max(20),
+});
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h)');
 const minor = z
   .string()
@@ -105,6 +116,277 @@ export const CONFIG_REGISTRY = {
     ],
     description: 'Rules shown after every trader sign-in; acceptance is recorded.',
   },
+  'site.courses': {
+    schema: z.array(courseSchema).min(0).max(30).refine((a) => new Set(a.map((c) => c.slug)).size === a.length, 'Each course needs its own slug'),
+    default: [
+      {
+        "slug": "stock-market-foundations",
+        "title": "Stock Market Foundations",
+        "level": "Beginner",
+        "duration": "4 weeks",
+        "fee": "4999",
+        "format": "Live online classes + practice on the paper-trading app",
+        "summary": "How markets work, from what a share is to placing your first order, explained from zero.",
+        "outcomes": [
+          "Read a quote: bid, ask, LTP, volume and circuit limits",
+          "Understand exchanges, brokers, depositories and settlement",
+          "Place market, limit and stop-loss orders with confidence",
+          "Practise every lesson on a paper-trading account, with no real money"
+        ],
+        "modules": [
+          {
+            "title": "How the market works",
+            "topics": [
+              "Exchanges, brokers and clearing",
+              "Shares, indices and sectors",
+              "Market timings and holidays"
+            ]
+          },
+          {
+            "title": "Reading prices",
+            "topics": [
+              "Bid, ask and spread",
+              "LTP, open, high, low, close",
+              "Volume and open interest"
+            ]
+          },
+          {
+            "title": "Orders",
+            "topics": [
+              "Market vs limit orders",
+              "Stop-loss and target orders",
+              "Why orders get rejected"
+            ]
+          },
+          {
+            "title": "Your first trades",
+            "topics": [
+              "Position sizing basics",
+              "Booked vs live P&L",
+              "Keeping a trade journal"
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "mcx-commodity-trading",
+        "title": "Commodity Trading on MCX",
+        "level": "Intermediate",
+        "duration": "6 weeks",
+        "fee": "9999",
+        "format": "Live online classes + practice on the paper-trading app",
+        "summary": "Gold, Silver, Crude Oil, Natural Gas and base metals: contracts, lot sizes, margins and carry forward.",
+        "outcomes": [
+          "Choose between mini and mega lots for each commodity",
+          "Work out margin, P&L per tick and carry-forward margin",
+          "Know MCX timings, expiry and auto square-off rules",
+          "Follow global cues: dollar, COMEX and inventory data"
+        ],
+        "modules": [
+          {
+            "title": "MCX basics",
+            "topics": [
+              "Contracts, expiry and rollover",
+              "Mini vs mega lots",
+              "Session timings (09:00–23:30)"
+            ]
+          },
+          {
+            "title": "Bullion",
+            "topics": [
+              "Gold and Silver contracts",
+              "Dollar and global price links",
+              "Event days to watch"
+            ]
+          },
+          {
+            "title": "Energy",
+            "topics": [
+              "Crude Oil and Natural Gas",
+              "Inventory reports",
+              "Volatility and gaps"
+            ]
+          },
+          {
+            "title": "Base metals",
+            "topics": [
+              "Copper, Lead and Zinc",
+              "Demand cycles",
+              "Spreads between contracts"
+            ]
+          },
+          {
+            "title": "Margins and carry forward",
+            "topics": [
+              "Intraday vs carry-forward margin",
+              "Auto cut at market close",
+              "Managing overnight risk"
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "technical-analysis",
+        "title": "Technical Analysis & Chart Reading",
+        "level": "Intermediate",
+        "duration": "6 weeks",
+        "fee": "7999",
+        "format": "Live online classes + chart practice sessions",
+        "summary": "Candlesticks, trends, support and resistance, indicators and building a rule-based setup.",
+        "outcomes": [
+          "Read candlestick patterns in context",
+          "Mark trend, support and resistance",
+          "Use moving averages, RSI and MACD without over-fitting",
+          "Write and back-test a simple trading plan"
+        ],
+        "modules": [
+          {
+            "title": "Charts and timeframes",
+            "topics": [
+              "Line, bar and candlestick charts",
+              "Choosing a timeframe",
+              "Volume on charts"
+            ]
+          },
+          {
+            "title": "Price action",
+            "topics": [
+              "Trends and ranges",
+              "Support and resistance",
+              "Breakouts and false breakouts"
+            ]
+          },
+          {
+            "title": "Indicators",
+            "topics": [
+              "Moving averages",
+              "RSI and MACD",
+              "When indicators disagree"
+            ]
+          },
+          {
+            "title": "Building a setup",
+            "topics": [
+              "Entry, stop and target rules",
+              "Back-testing basics",
+              "Reviewing your trades"
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "futures-and-options",
+        "title": "Futures & Options Essentials",
+        "level": "Intermediate",
+        "duration": "6 weeks",
+        "fee": "8999",
+        "format": "Live online classes + practice on the paper-trading app",
+        "summary": "Derivatives made practical: futures, call and put options, premiums, expiry and hedging.",
+        "outcomes": [
+          "Explain how futures and options are priced",
+          "Read an option chain",
+          "Understand the Greeks at a working level",
+          "Use simple hedges and spreads, and know their risks"
+        ],
+        "modules": [
+          {
+            "title": "Futures",
+            "topics": [
+              "Lot size and margin",
+              "Mark-to-market",
+              "Rollover"
+            ]
+          },
+          {
+            "title": "Options",
+            "topics": [
+              "Calls and puts",
+              "Premium, strike and expiry",
+              "Option chain"
+            ]
+          },
+          {
+            "title": "The Greeks",
+            "topics": [
+              "Delta and gamma",
+              "Theta and time decay",
+              "Vega and volatility"
+            ]
+          },
+          {
+            "title": "Strategies",
+            "topics": [
+              "Covered positions",
+              "Spreads",
+              "Hedging a portfolio"
+            ]
+          }
+        ]
+      },
+      {
+        "slug": "risk-and-psychology",
+        "title": "Risk Management & Trading Psychology",
+        "level": "All levels",
+        "duration": "3 weeks",
+        "fee": "3999",
+        "format": "Live online classes + weekly review sessions",
+        "summary": "The part most traders skip: position sizing, drawdowns, discipline and a written plan.",
+        "outcomes": [
+          "Size positions from a fixed risk per trade",
+          "Set daily and weekly loss limits",
+          "Recognise fear, greed and revenge trading",
+          "Write a personal trading plan and stick to it"
+        ],
+        "modules": [
+          {
+            "title": "Risk per trade",
+            "topics": [
+              "Position sizing",
+              "Stop-loss placement",
+              "Risk–reward"
+            ]
+          },
+          {
+            "title": "Protecting capital",
+            "topics": [
+              "Drawdowns and recovery",
+              "Loss limits",
+              "Leverage and margin calls"
+            ]
+          },
+          {
+            "title": "Mindset",
+            "topics": [
+              "Biases and emotions",
+              "Routines and journaling",
+              "Reviewing mistakes"
+            ]
+          }
+        ]
+      }
+    ],
+    description: 'Courses shown on the public website (/courses). Fees are in whole rupees. These are sample courses: edit titles, fees and modules here.',
+  },
+  'site.broker': {
+    schema: z.object({
+      mode: z.enum(['off', 'preview', 'live']),
+      legalName: z.string().max(120),
+      sebiRegNo: z.string().max(40),
+      dpRegNo: z.string().max(40),
+      cin: z.string().max(40),
+      exchanges: z.array(z.object({ name: z.enum(['NSE', 'BSE', 'MCX', 'NCDEX', 'MSEI']), memberId: z.string().max(20) })).max(5),
+      address: z.string().max(300),
+      complianceEmail: z.string().max(120),
+      grievanceEmail: z.string().max(120),
+      offerings: z.array(z.enum(['STOCKS', 'FO', 'COMMODITY', 'CURRENCY', 'IPO', 'MUTUAL_FUNDS'])).max(6),
+      accountTypes: z.array(z.enum(['INDIVIDUAL', 'HUF', 'NRI', 'MINOR', 'CORPORATE'])).max(5),
+      brokerage: z.object({ delivery: z.string().max(20), intraday: z.string().max(20), fo: z.string().max(20), accountOpening: z.string().max(20) }),
+    }).refine((b) => b.mode !== 'live' || (b.legalName.trim() && /\S/.test(b.sebiRegNo) && b.exchanges.length > 0 && b.address.trim() && b.grievanceEmail.trim()),
+      'Live needs the legal name, SEBI registration number, at least one exchange membership, address and grievance email.'),
+    default: { mode: 'off', legalName: '', sebiRegNo: '', dpRegNo: '', cin: '', exchanges: [], address: '', complianceEmail: '', grievanceEmail: '', offerings: ['STOCKS', 'FO', 'COMMODITY'], accountTypes: ['INDIVIDUAL'], brokerage: { delivery: '0', intraday: '20', fo: '20', accountOpening: '0' } },
+    description: 'Broker website. off = education site only; preview = broker pages visible only to a Super Admin at /preview/broker; live = broker pages replace the home and Open account pages (needs the registration details). Turn live on only after SEBI registration and exchange membership are granted.',
+  },
+  'site.enquiriesOpen': { schema: z.boolean(), default: true, description: 'Accept "Enroll / Call me" enquiries from the public website.' },
   'ui.guidelinesHi': {
     schema: z.array(z.string().max(500)).max(20),
     default: [
