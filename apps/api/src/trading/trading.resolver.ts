@@ -12,6 +12,7 @@ import {
   m,
   Order,
   OrderPreview,
+  SquareOffResult,
   OrderSideGql,
   OrderStatusGql,
   OrderTypeGql,
@@ -203,6 +204,11 @@ export class TradingResolver {
         carriedForward: p.netQty !== 0 && p.cfDate === istDay(),
       };
     });
+  }
+
+  @Mutation(() => SquareOffResult, { description: 'Exit every open position of the signed-in trader at market.' })
+  async squareOffAll(@CurrentActor() a: Actor, @Ctx() c: GqlContext): Promise<SquareOffResult> {
+    return this.orderSvc.squareOffAll(a, c.ip);
   }
 
   @Mutation(() => Boolean, { description: 'Turn carry forward on (needs the carry-forward margin; fails with a message otherwise) or off for an open position. Returns the new state.' })

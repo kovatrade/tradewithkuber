@@ -720,6 +720,9 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
   const t = useTheme();
   const [cf, setCf] = useState<Pos | null>(null);
   const [cfBusy, setCfBusy] = useState<string | null>(null);
+  const [sqOff, setSqOff] = useState(false);
+  const [sqBusy, setSqBusy] = useState(false);
+  const rules = useQuery<{ tradingRules: { sessions: { exchange: string; isOpen: boolean; message?: string | null }[] } }>(`{ tradingRules { sessions { exchange isOpen message } } }`, undefined, 30_000, !canTrade);
   if (loading && !data) return <Skeleton />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
   if (!data!.positions.length) return <Empty icon="briefcase" title="No positions" action={canTrade ? <Button size="sm" kind="primary" title="Find instruments" onPress={() => router.push('/search')} /> : undefined}>A position opens when a buy or sell order executes.</Empty>;
@@ -734,9 +737,34 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
     finally { setCfBusy(null); }
   };
   const sorted = [...data!.positions].sort((a, b) => Number(b.netQty !== 0) - Number(a.netQty !== 0));
+  const openPos = sorted.filter((p) => p.netQty !== 0);
+  // Market closed for any open position: square off is not allowed (same as a normal order).
+  const closedMsg = rules.data?.tradingRules.sessions.find((x) => !x.isOpen && openPos.some((p) => p.instrument?.exchange === x.exchange))?.message ?? null;
+  const squareOffAll = async () => {
+    setSqBusy(true);
+    try {
+      const d = await gql<{ squareOffAll: { closed: string[]; failed: string[] } }>(`mutation{ squareOffAll{ closed failed } }`);
+      tap('heavy');
+      const { closed, failed } = d.squareOffAll;
+      if (failed.length) toast(`${closed.length} exited. Not exited: ${failed.join('; ')}`, true);
+      else toast(`All ${closed.length} positions exited.`);
+      setSqOff(false);
+    } catch (e) { toast((e as Error).message, true); }
+    finally { setSqBusy(false); void refetch(); }
+  };
   const label = { fontSize: 9, letterSpacing: 0.5, textTransform: 'uppercase' as const };
   return (
     <View style={{ gap: S[2] }}>
+      {canTrade && openPos.length > 0 && (
+        <Spread style={{ alignItems: 'center' }}>
+          <T c={closedMsg ? 'neg' : 'text2'} w="600">{closedMsg ? 'Market closed' : `${openPos.length} open position${openPos.length > 1 ? 's' : ''}`}</T>
+          <Pressable onPress={() => (closedMsg ? toast(closedMsg, true) : setSqOff(true))} accessibilityRole="button" accessibilityLabel={closedMsg ? `Square off all: ${closedMsg}` : `Square off all ${openPos.length} positions`} accessibilityState={{ disabled: !!closedMsg }}
+            style={({ pressed }) => ({ height: 36, paddingHorizontal: 14, borderRadius: R.pill, backgroundColor: pressed ? t.negSoft : t.bg, borderWidth: 1, borderColor: t.neg, flexDirection: 'row', alignItems: 'center', gap: 6, opacity: closedMsg ? 0.45 : 1 })}>
+            <Icon name="x" size={14} color={t.neg} strokeWidth={2.4} />
+            <T v="sm" w="700" c="neg">Square off all</T>
+          </Pressable>
+        </Spread>
+      )}
       {sorted.map((p) => {
         const name = p.instrument ? fullName(p.instrument).toUpperCase() : '—';
         const exp = p.instrument?.expiry ? new Date(p.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
@@ -761,7 +789,7 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
                 {open && <T w="700" style={{ fontSize: 14 }}>Qty: {Math.abs(p.netQty)}</T>}
               </View>
               <View style={{ flexDirection: 'row', gap: S[2] }}>
-                {([['Avg', open ? inr(p.avgPrice) : '—', 'text'], ['Current', inr(p.ltp), 'text'], [open ? 'P/L' : 'Booked', inr(pnl, true), pc], ['%', pct ? `${Number(pct) > 0 ? '+' : ''}${pct}%` : '—', pc]] as const).map(([k, v, c], i) => (
+                {([['Avg', open ? scriptPrice(p.avgPrice) : '—', 'text'], ['Current', scriptPrice(p.ltp), 'text'], [open ? 'P/L' : 'Booked', inr(pnl, true), pc], ['%', pct ? `${Number(pct) > 0 ? '+' : ''}${pct}%` : '—', pc]] as const).map(([k, v, c], i) => (
                   <View key={k} style={{ flex: i < 2 ? 1.1 : 1, minWidth: 0, alignItems: i < 2 ? 'flex-start' : 'flex-end' }}>
                     <T c="text2" w="600" style={label}>{k}</T>
                     <T c={c as 'text'} w="700" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 14, fontVariant: ['tabular-nums'] }}>{v}</T>
@@ -790,6 +818,21 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
           </View>
         );
       })}
+      <Sheet visible={sqOff} title="Square off all positions?" sub={`${openPos.length} open position${openPos.length > 1 ? 's' : ''} will be exited at market price.`} onClose={() => !sqBusy && setSqOff(false)}>
+        <View style={{ gap: 6 }}>
+          {openPos.map((p) => (
+            <Spread key={p.id}>
+              <T w="600" numberOfLines={1} style={{ flex: 1 }}>{p.instrument ? fullName(p.instrument).toUpperCase() : '—'} <T v="xs" c={p.netQty > 0 ? 'pos' : 'neg'} w="700">{p.netQty > 0 ? 'BUY' : 'SELL'} {Math.abs(p.netQty)}</T></T>
+              <T v="num" c={toneOfValue(p.unrealizedPnl) === 'flat' ? 'text2' : (toneOfValue(p.unrealizedPnl) as 'pos')}>{inr(p.unrealizedPnl, true)}</T>
+            </Spread>
+          ))}
+        </View>
+        <Notice tone="warn">This cannot be undone. Carry Forward positions are exited too.</Notice>
+        <Row>
+          <Button block title="Cancel" disabled={sqBusy} onPress={() => setSqOff(false)} />
+          <Button block kind="sell" title="Exit all" busy={sqBusy} onPress={() => void squareOffAll()} />
+        </Row>
+      </Sheet>
       <Sheet visible={!!cf} title="Carry forward ON?" sub={cf?.instrument ? `${fullName(cf.instrument).toUpperCase()} · ${cf.netQty > 0 ? 'BUY' : 'SELL'} · Qty ${Math.abs(cf.netQty)}` : undefined} onClose={() => setCf(null)}>
         <T c="text2" style={{ lineHeight: 21 }}>यह सौदा Next Day तक बना रहेगा और रात 11:30 बजे Auto Cut नहीं होगा। Lot size के हिसाब से CF मार्जिन आपके बैलेंस से रोका जाएगा।</T>
         <Row>

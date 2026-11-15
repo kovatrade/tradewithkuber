@@ -17,6 +17,7 @@ import { AppModule } from '../src/app.module';
 import { requestContextMiddleware } from '../src/common/request-context';
 import { MarketDataService } from '../src/market/market-data.service';
 import { RiskService } from '../src/risk/risk.service';
+import { EodCutService } from '../src/risk/eod-cut.service';
 import { ActivityLogService } from '../src/logging/activity-log.service';
 import { archiveDay, verifyArchive } from '../src/logging/archive';
 import { DbService } from '../src/db/db';
@@ -391,6 +392,38 @@ describe('paper trading', () => {
     await gql(CF, { p: open.id }, { token: t.accessToken });
     await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect((await gql(POS, {}, { token: t.accessToken })).data.positions.find((x: { id: string }) => x.id === open.id).carriedForward).toBe(false);
+  });
+
+  it('auto cuts open positions at the exchange close, except those carried forward for that day', async () => {
+    const t = await login('trader.three');
+    const ids = (await pg.query(`SELECT id, symbol FROM instruments WHERE exchange = 'MCX' AND active ORDER BY symbol LIMIT 2`)).rows;
+    for (const r of ids) market.setPrice(r.id, 500000n);
+    for (const r of ids) expect((await gql(PLACE, { i: { instrumentId: r.id, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder.status).toBe('FILLED');
+    const day = '2026-11-13'; // a Friday (not a holiday)
+    const close = new Date(`${day}T23:30:20+05:30`);
+    await pg.query(`UPDATE positions SET cf_date = $1 WHERE user_id = (SELECT id FROM users WHERE username = 'trader.three') AND instrument_id = $2`, [day, ids[1].id]);
+    const eod = app.get(EodCutService);
+    expect(await eod.run(new Date(`${day}T23:29:00+05:30`))).toEqual([]); // not yet
+    expect(await eod.run(new Date('2026-11-14T23:30:20+05:30'))).toEqual([]); // Saturday
+    expect(await eod.run(close)).toContain('MCX');
+    const net = async (id: string) => (await pg.query(`SELECT net_qty FROM positions WHERE user_id = (SELECT id FROM users WHERE username = 'trader.three') AND instrument_id = $1`, [id])).rows[0].net_qty;
+    expect(await net(ids[0].id)).toBe(0); // cut
+    expect(await net(ids[1].id)).toBe(1); // carried forward: kept
+    expect((await pg.query(`SELECT count(*)::int AS n FROM audit_events WHERE action = 'trading.eod_cut'`)).rows[0].n).toBeGreaterThanOrEqual(1);
+    expect(await eod.run(close)).toEqual([]); // once per day
+    await gql(PLACE, { i: { instrumentId: ids[1].id, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
+  });
+
+  it('squares off all open positions of the trader in one call', async () => {
+    const t = await login('trader.three');
+    const ids = (await pg.query(`SELECT id FROM instruments WHERE exchange = 'MCX' AND active ORDER BY symbol LIMIT 2`)).rows;
+    for (const r of ids) market.setPrice(r.id, 500000n);
+    for (const r of ids) await gql(PLACE, { i: { instrumentId: r.id, side: 'BUY', type: 'MARKET', quantity: 2, idempotencyKey: randomUUID() } }, { token: t.accessToken });
+    const r = await gql(`mutation{ squareOffAll{ closed failed } }`, {}, { token: t.accessToken });
+    expect(r.data.squareOffAll.failed).toEqual([]);
+    expect(r.data.squareOffAll.closed.length).toBeGreaterThanOrEqual(2);
+    const left = await pg.query(`SELECT count(*)::int AS n FROM positions WHERE user_id = (SELECT id FROM users WHERE username = 'trader.three') AND net_qty <> 0`);
+    expect(left.rows[0].n).toBe(0);
   });
 
   it('realises P&L through the ledger on close', async () => {

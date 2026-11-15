@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { Actor } from '../common/context';
@@ -141,7 +142,7 @@ export class OrdersService implements OnModuleInit {
    * when they started it (checked there), so the per-session consent check is skipped, and the order is
    * stamped with the strategy. Every other check below applies exactly as for a manual order.
    */
-  async place(actor: Actor, input: PlaceOrderInput, ip: string, automation?: { strategyId?: string; reason?: 'risk' }): Promise<OrderRow> {
+  async place(actor: Actor, input: PlaceOrderInput, ip: string, automation?: { strategyId?: string; reason?: 'risk' | 'eod' }): Promise<OrderRow> {
     if (actor.role !== 'TRADER') throw new AppError('FORBIDDEN', 'Only traders can place orders on their own account.');
     if (!automation) await this.consent.assertConsented(actor); // rules accepted for this signed-in session
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) throw badInput('Quantity must be a positive whole number.');
@@ -195,7 +196,7 @@ export class OrdersService implements OnModuleInit {
       if (input.quantity < cfgMin) reject = `Minimum quantity is ${cfgMin}.`;
       else if (input.quantity > cfgMax) reject = `Maximum ${cfgMax} per order.`;
       else if (abs(after) > cfgMaxPos) reject = `Position limit is ${cfgMaxPos} for this instrument.`;
-      else if (closed) reject = closed;
+      else if (closed && automation?.reason !== 'eod') reject = closed; // the end-of-day cut runs at (and just after) the close
       else if (input.side === 'SELL' && net <= 0)
         reject = 'Cannot sell without holding an open buy position. Please buy first.';
       else if (input.side === 'SELL' && input.quantity > net)
@@ -248,7 +249,7 @@ export class OrdersService implements OnModuleInit {
         entityId: o.id,
         outcome: reject ? 'DENIED' : 'SUCCESS',
         ip,
-        metadata: { symbol: inst.symbol, side: o.side, type: o.type, qty: o.quantity, limit: o.limitPriceMinor, trigger: o.triggerPriceMinor, status: final.status, reason: reject, venue: 'SIMULATED', strategyId: automation?.strategyId, ...(automation?.reason === 'risk' ? { autoCut: true } : {}) },
+        metadata: { symbol: inst.symbol, side: o.side, type: o.type, qty: o.quantity, limit: o.limitPriceMinor, trigger: o.triggerPriceMinor, status: final.status, reason: reject, venue: 'SIMULATED', strategyId: automation?.strategyId, ...(automation?.reason === 'risk' ? { autoCut: true } : automation?.reason === 'eod' ? { eodCut: true } : {}) },
       });
       return { order: final, replay: false };
     });
@@ -447,6 +448,33 @@ export class OrdersService implements OnModuleInit {
       await this.audit.record(tx, { actor, action: 'position.carry_forward', entityType: 'position', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { symbol: inst?.symbol, qty: p.netQty, cfMargin: cfMargin.toString(), day: today } });
       return { position: u, marginMinor: cfMargin };
     });
+  }
+
+  /** Exit every open position of the signed-in trader at market (one click "Square off all"). */
+  async squareOffAll(actor: Actor, ip: string) {
+    const open = await this.dbs.db.select().from(positions).where(and(eq(positions.userId, actor.userId), eq(positions.mode, 'SIMULATED'), sql`${positions.netQty} <> 0`));
+    // Market closed: nothing is exited (same rule as a normal order).
+    for (const ex of new Set(open.map((p) => this.market.instrument(p.instrumentId)?.exchange).filter((x): x is string => !!x))) {
+      const reason = await this.closedReason(ex);
+      if (reason) throw badInput(reason);
+    }
+    const maxQty = await this.config.get('trading.maxQtyPerOrder');
+    const closed: string[] = [];
+    const failed: string[] = [];
+    for (const p of open) {
+      const sym = this.market.instrument(p.instrumentId)?.symbol ?? p.instrumentId;
+      let left = abs(p.netQty);
+      while (left > 0) {
+        const qty = Math.min(left, maxQty);
+        const o = await this.place(actor, { instrumentId: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', type: 'MARKET', quantity: qty, idempotencyKey: `sqoff-${randomUUID()}` }, ip)
+          .catch((e: Error) => ({ status: 'ERROR', rejectReason: e.message }) as const);
+        if (o.status !== 'FILLED') { failed.push(`${sym}: ${o.rejectReason ?? o.status}`); break; }
+        left -= qty;
+      }
+      if (left === 0) closed.push(sym);
+    }
+    await this.dbs.db.transaction((tx) => this.audit.record(tx, { actor, action: 'position.square_off_all', entityType: 'user', entityId: actor.userId, outcome: failed.length ? 'FAILURE' : 'SUCCESS', ip, metadata: { closed, failed } }));
+    return { closed, failed };
   }
 
   /** Turn carry forward off: the position is intraday again and the extra margin is released. */

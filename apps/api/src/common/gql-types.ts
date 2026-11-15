@@ -167,6 +167,12 @@ export class Position {
 }
 
 @ObjectType()
+export class SquareOffResult {
+  @Field(() => [String], { description: 'Symbols fully closed.' }) closed: string[];
+  @Field(() => [String], { description: 'Positions that could not be closed, with the reason.' }) failed: string[];
+}
+
+@ObjectType()
 export class OrderPreview {
   @Field() price: string;
   @Field() value: string;

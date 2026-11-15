@@ -43,6 +43,7 @@ import { MarketResolver } from './market/market.resolver';
 import { AlgoResolver } from './algo/algo.resolver';
 import { AlgoRunnerService } from './algo/algo-runner.service';
 import { RiskService } from './risk/risk.service';
+import { EodCutService } from './risk/eod-cut.service';
 import { RiskResolver } from './risk/risk.resolver';
 import { AlgoService } from './algo/algo.service';
 import { NotificationsService } from './notifications/notifications.service';
@@ -221,6 +222,7 @@ function formatError(f: GraphQLFormattedError, err: unknown): GraphQLFormattedEr
     AlgoService,
     AlgoRunnerService,
     RiskService,
+    EodCutService,
     RiskResolver,
     AlgoResolver,
     TradingResolver,
