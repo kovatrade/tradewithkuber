@@ -1050,3 +1050,23 @@ tr.clickable { cursor: pointer; }
   .cols .metric .v { white-space: normal; overflow-wrap: anywhere; font-size: 18px; overflow-wrap: anywhere; }
 }
 @media (max-width: 360px) { .cols .metric .v { white-space: normal; overflow-wrap: anywhere; font-size: 16px; } }
+
+/* Funds page: compact Pay fees cards and bill download. */
+.fee-card { padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.fee-top { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
+.fee-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--s3); margin: 0; font-size: 13px; align-items: center; }
+.fee-kv dt { white-space: nowrap; }
+.fee-kv dd { margin: 0; display: flex; align-items: center; gap: 2px; min-width: 0; }
+.fee-kv dd > span { overflow-wrap: anywhere; }
+.fee-copy { width: 26px; height: 26px; flex: none; }
+.fee-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: 2px; }
+.fee-history .list-row { padding: var(--s2) var(--s4); gap: var(--s2); min-height: 0; }
+.fee-more { margin: 2px var(--s3) var(--s2); align-self: flex-start; }
+.fee-link { background: none; border: 0; padding: 0; font: inherit; color: var(--brand); cursor: pointer; font-weight: 600; }
+.fee-link:hover { text-decoration: underline; }
+.fee-line { display: flex; justify-content: space-between; align-items: center; gap: var(--s2); }
+.fee-line .badge { flex: none; }
+.fee-history { display: flex; flex-direction: column; }
+.stmt-row { display: flex; flex-direction: column; gap: var(--s2); }
+.funds-page .section { gap: var(--s2); }
+@media (max-width: 720px) { .funds-page { gap: 16px !important; } .fee-card { padding: var(--s3); } }

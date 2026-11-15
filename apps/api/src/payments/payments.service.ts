@@ -66,6 +66,8 @@ export class PaymentsService {
       const [u] = await tx.select().from(users).where(eq(users.id, userId));
       if (!u || u.role !== 'TRADER') throw notFound('Account');
       if (u.status !== 'ACTIVE') throw badInput('Account is not active.');
+      // Demo balances are practice money: only a Super Admin may adjust them.
+      if (u.isDemo && actor.role !== 'SUPER_ADMIN') throw forbidden('Adding funds and withdrawing are not available in demo accounts.');
 
       if (input.type === 'WITHDRAWAL') {
         const cash = await this.ledger.cashAccount(tx, userId, u.mode);

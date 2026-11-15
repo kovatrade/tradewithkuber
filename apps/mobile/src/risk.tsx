@@ -28,7 +28,7 @@ export function RiskBanner() {
   if (!r || level === 'OK') return null;
   const pct = Math.floor(r.lossPct);
   return (
-    <Pressable accessibilityRole="alert" onPress={() => router.push('/trade')} style={{ flexDirection: 'row', gap: S[2], backgroundColor: t.neg, borderRadius: R.md, padding: S[3], alignItems: 'flex-start' }}>
+    <Pressable accessibilityRole="alert" onPress={() => router.push('/funds')} style={{ flexDirection: 'row', gap: S[2], backgroundColor: t.neg, borderRadius: R.md, padding: S[3], alignItems: 'flex-start' }}>
       <Icon name="alert" size={20} color="#fff" />
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={{ color: '#fff', fontWeight: '700', fontSize: FS.md }}>{level === 'CUT' ? 'Trades cut automatically' : `Loss alert: ${pct}% of your funds`}</Text>

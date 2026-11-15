@@ -43,17 +43,18 @@ export function Statement({ userId }: { userId?: string }) {
   };
   return (
     <section className="section" id="statements">
-      <SectionHead title="Bill download"><span className="t3 sm">PDF statement</span></SectionHead>
-      <Chips label="Statement period" value={p} onChange={setP} items={(Object.keys(STMT) as SP[]).map((k) => ({ v: k, label: STMT[k] }))} />
-      {p === 'custom' && (
-        <div className="row" style={{ alignItems: 'flex-end' }}>
-          <div className="field"><label htmlFor="sf">From</label><input id="sf" type="date" className="input" max={ct || today} value={cf} onChange={(e) => setCf(e.target.value)} /></div>
-          <div className="field"><label htmlFor="st">To</label><input id="st" type="date" className="input" min={cf} max={today} value={ct} onChange={(e) => setCt(e.target.value)} /></div>
-        </div>
-      )}
-      <div className="spread">
-        <span className="t2 sm">{bad ? 'Choose a start date on or before the end date.' : `${new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · opening & closing balance, every transaction and trade`}</span>
-        <button className="btn btn-primary" disabled={bad || busy} onClick={() => void download()}><Icon name="download" size={18} />{busy ? 'Preparing…' : 'Download PDF'}</button>
+      <SectionHead title="Bill download">
+        <button className="btn btn-sm btn-primary" disabled={bad || busy} onClick={() => void download()}><Icon name="download" size={16} />{busy ? 'Preparing…' : 'Download PDF'}</button>
+      </SectionHead>
+      <div className="stmt-row">
+        <Chips label="Statement period" value={p} onChange={setP} items={(Object.keys(STMT) as SP[]).map((k) => ({ v: k, label: STMT[k] }))} />
+        {p === 'custom' && (
+          <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+            <div className="field"><label htmlFor="sf">From</label><input id="sf" type="date" className="input" max={ct || today} value={cf} onChange={(e) => setCf(e.target.value)} /></div>
+            <div className="field"><label htmlFor="st">To</label><input id="st" type="date" className="input" min={cf} max={today} value={ct} onChange={(e) => setCt(e.target.value)} /></div>
+          </div>
+        )}
+        <span className="t3 xs">{bad ? 'Choose a start date on or before the end date.' : `${new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · PDF with balances, transactions and trades`}</span>
       </div>
     </section>
   );

@@ -632,7 +632,7 @@ export function ProfileView() {
   const [others, setOthers] = useState(false);
   const [terms, setTerms] = useState(false);
   const role = me?.role === 'SUPER_ADMIN' ? 'Super Admin' : me?.role === 'BROKER' ? 'Broker' : 'Trader';
-  const Item = ({ icon, label, sub, onPress }: { icon: 'key' | 'book' | 'chat' | 'shield' | 'file' | 'alert' | 'download' | 'activity' | 'device' | 'lock' | 'fingerprint'; label: string; sub?: string; onPress?: () => void }) => (
+  const Item = ({ icon, label, sub, onPress }: { icon: 'key' | 'book' | 'chat' | 'shield' | 'file' | 'alert' | 'download' | 'activity' | 'device' | 'lock' | 'fingerprint' | 'wallet'; label: string; sub?: string; onPress?: () => void }) => (
     <ListRow onPress={onPress} label={label} left={<IconMark icon={icon} />} title={label} sub={sub} right={onPress ? <Icon name="chevronRight" size={18} color={t.text3} /> : undefined} />
   );
   return (
@@ -651,7 +651,9 @@ export function ProfileView() {
         <Item icon="lock" label="Login history" sub="Sign-ins and failed attempts, and the rules you accepted" onPress={() => router.push('/logins')} />
         <Item icon="activity" label="Account activity" sub="Every action with time, IP and device" onPress={() => router.push('/activity')} />
         {me?.role === 'TRADER' && <>
-          <Item icon="file" label="Ledger history" sub="Every credit and debit on your account" onPress={() => router.push('/ledger')} />
+          <Item icon="wallet" label="Funds" sub="Balance, add funds, withdraw, pay fees and P&L" onPress={() => router.push('/funds')} />
+          <Item icon="file" label="Transactions" sub="Every credit and debit on your account" onPress={() => router.push('/ledger')} />
+          <Item icon="wallet" label="Fund requests" sub="Your add-funds and withdrawal requests and their status" onPress={() => router.push('/fund-requests')} />
           <Item icon="alert" label="Rejection logs" sub="Rejected and cancelled orders, with the reason" onPress={() => router.push('/rejections')} />
           <Item icon="download" label="Bill download" sub="Statement PDF by week or custom dates" onPress={() => router.push('/statement')} />
         </>}

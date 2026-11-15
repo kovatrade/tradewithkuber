@@ -31,16 +31,18 @@ export function UpiQr({ upiId, name, size = 180 }: { upiId: string; name: string
   );
 }
 
-function CopyRow({ k, v }: { k: string; v?: string }) {
+/** One label/value pair in the compact payee card, with a small copy button. */
+function KV({ k, v }: { k: string; v?: string }) {
   const toast = useToast();
   if (!v) return null;
   return (
-    <li>
-      <span className="t2">{k}</span>
-      <span className="row" style={{ gap: 6 }}><span className="num w6">{v}</span>
-        <button type="button" className="icon-btn" aria-label={`Copy ${k}`} title="Copy" onClick={() => { void navigator.clipboard?.writeText(v).then(() => toast(`${k} copied`)); }}><Icon name="file" size={16} /></button>
-      </span>
-    </li>
+    <>
+      <dt className="t2">{k}</dt>
+      <dd>
+        <span className="num w6">{v}</span>
+        <button type="button" className="icon-btn fee-copy" aria-label={`Copy ${k}`} title="Copy" onClick={() => { void navigator.clipboard?.writeText(v).then(() => toast(`${k} copied`)); }}><Icon name="file" size={14} /></button>
+      </dd>
+    </>
   );
 }
 
@@ -50,26 +52,35 @@ export function PayFees() {
   const mine = useQuery<{ feePayments: Fee[] }>(`{ feePayments(limit:50) { ${FEE_FIELDS} } }`);
   const [form, setForm] = useState<Payee | null>(null);
   const [show, setShow] = useState<Fee | null>(null);
+  const [qr, setQr] = useState<string | null>(null); // payee whose UPI QR is open (hidden by default to save space)
+  const [allFees, setAllFees] = useState(false);
   const list = payees.data?.payeeAccounts ?? [];
   if (payees.loading && !payees.data) return null;
   if (payees.error && !payees.data) return <ErrorState error={payees.error} retry={payees.refetch} />;
   if (!list.length && !(mine.data?.feePayments.length)) return null;
+  const fees = mine.data?.feePayments ?? [];
+  const shown = allFees ? fees : fees.slice(0, 3);
   return (
     <section className="section">
-      <SectionHead title="Pay fees" />
-      <p className="t2 sm" style={{ margin: 0 }}>Course and subscription fees are paid to the account below. Pay, then tap <b>I’ve paid</b> and attach the payment screenshot.</p>
-      {payees.error && !payees.data ? <ErrorState error={payees.error} retry={payees.refetch} /> : (
+      <SectionHead title="Pay fees"><span className="t3 sm">Pay, then tap <b>I’ve paid</b> and attach the screenshot</span></SectionHead>
+      {payees.error && !payees.data ? <ErrorState error={payees.error} retry={payees.refetch} /> : list.length > 0 && (
         <div className="fee-grid">
           {list.map((p) => (
-            <div key={p.id} className="panel panel-pad stack" style={{ gap: 10 }}>
-              <div className="row" style={{ justifyContent: 'space-between' }}><span className="w6">{p.label}</span><span className="badge">{p.kind === 'UPI' ? 'UPI' : 'Bank transfer'}</span></div>
-              <ul className="confirm-lines" style={{ margin: 0 }}>
-                <CopyRow k="Name" v={p.accountName} />
-                {p.accountNumber && <><CopyRow k="Account number" v={p.accountNumber} /><CopyRow k="IFSC" v={p.ifsc} /><CopyRow k="Bank" v={p.bankName} /><CopyRow k="Branch" v={p.branch} /></>}
-                {p.upiId && <CopyRow k="UPI ID" v={p.upiId} />}
-              </ul>
-              {p.upiId && <UpiQr upiId={p.upiId} name={p.accountName} />}
-              <div className="row" style={{ gap: 8 }}>
+            <div key={p.id} className="panel fee-card">
+              <div className="fee-top">
+                <span className="w6">{p.label}</span>
+                <span className="row" style={{ gap: 6 }}>
+                  {p.upiId && <button type="button" className="fee-link sm" aria-expanded={qr === p.id} onClick={() => setQr(qr === p.id ? null : p.id)}>{qr === p.id ? 'Hide QR' : 'QR code'}</button>}
+                  <span className="badge">{p.kind === 'UPI' ? 'UPI' : 'Bank transfer'}</span>
+                </span>
+              </div>
+              <dl className="fee-kv">
+                <KV k="Name" v={p.accountName} />
+                {p.accountNumber && <><KV k="A/c no." v={p.accountNumber} /><KV k="IFSC" v={p.ifsc} /><KV k="Bank" v={[p.bankName, p.branch].filter(Boolean).join(', ')} /></>}
+                {p.upiId && <KV k="UPI ID" v={p.upiId} />}
+              </dl>
+              {p.upiId && qr === p.id && <UpiQr upiId={p.upiId} name={p.accountName} size={150} />}
+              <div className="fee-actions">
                 {p.upiId && <a className="btn btn-sm" href={upiLink(p.upiId, p.accountName)}>Pay with UPI app</a>}
                 <button className="btn btn-sm btn-primary" onClick={() => setForm(p)}>I’ve paid</button>
               </div>
@@ -77,18 +88,23 @@ export function PayFees() {
           ))}
         </div>
       )}
-      {(mine.data?.feePayments.length ?? 0) > 0 && (
-        <div className="panel"><div className="list list-pad">
-          {mine.data!.feePayments.map((f) => {
+      {fees.length > 0 && (
+        <div className="panel"><div className="list fee-history">
+          {shown.map((f) => {
             const [label, tone] = FEE_STATUS[f.status] ?? [f.status, ''];
             return (
               <div key={f.id} className="list-row">
-                <div className="grow"><div className="w6">₹{inr(f.amount)} · {f.purpose}</div><div className="t3 sm">Ref {f.utr} · {when(f.createdAt)} · to {f.payee}{f.reviewNote ? ` · ${f.reviewNote}` : ''}</div></div>
-                {f.hasProof && <button className="btn btn-sm btn-ghost" onClick={() => setShow(f)}>Screenshot</button>}
-                <span className={`badge ${tone}`}>{label}</span>
+                <div className="grow">
+                  <div className="fee-line"><span className="w6 sm">₹{inr(f.amount)} · {f.purpose}</span><span className={`badge ${tone}`}>{label}</span></div>
+                  <div className="t3 xs">
+                    Ref {f.utr} · {when(f.createdAt)} · to {f.payee}{f.reviewNote ? ` · ${f.reviewNote}` : ''}
+                    {f.hasProof && <> · <button type="button" className="fee-link" onClick={() => setShow(f)}>Screenshot</button></>}
+                  </div>
+                </div>
               </div>
             );
           })}
+          {fees.length > 3 && <button type="button" className="btn btn-sm btn-ghost fee-more" onClick={() => setAllFees(!allFees)}>{allFees ? 'Show less' : `Show all ${fees.length} payments`}</button>}
         </div></div>
       )}
       {show && <ProofDialog f={show} onClose={() => setShow(null)} />}

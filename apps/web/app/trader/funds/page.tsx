@@ -31,7 +31,7 @@ export default function Funds() {
   const sum = useQuery<{ periodSummary: { realizedPnl: string; brokerage: string; trades: number; volume: string } }>(`query($f:DateTime!,$t:DateTime!){ periodSummary(from:$f,to:$t){ realizedPnl brokerage trades volume } }`, r, { skip: badRange });
   const s = sum.data?.periodSummary;
   return (
-    <div className="stack" style={{ gap: 40 }}>
+    <div className="stack funds-page" style={{ gap: 24 }}>
       <PortfolioSummary actions title="Available balance" />
       <section className="section">
         <SectionHead title="Profit & loss"><Chips label="Period" value={p} onChange={setP} items={(Object.keys(PERIODS) as P[]).map((k) => ({ v: k, label: PERIODS[k] }))} /></SectionHead>

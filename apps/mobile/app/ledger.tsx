@@ -2,5 +2,5 @@ import { LedgerList } from '@/screens';
 import { Screen } from '@/ui';
 
 export default function Ledger() {
-  return <Screen back title="Ledger history" scroll={false}><LedgerList virtual /></Screen>;
+  return <Screen back title="Transactions" scroll={false}><LedgerList virtual /></Screen>;
 }

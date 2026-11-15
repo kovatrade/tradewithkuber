@@ -196,8 +196,11 @@ export function useSummary(userId?: string) {
 export function PortfolioSummary({ userId, actions, title = 'Available to trade', compact, detail, addScript }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean }) {
   const { data, loading, error, refetch } = useSummary(userId);
   const [pay, setPay] = useState<'DEPOSIT' | 'WITHDRAWAL' | null>(null);
-  const showFees = useAuth().me?.role !== 'TRADER'; // brokerage is not shown to traders (staff still see it)
+  const me = useAuth().me;
+  const showFees = me?.role !== 'TRADER'; // brokerage is not shown to traders (staff still see it)
   const scriptAction = addScript || (!showFees && !userId);
+  // A demo trader can't add or withdraw money: show a short notice instead of the payment form.
+  const demo = !!me?.isDemo && !userId;
   if (compact) {
     if (loading && !data) return <div className="panel bal-card"><div className="skeleton" style={{ width: 120, height: 12 }} /><div className="skeleton" style={{ width: 180, height: 26, marginTop: 8 }} /></div>;
     if (error && !data) return <ErrorState error={error} retry={refetch} />;
@@ -228,7 +231,7 @@ export function PortfolioSummary({ userId, actions, title = 'Available to trade'
             <button className="btn btn-sm btn-primary" onClick={() => setPay('DEPOSIT')}>{!scriptAction && <Icon name="plus" size={16} />}Add funds</button>
           </div>
         )}
-        {pay && <PaymentDialog type={pay} userId={userId} onClose={() => setPay(null)} onDone={refetch} available={c.available} />}
+        {pay && (demo ? <DemoFundsNotice type={pay} onClose={() => setPay(null)} /> : <PaymentDialog type={pay} userId={userId} onClose={() => setPay(null)} onDone={refetch} available={c.available} />)}
       </section>
     );
   }
@@ -264,12 +267,27 @@ export function PortfolioSummary({ userId, actions, title = 'Available to trade'
           ...(showFees ? [{ k: 'Brokerage paid', v: `₹${inr(s.fees)}` }] : []),
         ]}
       />
-      {pay && <PaymentDialog type={pay} userId={userId} onClose={() => setPay(null)} onDone={refetch} available={s.available} />}
+      {pay && (demo ? <DemoFundsNotice type={pay} onClose={() => setPay(null)} /> : <PaymentDialog type={pay} userId={userId} onClose={() => setPay(null)} onDone={refetch} available={s.available} />)}
     </section>
   );
 }
 
 /* ======================================================================= payment request */
+/** Shown to demo accounts instead of the Add funds / Withdraw form. */
+function DemoFundsNotice({ type, onClose }: { type: 'DEPOSIT' | 'WITHDRAWAL'; onClose: () => void }) {
+  return (
+    <Dialog title={type === 'DEPOSIT' ? 'Add funds is not available' : 'Withdraw is not available'} sub="Demo account" size="sm" onClose={onClose}>
+      <p style={{ margin: '4px 0 16px' }}>
+        This is a demo account, so you're not authorised to {type === 'DEPOSIT' ? 'add funds' : 'withdraw funds'}. Your demo balance is only for practice trading.
+      </p>
+      <p className="t2 sm" style={{ margin: '0 0 16px' }}>To trade with your own funds, please contact your broker or the administrator for a live account.</p>
+      <div className="row" style={{ justifyContent: 'flex-end' }}>
+        <button className="btn btn-primary" onClick={onClose}>OK, got it</button>
+      </div>
+    </Dialog>
+  );
+}
+
 export function PaymentDialog({ type, userId, onClose, onDone, available }: { type: 'DEPOSIT' | 'WITHDRAWAL'; userId?: string; onClose: () => void; onDone?: () => void; available?: string }) {
   const [amount, setAmount] = useState('');
   const [touched, setTouched] = useState(false);
