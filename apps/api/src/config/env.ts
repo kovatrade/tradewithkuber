@@ -62,6 +62,8 @@ const schema = z
     // App downloads page: folder on a persistent disk for uploaded Android APKs (e.g. a Render Disk at /var/data).
     APP_FILES_DIR: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
     APK_MAX_MB: z.coerce.number().int().min(10).max(1024).default(300),
+    // GitHub Actions publishes each new APK to the download page with this token (same value as the repo secret).
+    APP_RELEASE_CI_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
 
     /** 'config' = use trading.marketHours; 'always_open' = ignore sessions (development/testing only). */
     MARKET_HOURS: z.enum(['config', 'always_open']).default('config'),

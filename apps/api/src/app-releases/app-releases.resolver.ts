@@ -31,6 +31,7 @@ class AppDownloads {
 class AppReleaseAdmin {
   @Field({ description: 'False until a persistent disk is attached and APP_FILES_DIR is set.' }) uploadsEnabled: boolean;
   @Field(() => Int) maxUploadMb: number;
+  @Field({ description: 'True when GitHub Actions can publish new APKs automatically (APP_RELEASE_CI_TOKEN is set).' }) autoPublish: boolean;
   @Field(() => [AppRelease]) history: AppRelease[];
 }
 
@@ -62,7 +63,7 @@ export class AppReleasesResolver {
   @Roles('SUPER_ADMIN')
   @Query(() => AppReleaseAdmin, { description: 'Super Admin: release history and whether uploads are set up.' })
   async appReleases(@Args('limit', { type: () => Int, nullable: true }) limit?: number): Promise<AppReleaseAdmin> {
-    return { uploadsEnabled: !!this.releases.filesDir, maxUploadMb: env().APK_MAX_MB, history: (await this.releases.history(limit ?? 30)).map(toRelease) };
+    return { uploadsEnabled: !!this.releases.filesDir, maxUploadMb: env().APK_MAX_MB, autoPublish: !!env().APP_RELEASE_CI_TOKEN, history: (await this.releases.history(limit ?? 30)).map(toRelease) };
   }
 
   @Roles('SUPER_ADMIN')

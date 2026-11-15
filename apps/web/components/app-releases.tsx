@@ -14,7 +14,7 @@ export const day = (d: string) => new Date(d).toLocaleDateString('en-IN', { day:
 
 /* ================================================================== Super Admin: App downloads */
 export function AppReleasesAdmin() {
-  const q = useQuery<{ appReleases: { uploadsEnabled: boolean; maxUploadMb: number; history: AppRelease[] } }>(`{ appReleases(limit:30){ uploadsEnabled maxUploadMb history{ ${RELEASE_FIELDS} } } }`);
+  const q = useQuery<{ appReleases: { uploadsEnabled: boolean; maxUploadMb: number; autoPublish: boolean; history: AppRelease[] } }>(`{ appReleases(limit:30){ uploadsEnabled maxUploadMb autoPublish history{ ${RELEASE_FIELDS} } } }`);
   const toast = useToast();
   const [origin, setOrigin] = useState('');
   useEffect(() => setOrigin(window.location.origin), []);
@@ -34,6 +34,11 @@ export function AppReleasesAdmin() {
           <a className="w6" href="/download" target="_blank" rel="noreferrer" style={{ overflowWrap: 'anywhere' }}>{link}</a>
         </div>
         <button className="btn btn-sm" onClick={() => { void navigator.clipboard?.writeText(link).then(() => toast('Link copied')); }}><Icon name="file" size={16} />Copy link</button>
+      </div>
+      <div className={`notice ${d.autoPublish && d.uploadsEnabled ? 'ok' : 'info'}`}>
+        {d.autoPublish && d.uploadsEnabled
+          ? 'Automatic publishing is on: every Android build from GitHub Actions (push to main) appears here and on the download page by itself. You can still upload an APK by hand.'
+          : 'Automatic publishing is off. To publish every GitHub Actions build by itself, set APP_RELEASE_CI_TOKEN on the server and the same value as the APP_RELEASE_TOKEN secret in GitHub.'}
       </div>
       <div className="fee-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(340px, 100%), 1fr))' }}>
         <AndroidUpload enabled={d.uploadsEnabled} maxMb={d.maxUploadMb} onDone={() => void q.refetch()} />

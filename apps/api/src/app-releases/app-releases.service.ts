@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { and, desc, eq } from 'drizzle-orm';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
@@ -14,9 +14,11 @@ import { appReleases, type AppReleaseRow } from '../db/schema';
 
 const LINK_TTL_SEC = 15 * 60; // time to start a (large) upload
 const KEEP_APKS = 3; // older APK files are removed from the disk; their history rows stay
-const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_ -]{0,39}$/;
+const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_ ()-]{0,39}$/;
 
 interface UploadClaims { sub: string; role: string; version: string; notes?: string; purpose: 'apk-upload' }
+/** Who is publishing: a Super Admin (signed link) or the CI build (token). */
+type Publisher = { userId: string | null; version: string; notes?: string; source: 'admin' | 'github-actions' };
 
 /**
  * App downloads page. Android: a Super Admin uploads the APK through a short-lived signed link (the file streams
@@ -67,8 +69,28 @@ export class AppReleasesService {
     }
   }
 
-  /** Step 2: stream the request body to disk, check it is an APK (zip), record it. */
-  async receiveApk(claims: UploadClaims, body: Readable, declaredLength: number | undefined, ip: string) {
+  /** CI publishing: the build pipeline sends the APK with APP_RELEASE_CI_TOKEN (constant-time compared). */
+  verifyCiToken(header: string | undefined) {
+    const want = env().APP_RELEASE_CI_TOKEN;
+    const got = (header ?? '').replace(/^Bearer\s+/i, '');
+    if (!want) throw new AppError('UNAUTHENTICATED', 'Automatic publishing is not set up: APP_RELEASE_CI_TOKEN is missing on the server.');
+    const a = Buffer.from(createHash('sha256').update(got).digest('hex'));
+    const b = Buffer.from(createHash('sha256').update(want).digest('hex'));
+    if (!got || !timingSafeEqual(a, b)) throw new AppError('UNAUTHENTICATED', 'Invalid publishing token.');
+  }
+
+  receiveFromCi(version: string, notes: string | undefined, body: Readable, declaredLength: number | undefined, ip: string) {
+    const v = version.trim();
+    if (!VERSION_RE.test(v)) throw badInput('Version: up to 40 characters, e.g. 1.4.2 (build 37).');
+    return this.store({ userId: null, version: v, notes: notes?.trim().slice(0, 500) || undefined, source: 'github-actions' }, body, declaredLength, ip);
+  }
+
+  /** Step 2 of an admin upload: stream the request body to disk, check it is an APK (zip), record it. */
+  receiveApk(claims: UploadClaims, body: Readable, declaredLength: number | undefined, ip: string) {
+    return this.store({ userId: claims.sub, version: claims.version, notes: claims.notes, source: 'admin' }, body, declaredLength, ip);
+  }
+
+  private async store(who: Publisher, body: Readable, declaredLength: number | undefined, ip: string) {
     const dir = this.filesDir;
     if (!dir) throw badInput('APK upload is not set up on this server.');
     const max = env().APK_MAX_MB * 1024 * 1024;
@@ -102,11 +124,11 @@ export class AppReleasesService {
       throw e;
     }
     const sha256 = hash.digest('hex');
-    const fileName = `TheK-${claims.version.replace(/[^0-9A-Za-z.]+/g, '-')}.apk`;
-    const actor: Pick<Actor, 'userId' | 'role'> = { userId: claims.sub, role: 'SUPER_ADMIN' };
+    const fileName = `TheK-${who.version.replace(/[^0-9A-Za-z.]+/g, '-').replace(/-+$/, '')}.apk`;
+    const actor: Pick<Actor, 'userId' | 'role'> | null = who.userId ? { userId: who.userId, role: 'SUPER_ADMIN' } : null;
     const row = await this.dbs.db.transaction(async (tx) => {
-      const [r] = await tx.insert(appReleases).values({ platform: 'ANDROID', version: claims.version, notes: claims.notes, fileName, fileSize: size, sha256, storageKey: key, createdById: claims.sub }).returning();
-      await this.audit.record(tx, { actor, action: 'app_release.android_uploaded', entityType: 'app_release', entityId: r.id, outcome: 'SUCCESS', ip, metadata: { version: claims.version, size, sha256 } });
+      const [r] = await tx.insert(appReleases).values({ platform: 'ANDROID', version: who.version, notes: who.notes, fileName, fileSize: size, sha256, storageKey: key, createdById: who.userId }).returning();
+      await this.audit.record(tx, { actor, action: 'app_release.android_uploaded', entityType: 'app_release', entityId: r.id, outcome: 'SUCCESS', ip, metadata: { version: who.version, size, sha256, source: who.source } });
       return r;
     });
     void this.prune().catch((e) => this.log.warn(`Could not remove old APK files: ${(e as Error).message}`));
