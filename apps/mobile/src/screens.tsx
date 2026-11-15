@@ -895,7 +895,7 @@ interface Sess { id: string; deviceName?: string; ip?: string; lastUsedAt: strin
 export function ProfileView() {
   const t = useTheme();
   const { me, signOut, settings, quick } = useAuth();
-  const sessions = useQuery<{ mySessions: Sess[] }>(`{ mySessions { id deviceName ip lastUsedAt current } }`);
+  const sessions = useQuery<{ mySessions: Sess[] }>(`{ mySessions { id deviceName ip lastUsedAt current } }`, undefined, undefined, me?.role === 'TRADER'); // traders don't see signed-in devices
   const [pw, setPw] = useState(false);
   const [mfa, setMfa] = useState(false);
   const [others, setOthers] = useState(false);
@@ -905,7 +905,13 @@ export function ProfileView() {
     <ListRow onPress={onPress} label={label} left={<IconMark icon={icon} />} title={label} sub={sub} right={onPress ? <Icon name="chevronRight" size={18} color={t.text3} /> : undefined} />
   );
   return (
-    <Screen title="Settings" onRefresh={sessions.refetch}>
+    <Screen title="Settings" onRefresh={sessions.refetch} right={me?.role !== 'SUPER_ADMIN' ? (
+      // Red reset button, opposite the logo: opens the account reset request (staff approve it).
+      <Pressable onPress={() => router.push('/wipe')} accessibilityRole="button" accessibilityLabel="Reset account" hitSlop={6}
+        style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, marginRight: S[2], backgroundColor: t.neg, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
+        <Icon name="refresh" size={20} color="#fff" strokeWidth={2.2} />
+      </Pressable>
+    ) : undefined}>
       <Row>
         <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: t.brandSoft, alignItems: 'center', justifyContent: 'center' }}><T v="h3" c="brand">{initials(me?.displayName ?? '')}</T></View>
         <View style={{ flex: 1 }}><T v="h2">{me?.displayName}</T><T v="sm" c="text2">{me?.username} · {role}{me?.isDemo ? ' · demo' : ''}</T></View>
@@ -913,15 +919,15 @@ export function ProfileView() {
       <View>
         {me?.role === 'SUPER_ADMIN' && <Item icon="activity" label="Market data" onPress={() => router.push('/(admin)/market-data')} />}
         {me?.role === 'SUPER_ADMIN' && <Item icon="download" label="Commissions" onPress={() => router.push('/(admin)/commissions')} />}
-        <Item icon="shield" label="Two-step verification" sub={me?.mfaEnabled ? 'On. Your authenticator can recover a forgotten password' : 'Off. Tap to set it up'} onPress={me?.mfaEnabled || me?.isDemo ? undefined : () => setMfa(true)} />
+        {me?.role !== 'TRADER' && <Item icon="shield" label="Two-step verification" sub={me?.mfaEnabled ? 'On. Your authenticator can recover a forgotten password' : 'Off. Tap to set it up'} onPress={me?.mfaEnabled || me?.isDemo ? undefined : () => setMfa(true)} />}
         {!me?.isDemo && <Item icon="key" label="Change password" onPress={() => setPw(true)} />}
         {!me?.isDemo && me?.role !== 'SUPER_ADMIN' && <Item icon="fingerprint" label="MPIN & fingerprint" sub={quick?.owner.userId === me?.id ? (quick?.owner.biometric ? 'On: MPIN and fingerprint' : 'On: MPIN') : 'Off. Unlock without your password'} onPress={() => router.push('/quick-settings')} />}
         {me?.role !== 'SUPER_ADMIN' && <Item icon="alert" label="Request account reset" sub="Staff approval is required; historical data is retained" onPress={() => router.push('/wipe')} />}
-        <NotificationsItem />
+        {/* Traders don't see two-step verification, notifications, account activity or funds here. */}
+        {me?.role !== 'TRADER' && <NotificationsItem />}
         <Item icon="lock" label="Login history" sub="Sign-ins and failed attempts, and the rules you accepted" onPress={() => router.push('/logins')} />
-        <Item icon="activity" label="Account activity" sub="Every action with time, IP and device" onPress={() => router.push('/activity')} />
+        {me?.role !== 'TRADER' && <Item icon="activity" label="Account activity" sub="Every action with time, IP and device" onPress={() => router.push('/activity')} />}
         {me?.role === 'TRADER' && <>
-          <Item icon="wallet" label="Funds" sub="Balance, add funds, withdraw, pay fees and P&L" onPress={() => router.push('/funds')} />
           <Item icon="file" label="Transactions" sub="Every credit and debit on your account" onPress={() => router.push('/ledger')} />
           <Item icon="wallet" label="Fund requests" sub="Your add-funds and withdrawal requests and their status" onPress={() => router.push('/fund-requests')} />
           <Item icon="alert" label="Rejection logs" sub="Rejected and cancelled orders, with the reason" onPress={() => router.push('/rejections')} />
@@ -931,12 +937,12 @@ export function ProfileView() {
         {!!settings?.helplineUrl && <Item icon="chat" label="Contact support" sub="Chat with us" onPress={() => void Linking.openURL(settings.helplineUrl)} />}
       </View>
       <Preferences />
-      <Section title="Signed-in devices" action={(sessions.data?.mySessions.length ?? 0) > 1 ? <Button size="sm" kind="ghost" title="Sign out others" onPress={() => setOthers(true)} /> : undefined}>
+      {me?.role !== 'TRADER' && <Section title="Signed-in devices" action={(sessions.data?.mySessions.length ?? 0) > 1 ? <Button size="sm" kind="ghost" title="Sign out others" onPress={() => setOthers(true)} /> : undefined}>
         {sessions.error && !sessions.data ? <ErrorState error={sessions.error} retry={sessions.refetch} /> : !sessions.data ? <Skeleton rows={2} /> : sessions.data.mySessions.map((s) => (
           <ListRow key={s.id} left={<IconMark icon="device" />} title={s.deviceName ?? 'Unknown device'} sub={`${s.ip ?? ''} · last active ${when(s.lastUsedAt)}`}
             right={s.current ? <Badge text="This device" tone="ok" /> : <Button size="sm" kind="danger" title="Sign out" onPress={async () => { try { await gql(`mutation($id:ID!){ revokeSession(sessionId:$id) }`, { id: s.id }); toast('Device signed out'); } catch (e) { toast((e as Error).message, true); } void sessions.refetch(); }} />} />
         ))}
-      </Section>
+      </Section>}
       <Button kind="danger" icon="logout" title="Sign out" size="lg" onPress={() => void signOut()} />
       <T v="xs" style={{ textAlign: 'center' }}>{settings?.appName ?? 'The K'} app {APP_VERSION} · API {settings?.apiVersion ?? '—'}</T>
       {pw && <ChangePassword onClose={() => setPw(false)} />}
@@ -1154,7 +1160,15 @@ function Seg<K extends string>({ value, items, onChange }: { value: K; items: [K
 }
 function Preferences() {
   const { prefs, set } = usePrefs();
-  const rows: { icon: 'sun' | 'eye' | 'activity' | 'sound' | 'type' | 'bold' | 'list'; t: string; s: string; c: React.ReactNode }[] = [
+  const { me } = useAuth();
+  const trader = me?.role === 'TRADER';
+  // Traders have no Bold numbers / Watchlist rows options: keep them on the defaults.
+  useEffect(() => {
+    if (!trader) return;
+    if (prefs.boldNumbers) set('boldNumbers', false);
+    if (prefs.watchlistView !== 'detailed') set('watchlistView', 'detailed');
+  }, [trader, prefs.boldNumbers, prefs.watchlistView, set]);
+  const all: { icon: 'sun' | 'eye' | 'activity' | 'sound' | 'type' | 'bold' | 'list'; t: string; s: string; c: React.ReactNode }[] = [
     { icon: 'sun', t: 'Theme', s: 'System follows your phone, or choose light or dark.', c: <Seg value={prefs.theme} onChange={(v) => set('theme', v)} items={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]} /> },
     { icon: 'eye', t: 'Hide balances', s: 'Mask all balance amounts.', c: <Switch label="Hide balances" on={prefs.hideBalances} onChange={(v) => set('hideBalances', v)} /> },
     { icon: 'activity', t: 'Charts', s: 'Show app charts where available.', c: <Switch label="Charts" on={prefs.charts} onChange={(v) => set('charts', v)} /> },
@@ -1163,6 +1177,7 @@ function Preferences() {
     { icon: 'bold', t: 'Bold numbers', s: 'Make all figures heavier and easier to read.', c: <Switch label="Bold numbers" on={prefs.boldNumbers} onChange={(v) => set('boldNumbers', v)} /> },
     { icon: 'list', t: 'Watchlist rows', s: 'Bid/ask boxes with day low/high, or simple.', c: <Seg value={prefs.watchlistView} onChange={(v) => set('watchlistView', v)} items={[['detailed', 'Bid/Ask'], ['simple', 'Simple']]} /> },
   ];
+  const rows = trader ? all.filter((x) => x.t !== 'Bold numbers' && x.t !== 'Watchlist rows') : all;
   return (
     <Section title="Preferences">
       {rows.map((r) => (
