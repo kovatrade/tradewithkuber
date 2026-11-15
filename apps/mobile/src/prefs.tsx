@@ -18,7 +18,7 @@ export interface Prefs {
   watchlistView: 'simple' | 'detailed';
 }
 export const DEFAULT_PREFS: Prefs = { theme: 'system', hideBalances: false, charts: true, sounds: true, numberSize: 'M', boldNumbers: false, watchlistView: 'detailed' };
-export const NUM_SCALE: Record<Prefs['numberSize'], number> = { S: 0.92, M: 1, L: 1.1, XL: 1.22 };
+export const NUM_SCALE: Record<Prefs['numberSize'], number> = { S: 0.85, M: 1, L: 1.18, XL: 1.36 };
 const KEY = 'td_prefs_v1';
 
 const store = {

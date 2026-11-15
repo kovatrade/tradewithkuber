@@ -1,11 +1,11 @@
-import { BellButton, PositionsList, SearchButton, SummaryBlock } from '@/screens';
+import { GuideButton, PositionsList, SummaryBlock } from '@/screens';
 import { RiskBanner } from '@/risk';
 import { Screen } from '@/ui';
 
-/** Positions only (trades are in the Trade tab). */
+/** Positions only (trades are in the Trade tab). Header: logo and the "नियम" (guidelines) button. */
 export default function Portfolio() {
   return (
-    <Screen title="Positions" right={<><SearchButton /><BellButton /></>}>
+    <Screen title="" right={<GuideButton />}>
       <RiskBanner />
       <SummaryBlock compact detail />
       <PositionsList canTrade />

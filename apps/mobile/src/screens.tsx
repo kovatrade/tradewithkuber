@@ -51,7 +51,8 @@ const scriptPrice = (value?: string) => inr(value).replace(/\.00$/, '');
 function BidAsk({ id, qq, onPick, compact, slim }: { id: string; qq?: Quote; onPick?: (side: 'BUY' | 'SELL') => void; compact?: boolean; slim?: boolean }) {
   const t = useTheme();
   const { width } = useWindowDimensions();
-  const columnWidth = Math.min(108, Math.max(68, (width - 100) * .25));
+  const { prefs } = usePrefs();
+  const columnWidth = Math.min(130, Math.max(68, (width - 100) * .25) * Math.max(1, NUM_SCALE[prefs.numberSize]));
   return (
     <>
       {(['SELL', 'BUY'] as const).map((sd) => {
@@ -61,7 +62,7 @@ function BidAsk({ id, qq, onPick, compact, slim }: { id: string; qq?: Quote; onP
             <Flash value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
               <View style={{ width: columnWidth, minHeight: slim ? 40 : CTL.tap, paddingVertical: slim ? 4 : compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
                 <T v="num" c={sd === 'BUY' ? 'text' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{ fontSize: compact ? 13 : 14, ...(sd === 'BUY' ? { color: '#fff' } : {}) }}>{scriptPrice(v)}</T>
-                {slim && <T v="xs" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 9, lineHeight: 11, ...(sd === 'BUY' ? { color: '#ffffffcc' } : {}) }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
+                {slim && <T v="xs" n numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 9, lineHeight: 11, ...(sd === 'BUY' ? { color: '#ffffffcc' } : {}) }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
               </View>
             </Flash>
             {!slim && <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center', fontSize: 10 }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
@@ -231,6 +232,57 @@ const THEME_INFO = {
 } as const;
 
 /** Header switch: System → Light → Dark. Same setting as Profile → Preferences → Theme. */
+/** Shown until the server sends its own list (Super Admin can edit it: Configuration → ui.guidelinesHi). */
+const DEFAULT_GUIDELINES_HI = [
+  'यह एप्लिकेशन केवल व्यक्तिगत विद्यार्थियों के लिए बाज़ार प्रशिक्षण के उद्देश्य से विचारों के आदान-प्रदान हेतु बनाया गया है।',
+  'सभी स्टॉप-लॉस (SL) और टेक-प्रॉफ़िट (TP) ऑर्डर अंतिम कारोबारी मूल्य (LTP) पर पास होंगे।',
+  'NSE पर ट्रेडिंग सुबह 9:17 बजे, MCX पर सुबह 9:02 बजे और अंतरराष्ट्रीय बाज़ार में सुबह 3:32 बजे शुरू होती है।',
+  'ऑर्डर देने से पहले स्क्रिप्ट, लॉट (Mini / Mega) और भाव ध्यान से जाँच लें।',
+  'अपना पासवर्ड, MPIN या OTP किसी के साथ साझा न करें।',
+  'किसी भी सहायता के लिए Settings में दिए गए सपोर्ट विकल्प का उपयोग करें।',
+];
+
+/** Header button "नियम": opens the guidelines in Hindi. */
+export function GuideButton() {
+  const t = useTheme();
+  const { settings } = useAuth();
+  const [open, setOpen] = useState(false);
+  const list = settings?.guidelinesHi?.length ? settings.guidelinesHi : DEFAULT_GUIDELINES_HI;
+  return (
+    <>
+      <Pressable onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel="नियम और दिशानिर्देश" hitSlop={6}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, marginRight: S[2], borderRadius: R.pill, borderWidth: 1, borderColor: t.brand, backgroundColor: pressed ? t.brandSoft : t.bg })}>
+        <Icon name="book" size={16} color={t.brand} />
+        <T v="sm" c="brand" w="700">नियम</T>
+      </Pressable>
+      <Sheet visible={open} title="नियम और दिशानिर्देश" sub="कृपया ट्रेड करने से पहले ध्यान से पढ़ें" onClose={() => setOpen(false)}>
+        {list.map((r, i) => (
+          <Row key={i} style={{ alignItems: 'flex-start' }}>
+            <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: t.brandSoft, alignItems: 'center', justifyContent: 'center' }}><T v="xs" c="brand" w="700">{i + 1}</T></View>
+            <T style={{ flex: 1, lineHeight: 22 }}>{r}</T>
+          </Row>
+        ))}
+        <Button block kind="primary" title="ठीक है" onPress={() => setOpen(false)} />
+      </Sheet>
+    </>
+  );
+}
+
+/** Header corner: the account ID (demo ID for demo accounts) with the time (IST) below it. */
+export function AccountClock() {
+  const { me } = useAuth();
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const h = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(h); }, []);
+  if (!me) return null;
+  const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+  return (
+    <View style={{ alignItems: 'flex-end', paddingRight: S[2], maxWidth: 170 }} accessibilityLabel={`${me.isDemo ? 'Demo ID' : 'Account'} ${me.username}, ${time}`}>
+      <T v="sm" w="700" numberOfLines={1}>{me.isDemo ? `Demo ID: ${me.username}` : me.username}</T>
+      <T v="xs" c="text2" numberOfLines={1} style={{ fontVariant: ['tabular-nums'] }}>{time}</T>
+    </View>
+  );
+}
+
 export function ThemeButton() {
   const t = useTheme();
   const { prefs, set } = usePrefs();
@@ -424,7 +476,7 @@ const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
           <T v="num" c={up ? 'pos' : 'neg'} numberOfLines={1} style={{ fontSize: 15, flexShrink: 0 }}>{scriptPrice(qq?.ltp)}</T>
-          <T v="xs" c={up ? 'pos' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, flexShrink: 1 }}>{qq?.change ? `${Number(qq.change) < 0 ? '\u25bc' : '\u25b2'} ${inr(qq.change, true)} (${inr(qq.changePct, true)}%)` : '\u2014'}</T>
+          <T v="xs" n c={up ? 'pos' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, flexShrink: 1 }}>{qq?.change ? `${Number(qq.change) < 0 ? '\u25bc' : '\u25b2'} ${inr(qq.change, true)} (${inr(qq.changePct, true)}%)` : '\u2014'}</T>
         </View>
       </Pressable>
       <BidAsk compact slim id={e.instrument.id} qq={qq} onPick={(sd) => onOpen(e.instrument.id, sd)} />
@@ -446,7 +498,7 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
   const { prefs } = usePrefs();
   const t = useTheme();
   const { width } = useWindowDimensions();
-  const columnWidth = Math.min(108, Math.max(68, (width - 100) * .25));
+  const columnWidth = Math.min(130, Math.max(68, (width - 100) * .25) * Math.max(1, NUM_SCALE[prefs.numberSize]));
   const detailed = !limit && prefs.watchlistView === 'detailed';
   const { data, error, loading, refetch } = useQuery<{ watchlist: WEntry[] }>(`query($l:Int!){ watchlist(listIndex:$l){ id instrument{ id symbol name exchange segment expiry category } quote{ ${QF} } } }`, { l: 0 });
   // Coming back from "Add script": reload so the scripts just added show up.
@@ -641,7 +693,7 @@ export function ProfileView() {
     <ListRow onPress={onPress} label={label} left={<IconMark icon={icon} />} title={label} sub={sub} right={onPress ? <Icon name="chevronRight" size={18} color={t.text3} /> : undefined} />
   );
   return (
-    <Screen title="Profile" right={<BellButton />} onRefresh={sessions.refetch}>
+    <Screen title="Settings" onRefresh={sessions.refetch}>
       <Row>
         <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: t.brandSoft, alignItems: 'center', justifyContent: 'center' }}><T v="h3" c="brand">{initials(me?.displayName ?? '')}</T></View>
         <View style={{ flex: 1 }}><T v="h2">{me?.displayName}</T><T v="sm" c="text2">{me?.username} · {role}{me?.isDemo ? ' · demo' : ''}</T></View>
@@ -653,6 +705,7 @@ export function ProfileView() {
         {!me?.isDemo && <Item icon="key" label="Change password" onPress={() => setPw(true)} />}
         {!me?.isDemo && me?.role !== 'SUPER_ADMIN' && <Item icon="fingerprint" label="MPIN & fingerprint" sub={quick?.owner.userId === me?.id ? (quick?.owner.biometric ? 'On: MPIN and fingerprint' : 'On: MPIN') : 'Off. Unlock without your password'} onPress={() => router.push('/quick-settings')} />}
         {me?.role !== 'SUPER_ADMIN' && <Item icon="alert" label="Request account reset" sub="Staff approval is required; historical data is retained" onPress={() => router.push('/wipe')} />}
+        <NotificationsItem />
         <Item icon="lock" label="Login history" sub="Sign-ins and failed attempts, and the rules you accepted" onPress={() => router.push('/logins')} />
         <Item icon="activity" label="Account activity" sub="Every action with time, IP and device" onPress={() => router.push('/activity')} />
         {me?.role === 'TRADER' && <>
@@ -890,7 +943,7 @@ function Seg<K extends string>({ value, items, onChange }: { value: K; items: [K
 function Preferences() {
   const { prefs, set } = usePrefs();
   const rows: { icon: 'sun' | 'eye' | 'activity' | 'sound' | 'type' | 'bold' | 'list'; t: string; s: string; c: React.ReactNode }[] = [
-    { icon: 'sun', t: 'Theme', s: 'System follows your phone. Also the button next to the bell.', c: <Seg value={prefs.theme} onChange={(v) => set('theme', v)} items={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]} /> },
+    { icon: 'sun', t: 'Theme', s: 'System follows your phone, or choose light or dark.', c: <Seg value={prefs.theme} onChange={(v) => set('theme', v)} items={[['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]} /> },
     { icon: 'eye', t: 'Hide balances', s: 'Mask all balance amounts.', c: <Switch label="Hide balances" on={prefs.hideBalances} onChange={(v) => set('hideBalances', v)} /> },
     { icon: 'activity', t: 'Charts', s: 'Show app charts where available.', c: <Switch label="Charts" on={prefs.charts} onChange={(v) => set('charts', v)} /> },
     { icon: 'sound', t: 'Trade sounds', s: 'Play tones (and vibrate) for trade events.', c: <Switch label="Trade sounds" on={prefs.sounds} onChange={(v) => set('sounds', v)} /> },
@@ -904,6 +957,17 @@ function Preferences() {
         <ListRow key={r.t} left={<IconMark icon={r.icon} />} title={r.t} sub={r.s} right={r.c} />
       ))}
     </Section>
+  );
+}
+
+/** Settings row for notifications, with the unread count. */
+function NotificationsItem() {
+  const t = useTheme();
+  const { data } = useQuery<{ unreadNotificationCount: number }>(`{ unreadNotificationCount }`, undefined, 30_000);
+  const n = data?.unreadNotificationCount ?? 0;
+  return (
+    <ListRow onPress={() => router.push('/notifications')} label="Notifications" left={<IconMark icon="bell" />} title="Notifications" sub={n ? `${n} unread` : 'Order fills, approvals and account alerts'}
+      right={<Row gap={6}>{n ? <Badge text={n > 99 ? '99+' : String(n)} tone="bad" /> : null}<Icon name="chevronRight" size={18} color={t.text3} /></Row>} />
   );
 }
 

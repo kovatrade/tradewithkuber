@@ -101,6 +101,18 @@ export const CONFIG_REGISTRY = {
     ],
     description: 'Rules shown after every trader sign-in; acceptance is recorded.',
   },
+  'ui.guidelinesHi': {
+    schema: z.array(z.string().max(500)).max(20),
+    default: [
+      'यह एप्लिकेशन केवल व्यक्तिगत विद्यार्थियों के लिए बाज़ार प्रशिक्षण के उद्देश्य से विचारों के आदान-प्रदान हेतु बनाया गया है।',
+      'सभी स्टॉप-लॉस (SL) और टेक-प्रॉफ़िट (TP) ऑर्डर अंतिम कारोबारी मूल्य (LTP) पर पास होंगे।',
+      'NSE पर ट्रेडिंग सुबह 9:17 बजे, MCX पर सुबह 9:02 बजे और अंतरराष्ट्रीय बाज़ार में सुबह 3:32 बजे शुरू होती है।',
+      'ऑर्डर देने से पहले स्क्रिप्ट, लॉट (Mini / Mega) और भाव ध्यान से जाँच लें।',
+      'अपना पासवर्ड, MPIN या OTP किसी के साथ साझा न करें।',
+      'किसी भी सहायता के लिए Settings में दिए गए सपोर्ट विकल्प का उपयोग करें।',
+    ],
+    description: 'Guidelines in Hindi, shown when a trader taps the "नियम" button in the mobile app.',
+  },
   'algo.enabled': { schema: z.boolean(), default: true, description: 'Let traders build, backtest and run automated (paper) strategies.' },
   'algo.maxRunningPerUser': { schema: z.number().int().min(0).max(20), default: 3, description: 'How many strategies one trader may run at the same time.' },
   'algo.maxStrategiesPerUser': { schema: z.number().int().min(1).max(100), default: 20, description: 'How many strategies one trader may save.' },

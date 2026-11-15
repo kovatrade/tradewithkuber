@@ -1,12 +1,11 @@
-import { BellButton, SearchButton } from '@/screens';
-import { TradeBook } from '@/quick-trade';
+import { TradeList } from '@/quick-trade';
 import { Screen } from '@/ui';
 
-/** Trade tab: the trade book (executed, pending and rejected trades). */
+/** Trade tab: executed and pending trades in one list, with search and filters. */
 export default function Trade() {
   return (
-    <Screen title="Trades" scroll={false} right={<><SearchButton /><BellButton /></>}>
-      <TradeBook />
+    <Screen title="Trade" scroll={false}>
+      <TradeList />
     </Screen>
   );
 }

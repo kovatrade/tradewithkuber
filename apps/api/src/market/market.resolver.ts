@@ -38,6 +38,7 @@ export class MarketResolver {
       appName: env().APP_NAME,
       tickerMessages: await this.config.get('ui.tickerMessages'),
       termsRules: await this.config.get('ui.termsRules'),
+      guidelinesHi: await this.config.get('ui.guidelinesHi'),
       helplineUrl: await this.config.get('ui.helplineUrl'),
       demoEnabled: await this.config.get('demo.enabled'),
       tradingMode: env().LIVE_TRADING_ENABLED ? 'LIVE' : 'SIMULATED',

@@ -17,11 +17,11 @@ import { NUM_SCALE, usePrefs } from './prefs';
 
 /* ============================================================== text */
 type TV = 'h1' | 'h2' | 'h3' | 'body' | 'sm' | 'xs' | 'num' | 'numLg' | 'hero';
-export function T({ v = 'body', c, w, style, children, ...p }: { v?: TV; c?: 'text' | 'text2' | 'text3' | 'pos' | 'neg' | 'brand' | 'warn'; w?: '400' | '500' | '600' | '700'; style?: TextStyle; children: ReactNode; adjustsFontSizeToFit?: boolean; minimumFontScale?: number; numberOfLines?: number; selectable?: boolean; accessibilityRole?: 'header' | 'text' | 'alert' }) {
+export function T({ v = 'body', c, w, style, children, n, ...p }: { v?: TV; c?: 'text' | 'text2' | 'text3' | 'pos' | 'neg' | 'brand' | 'warn'; w?: '400' | '500' | '600' | '700'; style?: TextStyle; children: ReactNode; /** small figures (change, low/high…) that follow the Number size setting too */ n?: boolean; adjustsFontSizeToFit?: boolean; minimumFontScale?: number; numberOfLines?: number; selectable?: boolean; accessibilityRole?: 'header' | 'text' | 'alert' }) {
   const t = useTheme();
   const { prefs } = usePrefs();
   const k = NUM_SCALE[prefs.numberSize];
-  const numeric = v === 'num' || v === 'numLg' || v === 'hero';
+  const numeric = n || v === 'num' || v === 'numLg' || v === 'hero';
   const base: Record<TV, TextStyle> = {
     hero: { fontSize: FS.x4, fontWeight: '600', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
     h1: { fontSize: FS.x3, fontWeight: '600', letterSpacing: -0.3 },
@@ -34,7 +34,8 @@ export function T({ v = 'body', c, w, style, children, ...p }: { v?: TV; c?: 'te
     numLg: { fontSize: FS.x2, fontVariant: ['tabular-nums'], fontWeight: '600' },
   };
   const color = t[c ?? (v === 'xs' ? 'text3' : 'text')];
-  const numStyle: TextStyle | null = numeric ? { fontSize: ((style?.fontSize as number | undefined) ?? (base[v].fontSize as number)) * k, ...(prefs.boldNumbers ? { fontWeight: '700' } : null) } : null;
+  const lh = (style?.lineHeight as number | undefined) ?? (base[v].lineHeight as number | undefined);
+  const numStyle: TextStyle | null = numeric ? { fontSize: ((style?.fontSize as number | undefined) ?? (base[v].fontSize as number)) * k, ...(lh ? { lineHeight: lh * k } : null), ...(prefs.boldNumbers ? { fontWeight: '700' } : null) } : null;
   return <Text {...p} style={[base[v], { color }, w ? { fontWeight: w } : null, style, numStyle]} accessibilityRole={p.accessibilityRole ?? (v === 'h1' || v === 'h2' ? 'header' : undefined)}>{children}</Text>;
 }
 

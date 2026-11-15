@@ -13,7 +13,8 @@ import { gql, newKey } from './api';
 import { tradeFeedback } from './prefs';
 import { useLiveQuotes, type Quote } from './screens';
 import { inr, ohlcTone, R, S, shortSymbol, toneOfValue, useTheme } from './theme';
-import { Badge, Button, Chips, Empty, ErrorState, Field, Flash, LotStepper, Notice, Row, SearchBox, Sheet, Skeleton, Spread, T, Tabs, tap, toast, useQuery, VList } from './ui';
+import { Badge, Button, Chips, DateField, Empty, ErrorState, Field, Flash, LotStepper, Notice, Row, SearchBox, Sheet, Skeleton, Spread, T, Tabs, tap, toast, useQuery, VList } from './ui';
+import { Icon } from './icons';
 
 type Side = 'BUY' | 'SELL';
 type OType = 'MARKET' | 'LIMIT' | 'STOP_LOSS';
@@ -155,9 +156,9 @@ function Grid({ rows }: { rows: [string, string, string, string][] }) {
 interface Trade {
   id: string; side: Side; type: string; quantity: number; status: string; limitPrice?: string; triggerPrice?: string; fillPrice?: string;
   rejectReason?: string; createdAt: string; filledAt?: string; realizedPnl?: string; brokerage?: string; heldSeconds?: number; username?: string;
-  instrumentId: string; instrument?: { id: string; symbol: string; name: string; expiry?: string };
+  instrumentId: string; instrument?: { id: string; symbol: string; name: string; expiry?: string; exchange?: string };
 }
-const TRADE_FIELDS = 'id side type quantity status limitPrice triggerPrice fillPrice rejectReason createdAt filledAt realizedPnl brokerage heldSeconds username instrumentId instrument{ id symbol name expiry }';
+const TRADE_FIELDS = 'id side type quantity status limitPrice triggerPrice fillPrice rejectReason createdAt filledAt realizedPnl brokerage heldSeconds username instrumentId instrument{ id symbol name expiry exchange }';
 const TYPE_LABEL: Record<string, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP_LOSS: 'Stop-loss', TAKE_PROFIT: 'Take-profit' };
 type BookTab = 'success' | 'pending' | 'rejected';
 const BOOK: Record<BookTab, { label: string; s: string[] }> = { success: { label: 'Success', s: ['FILLED'] }, pending: { label: 'Pending', s: ['OPEN'] }, rejected: { label: 'Rejected', s: ['REJECTED', 'CANCELLED'] } };
@@ -192,6 +193,106 @@ const TradeRow = memo(function TradeRow({ o, onPress }: { o: Trade; onPress: (o:
     </Pressable>
   );
 });
+
+/* ---------------------------------------------------------------- Trade tab: one list + filters */
+const ymdIst = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+const timeOnly = (d: string) => new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+/** "03h 02m" for how long a closed trade was held. */
+const heldShort = (sec?: number) => (sec === undefined || sec === null ? '' : `${String(Math.floor(sec / 3600)).padStart(2, '0')}h ${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m`);
+interface TradeFilter { from: string; to: string; exchange: string; script: string }
+
+/** One trade row like the reference app: name · price / time · side qty / P&L · held time. */
+const TradeLine = memo(function TradeLine({ o, onPress }: { o: Trade; onPress: (o: Trade) => void }) {
+  const t = useTheme();
+  const px = o.fillPrice ?? o.limitPrice ?? o.triggerPrice;
+  const sideTone = o.side === 'BUY' ? 'pos' : 'neg';
+  const kind = o.type === 'STOP_LOSS' ? ' SL' : o.type === 'TAKE_PROFIT' ? ' TP' : o.type === 'LIMIT' && o.status === 'OPEN' ? ' LMT' : '';
+  return (
+    <Pressable onPress={() => onPress(o)} accessibilityRole="button" accessibilityLabel={`${o.side} ${o.quantity} ${o.instrument?.symbol ?? ''}`} style={({ pressed }) => ({ paddingVertical: 10, gap: 3, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line, backgroundColor: pressed ? t.bg2 : 'transparent' })}>
+      <Spread>
+        <T w="600" numberOfLines={1} style={{ flex: 1, fontSize: 15 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T>
+        <T v="num" c={sideTone} style={{ fontSize: 15 }}>{inr(px)}</T>
+      </Spread>
+      <Spread>
+        <Row gap={4} style={{ flex: 1 }}><Icon name="clock" size={13} color={t.text3} /><T v="xs" c="text2">{timeOnly(o.filledAt ?? o.createdAt)}</T>{o.status === 'OPEN' ? <Badge text="Pending" tone="warn" /> : null}</Row>
+        <T v="num" c={sideTone} style={{ fontSize: 13 }}>{o.side}{kind} {o.quantity.toFixed(1)}</T>
+      </Spread>
+      {o.realizedPnl ? (
+        <Spread>
+          <Row gap={4}><Icon name="briefcase" size={13} color={t.text3} /><T v="num" c={toneOfValue(o.realizedPnl) === 'neg' ? 'neg' : 'pos'} style={{ fontSize: 13 }}>{`${Number(o.realizedPnl) > 0 ? '+' : ''}${inr(o.realizedPnl)}`}</T></Row>
+          {o.heldSeconds !== undefined ? <T v="xs" c="text2" style={{ textDecorationLine: 'underline' }}>{heldShort(o.heldSeconds)}</T> : null}
+        </Spread>
+      ) : null}
+    </Pressable>
+  );
+});
+
+/**
+ * Trade tab: executed and pending trades in one list (no Success / Pending tabs), newest first, with a search box
+ * and a filter sheet (date range, exchange, script).
+ */
+export function TradeList() {
+  const t = useTheme();
+  const today = ymdIst(new Date());
+  const empty0: TradeFilter = { from: ymdIst(new Date(Date.now() - 30 * 86_400_000)), to: today, exchange: '', script: '' };
+  const [q, setQ] = useState('');
+  const [f, setF] = useState<TradeFilter>(empty0);
+  const [draft, setDraft] = useState<TradeFilter | null>(null);
+  const { data, error, loading, refetch } = useQuery<{ orders: Trade[] }>(`query($s:[OrderStatus!]){ orders(status:$s, limit:300){ ${TRADE_FIELDS} } }`, { s: ['FILLED', 'OPEN'] }, 5000);
+  const [open, setOpen] = useState<Trade | null>(null);
+  const [repeat, setRepeat] = useState<Trade | null>(null);
+  const all = data?.orders ?? [];
+  const exchanges = useMemo(() => [...new Set(all.map((o) => o.instrument?.exchange).filter(Boolean) as string[])].sort(), [all]);
+  const scripts = useMemo(() => [...new Set(all.filter((o) => !draft?.exchange || o.instrument?.exchange === draft.exchange).map((o) => shortSymbol(o.instrument?.symbol ?? '')).filter(Boolean))].sort(), [all, draft?.exchange]);
+  const list = useMemo(() => all
+    .filter((o) => {
+      const day = ymdIst(new Date(o.filledAt ?? o.createdAt));
+      if (f.from && day < f.from) return false;
+      if (f.to && day > f.to) return false;
+      if (f.exchange && o.instrument?.exchange !== f.exchange) return false;
+      if (f.script && shortSymbol(o.instrument?.symbol ?? '') !== f.script) return false;
+      const s = q.trim().toLowerCase();
+      return !s || `${o.instrument?.symbol ?? ''} ${o.instrument?.name ?? ''}`.toLowerCase().includes(s);
+    })
+    .sort((a, b) => new Date(b.filledAt ?? b.createdAt).getTime() - new Date(a.filledAt ?? a.createdAt).getTime()), [all, f, q]);
+  const active = f.exchange || f.script || f.from !== empty0.from || f.to !== empty0.to;
+  const top = (
+    <Row gap={8} style={{ alignItems: 'center', marginBottom: 4 }}>
+      <View style={{ flex: 1 }}><SearchBox value={q} onChangeText={setQ} placeholder="Search trades" /></View>
+      <Pressable onPress={() => setDraft(f)} accessibilityRole="button" accessibilityLabel={`Filter trades${active ? ', filters on' : ''}`} hitSlop={6}
+        style={({ pressed }) => ({ width: 44, height: 44, borderRadius: R.md, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: active ? t.brand : t.line2, backgroundColor: pressed ? t.bg3 : active ? t.brandSoft : t.bg })}>
+        <Icon name="sliders" size={20} color={active ? t.brand : t.text} />
+        {active ? <View style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: t.brand }} /> : null}
+      </Pressable>
+    </Row>
+  );
+  const empty = loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} />
+    : <Empty icon="list" title={all.length ? 'No trades match' : 'No trades yet'}>{all.length ? 'Change the filter or search.' : 'Your executed and pending trades show up here.'}</Empty>;
+  return (
+    <>
+      <VList data={list} keyOf={(o) => o.id} header={top} empty={empty} render={(o) => <TradeLine o={o} onPress={setOpen} />} />
+      {draft && (
+        <Sheet visible title="Filter trades" onClose={() => setDraft(null)}>
+          <T v="sm" c="text2" w="600">Date range</T>
+          <Row style={{ alignItems: 'flex-start' }}>
+            <DateField label="From" value={draft.from} max={draft.to || today} onChange={(v) => setDraft({ ...draft, from: v })} />
+            <DateField label="To" value={draft.to} min={draft.from} max={today} onChange={(v) => setDraft({ ...draft, to: v })} />
+          </Row>
+          <T v="sm" c="text2" w="600">Exchange</T>
+          <Chips value={draft.exchange} onChange={(v) => setDraft({ ...draft, exchange: v, script: '' })} items={[{ k: '', label: 'All' }, ...exchanges.map((e) => ({ k: e, label: e }))]} />
+          <T v="sm" c="text2" w="600">Script</T>
+          {scripts.length ? <Chips value={draft.script} onChange={(v) => setDraft({ ...draft, script: v })} items={[{ k: '', label: 'All' }, ...scripts.map((s) => ({ k: s, label: s }))]} /> : <T v="xs">No scripts in your trades yet.</T>}
+          <Row>
+            <Button block icon="refresh" title="Reset" onPress={() => { setF(empty0); setDraft(null); }} />
+            <Button block kind="primary" icon="check" title="Done" onPress={() => { setF(draft); setDraft(null); }} />
+          </Row>
+        </Sheet>
+      )}
+      {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} />}
+      {repeat && <QuickTradeSheet instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
+    </>
+  );
+}
 
 export function TradeBook({ header }: { header?: React.ReactNode }) {
   const [tab, setTab] = useState<BookTab>('success');
