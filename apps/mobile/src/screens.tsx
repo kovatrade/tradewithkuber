@@ -48,7 +48,7 @@ const expiryTime = (expiry?: string, ts?: string) =>
 const scriptPrice = (value?: string) => inr(value).replace(/\.00$/, '');
 
 /** Bid (red) and ask (green) boxes; each blinks green when its price rises and red when it falls. Low / High below. */
-function BidAsk({ id, qq, onPick, compact }: { id: string; qq?: Quote; onPick?: (side: 'BUY' | 'SELL') => void; compact?: boolean }) {
+function BidAsk({ id, qq, onPick, compact, slim }: { id: string; qq?: Quote; onPick?: (side: 'BUY' | 'SELL') => void; compact?: boolean; slim?: boolean }) {
   const t = useTheme();
   const { width } = useWindowDimensions();
   const columnWidth = Math.min(108, Math.max(68, (width - 100) * .25));
@@ -59,11 +59,12 @@ function BidAsk({ id, qq, onPick, compact }: { id: string; qq?: Quote; onPick?: 
         return (
           <Pressable key={sd} onPress={() => { tap(); if (onPick) onPick(sd); else router.push(`/instrument/${id}?side=${sd}`); }} accessibilityRole="button" accessibilityLabel={`${sd === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ width: columnWidth, alignItems: 'stretch', gap: compact ? 3 : 5 }}>
             <Flash value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
-              <View style={{ width: columnWidth, minHeight: CTL.tap, paddingVertical: compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ width: columnWidth, minHeight: slim ? 40 : CTL.tap, paddingVertical: slim ? 4 : compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
                 <T v="num" c={sd === 'BUY' ? 'text' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{ fontSize: compact ? 13 : 14, ...(sd === 'BUY' ? { color: '#fff' } : {}) }}>{scriptPrice(v)}</T>
+                {slim && <T v="xs" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 9, lineHeight: 11, ...(sd === 'BUY' ? { color: '#ffffffcc' } : {}) }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
               </View>
             </Flash>
-            <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center', fontSize: 10 }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>
+            {!slim && <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center', fontSize: 10 }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
           </Pressable>
         );
       })}
@@ -411,20 +412,22 @@ interface WEntry { id: string; instrument: Inst; quote?: Quote }
 const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: { e: WEntry; qq?: Quote; detailed: boolean; onRemove: (e: WEntry) => void; onOpen: (id: string, side?: 'BUY' | 'SELL') => void }) {
   const t = useTheme();
   const sym = shortSymbol(e.instrument.symbol);
+  const up = toneOfValue(qq?.change) !== 'neg';
+  const meta = [e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.exchange, e.instrument.expiry ? new Date(e.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' }) : ''].filter(Boolean).join(' · ');
+  // Two lines: symbol · exchange · expiry, then price · change · time. Bid/ask (with low/high inside) on the right.
   const row = detailed ? (
-    <View style={{ gap: S[2], paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
-      <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${sym}, contract details`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flexDirection: 'row', alignItems: 'center', gap: S[2] }}>
-        <T w="700" numberOfLines={2} style={{ flex: 1, minWidth: 0, fontSize: 14, lineHeight: 18 }}>{sym.toUpperCase()}</T>
-        {e.instrument.expiry && <T v="xs" style={{ fontSize: 10 }}>{new Date(e.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })}</T>}
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
+      <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${sym}, ${qq?.ltp ?? ''}`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+          <T w="700" numberOfLines={1} style={{ flexShrink: 0, maxWidth: '100%', fontSize: 13, lineHeight: 17 }}>{sym.toUpperCase()}</T>
+          <T v="xs" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0, fontSize: 9 }}>{meta}{qq?.ts ? ` · ${expiryTime(undefined, qq.ts)}` : ''}</T>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+          <T v="num" c={up ? 'pos' : 'neg'} numberOfLines={1} style={{ fontSize: 15, flexShrink: 0 }}>{scriptPrice(qq?.ltp)}</T>
+          <T v="xs" c={up ? 'pos' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, flexShrink: 1 }}>{qq?.change ? `${Number(qq.change) < 0 ? '\u25bc' : '\u25b2'} ${inr(qq.change, true)} (${inr(qq.changePct, true)}%)` : '\u2014'}</T>
+        </View>
       </Pressable>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2] }}>
-        <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${sym}, ${qq?.ltp ?? ''}`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flex: 1, minWidth: 0, gap: 2 }}>
-          <T v="num" c={toneOfValue(qq?.change) === 'neg' ? 'neg' : 'pos'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ fontSize: 16 }}>{scriptPrice(qq?.ltp)}</T>
-          <T v="xs" c={toneOfValue(qq?.change) === 'neg' ? 'neg' : 'pos'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10 }}>{qq?.change ? `${Number(qq.change) < 0 ? '\u25bc' : '\u25b2'} ${inr(qq.change, true)} (${inr(qq.changePct, true)}%)` : '\u2014'}</T>
-          <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 10 }}>{e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.exchange} · {expiryTime(undefined, qq?.ts)}</T>
-        </Pressable>
-        <BidAsk compact id={e.instrument.id} qq={qq} onPick={(sd) => onOpen(e.instrument.id, sd)} />
-      </View>
+      <BidAsk compact slim id={e.instrument.id} qq={qq} onPick={(sd) => onOpen(e.instrument.id, sd)} />
     </View>
   ) : (
     <ListRow onPress={() => onOpen(e.instrument.id)} label={`${sym}, ₹${qq?.ltp ?? ''}`} title={sym} sub={`${e.instrument.exchange} · ${e.instrument.segment}`}
@@ -466,10 +469,12 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
     <>
       {header}
       {!limit && <SummaryBlock compact detail actions addScript title="Available balance" />}
-      <Spread style={{ alignItems: 'center', marginBottom: S[1] }}>
-        {count > 0 ? <T w="600">Watchlist <T v="sm" c="text2">{count}/50</T></T> : <View />}
-        {!!limit && <Button size="sm" kind="primary" icon="plus" title="Add script" disabled={count >= 50} onPress={addScript} />}
-      </Spread>
+      {!!limit && (
+        <Spread style={{ alignItems: 'center', marginBottom: S[1] }}>
+          <View />
+          <Button size="sm" kind="primary" icon="plus" title="Add script" disabled={count >= 50} onPress={addScript} />
+        </Spread>
+      )}
       {entries.length > 0 && detailed && <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}><T v="xs" w="600" style={{ flex: 1, fontSize: 9 }}>INSTRUMENT · LTP · CHG%</T><T v="xs" c="neg" w="600" style={{ width: columnWidth, textAlign: 'center' }}>BID</T><T v="xs" c="pos" w="600" style={{ width: columnWidth, textAlign: 'center' }}>ASK</T></View>}
     </>
   );
