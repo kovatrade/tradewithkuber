@@ -369,6 +369,30 @@ describe('paper trading', () => {
     expect(rej.data.orders.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('carries an open position forward only for its owner, holds the CF margin, and drops CF when the quantity changes', async () => {
+    const t = await login('trader.two');
+    const buy = await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
+    expect(buy.data.placeOrder.status).toBe('FILLED');
+    const POS = `{ positions { id netQty carriedForward instrument { symbol } } }`;
+    const open = (await gql(POS, {}, { token: t.accessToken })).data.positions.find((x: { netQty: number }) => x.netQty !== 0);
+    expect(open.carriedForward).toBe(false);
+    const before = (await gql(SUMMARY, {}, { token: t.accessToken })).data.accountSummary;
+    const CF = `mutation($p:ID!){ setCarryForward(positionId:$p, enabled:true) }`;
+    const other = await login('trader.one');
+    expect(code(await gql(CF, { p: open.id }, { token: other.accessToken }))).toBe('NOT_FOUND');
+    expect((await gql(CF, { p: open.id }, { token: t.accessToken })).data.setCarryForward).toBe(true);
+    expect((await gql(POS, {}, { token: t.accessToken })).data.positions.find((x: { id: string }) => x.id === open.id).carriedForward).toBe(true);
+    const after = (await gql(SUMMARY, {}, { token: t.accessToken })).data.accountSummary;
+    expect(Number(after.marginUsed)).toBeGreaterThan(Number(before.marginUsed)); // CF margin replaces the intraday margin
+    expect((await pg.query(`SELECT count(*)::int AS n FROM audit_events WHERE action = 'position.carry_forward' AND entity_id = $1`, [open.id])).rows[0].n).toBe(1);
+    // Off again: back to intraday, margin released.
+    expect((await gql(`mutation($p:ID!){ setCarryForward(positionId:$p, enabled:false) }`, { p: open.id }, { token: t.accessToken })).data.setCarryForward).toBe(false);
+    expect(Number((await gql(SUMMARY, {}, { token: t.accessToken })).data.accountSummary.marginUsed)).toBe(Number(before.marginUsed));
+    await gql(CF, { p: open.id }, { token: t.accessToken });
+    await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
+    expect((await gql(POS, {}, { token: t.accessToken })).data.positions.find((x: { id: string }) => x.id === open.id).carriedForward).toBe(false);
+  });
+
   it('realises P&L through the ledger on close', async () => {
     const t = await login('trader.two');
     const before = (await gql(SUMMARY, {}, { token: t.accessToken })).data.accountSummary;

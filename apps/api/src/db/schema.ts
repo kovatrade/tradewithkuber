@@ -26,6 +26,7 @@ import {
   uuid,
   varchar,
   type AnyPgColumn,
+  date,
 } from 'drizzle-orm/pg-core';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -368,6 +369,8 @@ export const positions = pgTable(
     netQty: integer('net_qty').notNull().default(0),
     avgPriceMinor: money('avg_price_minor').notNull().default(sql`0`),
     realizedPnlMinor: money('realized_pnl_minor').notNull().default(sql`0`),
+    /** IST day (YYYY-MM-DD) the trader carried this position forward to the next day; null = intraday. */
+    cfDate: date('cf_date', { mode: 'string' }),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('positions_uq').on(t.userId, t.instrumentId, t.mode)],

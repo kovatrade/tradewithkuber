@@ -163,6 +163,7 @@ export class Position {
   @Field() realizedPnl: string;
   @Field({ nullable: true }) unrealizedPnl?: string;
   @Field({ nullable: true }) ltp?: string;
+  @Field({ description: 'True when the trader carried this open position forward today (it is not auto cut at the end of the day).' }) carriedForward: boolean;
 }
 
 @ObjectType()

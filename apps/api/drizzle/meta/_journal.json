@@ -225,6 +225,13 @@
       "when": 1794497000003,
       "tag": "0031_payee_approved_at",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1794497000004,
+      "tag": "0032_position_carry_forward",
+      "breakpoints": true
     }
   ]
 }

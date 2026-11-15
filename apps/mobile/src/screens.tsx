@@ -249,18 +249,32 @@ const DEFAULT_GUIDELINES_HI = [
 ];
 
 /** Positions header button "नियम": opens the MCX guideline in Hindi (only on the Positions screen). */
-export function GuideButton() {
+export function GuideButton({ blink }: { /** Blink a few times whenever the screen comes into view. */ blink?: boolean } = {}) {
   const t = useTheme();
   const { settings } = useAuth();
   const [open, setOpen] = useState(false);
+  const pulse = useRef(new Animated.Value(1)).current;
+  useFocusEffect(useCallback(() => {
+    if (!blink) return;
+    const step = Animated.sequence([
+      Animated.timing(pulse, { toValue: 0.2, duration: 260, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 260, useNativeDriver: true }),
+    ]);
+    const a = Animated.loop(step, { iterations: 4 });
+    pulse.setValue(1);
+    a.start();
+    return () => { a.stop(); pulse.setValue(1); };
+  }, [blink, pulse]));
   const list = settings?.guidelinesHi?.length ? settings.guidelinesHi : DEFAULT_GUIDELINES_HI;
   return (
     <>
+      <Animated.View style={{ opacity: pulse, transform: [{ scale: pulse.interpolate({ inputRange: [0.2, 1], outputRange: [1.08, 1] }) }] }}>
       <Pressable onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel="नियम: MCX गाइडलाइन" hitSlop={6}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, marginRight: S[2], borderRadius: R.pill, borderWidth: 1, borderColor: t.brand, backgroundColor: pressed ? t.brandSoft : t.bg })}>
         <Icon name="book" size={16} color={t.brand} />
         <T v="sm" c="brand" w="700">नियम</T>
       </Pressable>
+      </Animated.View>
       <Sheet visible={open} title="MCX गाइडलाइन" sub="Gold Mini, Mega Lot आदि · कृपया ध्यान से पढ़ें" onClose={() => setOpen(false)}>
         {list.map((r, i) => (
           <Row key={i} style={{ alignItems: 'flex-start' }}>
@@ -677,30 +691,112 @@ export function OrdersTabs({ virtual, header, initial = 'open' }: { virtual?: bo
   return <OrdersList key={tab} virtual={virtual} header={<>{header}{tabs}</>} statuses={[...tb.s]} canCancel={tab === 'open'} emptyTitle={tb.title} emptyText={tb.text} />;
 }
 
-interface Pos { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; instrument?: { symbol: string } }
+interface Pos { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; carriedForward?: boolean; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string } }
+/** Positions page top: Balance, Live P/L and Booked in three tiles. */
+export function PositionsSummary() {
+  const t = useTheme();
+  const priv = usePrivate();
+  const { data } = useSummary();
+  const s = data?.accountSummary;
+  const tone = (v?: string) => (toneOfValue(v) === 'flat' ? 'text' : (toneOfValue(v) as 'pos'));
+  const tile = (k: string, v: string, c: 'text' | 'pos' | 'neg') => (
+    <View style={{ flex: 1, minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderColor: t.line2, borderRadius: R.lg, paddingVertical: 8, paddingHorizontal: 10, gap: 2, backgroundColor: t.bg }}>
+      <T c="text2" w="600" numberOfLines={1} style={{ fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase' }}>{k}</T>
+      <T c={c} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ fontSize: 17, lineHeight: 22, fontWeight: '800', fontVariant: ['tabular-nums'] }}>{v}</T>
+    </View>
+  );
+  return (
+    <Row gap={S[2]}>
+      {tile('Balance', s ? priv(inr(s.balance).split('.')[0]) : '—', 'text')}
+      {tile('Live P/L', s ? inr(s.unrealizedPnl, true) : '—', tone(s?.unrealizedPnl))}
+      {tile('Booked', s ? inr(s.realizedPnl, true) : '—', tone(s?.realizedPnl))}
+    </Row>
+  );
+}
+
 export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?: boolean }) {
   const [quick, setQuick] = useState<{ id: string; side: 'BUY' | 'SELL'; qty: number } | null>(null);
-  const { data, error, loading, refetch } = useQuery<{ positions: Pos[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp instrument{ symbol } } }`, { u: userId }, 3000);
+  const { data, error, loading, refetch } = useQuery<{ positions: Pos[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp carriedForward instrument{ symbol name expiry exchange } } }`, { u: userId }, 3000);
+  const t = useTheme();
+  const [cf, setCf] = useState<Pos | null>(null);
+  const [cfBusy, setCfBusy] = useState<string | null>(null);
   if (loading && !data) return <Skeleton />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
   if (!data!.positions.length) return <Empty icon="briefcase" title="No positions" action={canTrade ? <Button size="sm" kind="primary" title="Find instruments" onPress={() => router.push('/search')} /> : undefined}>A position opens when a buy or sell order executes.</Empty>;
-  const total = data!.positions.reduce((a, p) => a + Number(p.unrealizedPnl ?? 0), 0).toFixed(2);
   const exit = (p: Pos) => setQuick({ id: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', qty: Math.abs(p.netQty) });
+  const setCarry = async (p: Pos, enabled: boolean) => {
+    setCfBusy(p.id);
+    try {
+      await gql(`mutation($p:ID!,$e:Boolean!){ setCarryForward(positionId:$p, enabled:$e) }`, { p: p.id, e: enabled });
+      tap(); toast(enabled ? 'Carry forward ON: not auto cut tonight.' : 'Carry forward OFF: auto cut at 11:30 PM.');
+      setCf(null); void refetch();
+    } catch (e) { toast((e as Error).message, true); }
+    finally { setCfBusy(null); }
+  };
+  const sorted = [...data!.positions].sort((a, b) => Number(b.netQty !== 0) - Number(a.netQty !== 0));
+  const label = { fontSize: 9, letterSpacing: 0.5, textTransform: 'uppercase' as const };
   return (
-    <View>
-      <Spread style={{ paddingVertical: S[3] }}><T c="text2">Total open P&L</T><T v="numLg" c={toneOfValue(total) === 'flat' ? 'text2' : (toneOfValue(total) as 'pos')}>{inr(total, true)}</T></Spread>
-      <Divider />
-      {[...data!.positions].sort((a, b) => Number(b.netQty !== 0) - Number(a.netQty !== 0)).map((p) => (
-        <ListRow key={p.id}
-          onPress={() => router.push(`/instrument/${p.instrumentId}`)}
-          label={`${p.instrument ? shortSymbol(p.instrument.symbol) : ''} chart`}
-          title={p.instrument ? shortSymbol(p.instrument.symbol) : '—'}
-          sub={p.netQty === 0 ? `Closed · LTP ₹${inr(p.ltp)}` : `${p.netQty > 0 ? 'Long' : 'Short'} ${Math.abs(p.netQty)} · avg ₹${inr(p.avgPrice)} · LTP ₹${inr(p.ltp)}`}
-          right={p.netQty === 0
-            ? <View style={{ alignItems: 'flex-end', gap: 2 }}><T v="num" c={toneOfValue(p.realizedPnl) === 'flat' ? 'text2' : (toneOfValue(p.realizedPnl) as 'pos')}>{inr(p.realizedPnl, true)}</T><T v="xs">Booked</T></View>
-            : <View style={{ alignItems: 'flex-end', gap: 2 }}><T v="num" c={toneOfValue(p.unrealizedPnl) === 'flat' ? 'text2' : (toneOfValue(p.unrealizedPnl) as 'pos')}>{inr(p.unrealizedPnl, true)}</T><T v="xs">Booked {inr(p.realizedPnl, true)}</T></View>}
-          action={canTrade && p.netQty !== 0 ? <Button size="sm" kind={p.netQty > 0 ? 'sell' : 'buy'} title="Exit" onPress={() => exit(p)} /> : undefined} />
-      ))}
+    <View style={{ gap: S[2] }}>
+      {sorted.map((p) => {
+        const name = p.instrument ? fullName(p.instrument).toUpperCase() : '—';
+        const exp = p.instrument?.expiry ? new Date(p.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
+        const open = p.netQty !== 0;
+        const pnl = open ? p.unrealizedPnl : p.realizedPnl;
+        const cost = Number(p.avgPrice) * Math.abs(p.netQty);
+        const pct = open && cost > 0 ? ((Number(p.unrealizedPnl ?? 0) / cost) * 100).toFixed(2) : null;
+        const pc = toneOfValue(pnl) === 'flat' ? 'text2' : (toneOfValue(pnl) as 'pos');
+        const on = !!p.carriedForward;
+        return (
+          <View key={p.id} style={{ borderWidth: 1, borderColor: open && on ? t.brand : t.line2, borderRadius: R.lg, padding: S[3], gap: 6, backgroundColor: t.bg }}>
+            <Pressable onPress={() => router.push(`/instrument/${p.instrumentId}`)} accessibilityRole="button" accessibilityLabel={`${name} chart`} style={{ gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 6, rowGap: 2 }}>
+                  <T w="700" numberOfLines={1} style={{ fontSize: 14, flexShrink: 1 }}>{name}</T>
+                  {!!exp && <T v="xs" c="text2" w="600" style={{ fontSize: 10 }}>{exp}</T>}
+                  {open
+                    ? <View style={{ backgroundColor: p.netQty > 0 ? t.posSoft : t.negSoft, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c={p.netQty > 0 ? 'pos' : 'neg'} style={{ fontSize: 9 }}>{p.netQty > 0 ? 'BUY' : 'SELL'}</T></View>
+                    : <View style={{ backgroundColor: t.bg3, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c="text2" style={{ fontSize: 9 }}>CLOSED</T></View>}
+                  {open && on && <View style={{ backgroundColor: t.brandSoft, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c="brand" style={{ fontSize: 9 }}>CARRY FWD</T></View>}
+                </View>
+                {open && <T w="700" style={{ fontSize: 14 }}>Qty: {Math.abs(p.netQty)}</T>}
+              </View>
+              <View style={{ flexDirection: 'row', gap: S[2] }}>
+                {([['Avg', open ? inr(p.avgPrice) : '—', 'text'], ['Current', inr(p.ltp), 'text'], [open ? 'P/L' : 'Booked', inr(pnl, true), pc], ['%', pct ? `${Number(pct) > 0 ? '+' : ''}${pct}%` : '—', pc]] as const).map(([k, v, c], i) => (
+                  <View key={k} style={{ flex: i < 2 ? 1.1 : 1, minWidth: 0, alignItems: i < 2 ? 'flex-start' : 'flex-end' }}>
+                    <T c="text2" w="600" style={label}>{k}</T>
+                    <T c={c as 'text'} w="700" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 14, fontVariant: ['tabular-nums'] }}>{v}</T>
+                  </View>
+                ))}
+              </View>
+            </Pressable>
+            {open && canTrade && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], borderRadius: R.md, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: on ? t.brandSoft : t.bg2 }}>
+                <Icon name="calendar" size={16} color={on ? t.brand : t.text2} />
+                <T w="700" style={{ fontSize: 13 }}>Carry Forward</T>
+                <T w="700" c={on ? 'brand' : 'text3'} style={{ fontSize: 11 }}>{on ? 'ON' : 'OFF'}</T>
+                <View style={{ flex: 1 }} />
+                <Pressable disabled={cfBusy === p.id} onPress={() => (on ? void setCarry(p, false) : setCf(p))} accessibilityRole="switch" accessibilityState={{ checked: on, busy: cfBusy === p.id }} accessibilityLabel="Carry forward"
+                  style={{ width: 54, height: 30, borderRadius: 15, padding: 3, backgroundColor: on ? t.brand : t.line2, justifyContent: 'center', alignItems: on ? 'flex-end' : 'flex-start', opacity: cfBusy === p.id ? 0.5 : 1 }}>
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon name={on ? 'check' : 'x'} size={14} color={on ? t.brand : t.neg} strokeWidth={2.6} />
+                  </View>
+                </Pressable>
+                <Pressable onPress={() => exit(p)} accessibilityRole="button" accessibilityLabel="Exit this position" hitSlop={4}
+                  style={({ pressed }) => ({ height: 30, paddingHorizontal: 10, borderRadius: R.pill, borderWidth: 1, borderColor: t.neg, backgroundColor: pressed ? t.negSoft : t.bg, alignItems: 'center', justifyContent: 'center' })}>
+                  <T v="xs" w="700" c="neg">Exit</T>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        );
+      })}
+      <Sheet visible={!!cf} title="Carry forward ON?" sub={cf?.instrument ? `${fullName(cf.instrument).toUpperCase()} · ${cf.netQty > 0 ? 'BUY' : 'SELL'} · Qty ${Math.abs(cf.netQty)}` : undefined} onClose={() => setCf(null)}>
+        <T c="text2" style={{ lineHeight: 21 }}>यह सौदा Next Day तक बना रहेगा और रात 11:30 बजे Auto Cut नहीं होगा। Lot size के हिसाब से CF मार्जिन आपके बैलेंस से रोका जाएगा।</T>
+        <Row>
+          <Button block title="Cancel" onPress={() => setCf(null)} />
+          <Button block kind="primary" title="Turn ON" busy={!!cf && cfBusy === cf.id} onPress={() => cf && void setCarry(cf, true)} />
+        </Row>
+      </Sheet>
       {quick && <QuickTradeSheet instrumentId={quick.id} initialSide={quick.side} initialQty={quick.qty} onClose={() => { setQuick(null); void refetch(); }} />}
     </View>
   );

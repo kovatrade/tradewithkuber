@@ -20,6 +20,9 @@ import { sessionStatus, type Sessions } from './market-hours';
 import { DhanGlobalFeedService } from '../market/dhan-global-feed.service';
 import { afterWipeFor } from '../wipe/visibility';
 
+/** Today's date in India (YYYY-MM-DD). */
+export const istDay = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
+
 export interface PlaceOrderInput {
   instrumentId: string;
   side: Side;
@@ -73,8 +76,10 @@ export class OrdersService implements OnModuleInit {
   // ------------------------------------------------------------------ helpers
 
   async marginUsed(tx: Tx, userId: string, bps: number): Promise<bigint> {
+    const cfBps = await this.config.get('trading.carryForwardMarginBps');
+    const today = istDay();
     const pos = await tx
-      .select({ q: positions.netQty, p: positions.avgPriceMinor })
+      .select({ q: positions.netQty, p: positions.avgPriceMinor, cf: positions.cfDate })
       .from(positions)
       .where(and(eq(positions.userId, userId), eq(positions.mode, 'SIMULATED')));
     const open = await tx
@@ -82,7 +87,8 @@ export class OrdersService implements OnModuleInit {
       .from(orders)
       .where(and(eq(orders.userId, userId), eq(orders.status, 'OPEN')));
     let used = 0n;
-    for (const r of pos) used += applyBps(BigInt(abs(r.q)) * r.p, bps);
+    // A position carried forward today holds the carry-forward margin instead of the intraday one.
+    for (const r of pos) used += applyBps(BigInt(abs(r.q)) * r.p, r.cf === today ? cfBps : bps);
     for (const r of open) used += applyBps(BigInt(r.q) * (r.p ?? 0n), bps);
     return used;
   }
@@ -305,7 +311,7 @@ export class OrdersService implements OnModuleInit {
     }
     await tx
       .update(positions)
-      .set({ netQty: newNet, avgPriceMinor: avg, realizedPnlMinor: p.realizedPnlMinor + realized, updatedAt: new Date() })
+      .set({ netQty: newNet, avgPriceMinor: avg, realizedPnlMinor: p.realizedPnlMinor + realized, cfDate: null, updatedAt: new Date() }) // a changed quantity needs a fresh carry forward
       .where(eq(positions.id, p.id));
 
     const cash = await this.ledger.cashAccount(tx, o.userId, 'SIMULATED');
@@ -412,6 +418,47 @@ export class OrdersService implements OnModuleInit {
       )
       .orderBy(desc(orders.createdAt))
       .limit(opts.limit);
+  }
+
+  /**
+   * Carry an open position forward to the next day (it is then not cut at the end of the day). Needs the
+   * carry-forward margin for the whole position (lot size × price) to be free; the margin is then held for it.
+   */
+  async carryForward(actor: Actor, positionId: string, ip: string) {
+    return this.dbs.db.transaction(async (tx) => {
+      const [p] = await tx.select().from(positions).where(eq(positions.id, positionId)).for('update');
+      if (!p || p.userId !== actor.userId) throw notFound('Position');
+      if (p.netQty === 0) throw badInput('This position is already closed.');
+      const today = istDay();
+      if (p.cfDate === today) return { position: p, marginMinor: 0n };
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, p.userId)).for('update'); // one margin check at a time per trader
+      const [intraBps, cfBps] = await Promise.all([this.config.get('trading.intradayMarginBps'), this.config.get('trading.carryForwardMarginBps')]);
+      const value = p.avgPriceMinor * BigInt(abs(p.netQty));
+      const cfMargin = applyBps(value, cfBps);
+      const extra = cfMargin - applyBps(value, intraBps);
+      const cash = await this.ledger.cashAccount(tx, p.userId, 'SIMULATED');
+      const free = (await this.ledger.balance(tx, cash)) - (await this.marginUsed(tx, p.userId, intraBps));
+      const inst = this.market.instrument(p.instrumentId);
+      if (extra > free) {
+        await this.audit.record(tx, { actor, action: 'position.carry_forward', entityType: 'position', entityId: p.id, outcome: 'DENIED', ip, metadata: { symbol: inst?.symbol, qty: p.netQty, cfMargin: cfMargin.toString(), free: free.toString() } });
+        throw badInput(`CF margin is not enough: ₹${(Number(cfMargin) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is needed to carry this position forward. Without CF it will be auto cut at 11:30 PM.`);
+      }
+      const [u] = await tx.update(positions).set({ cfDate: today, updatedAt: new Date() }).where(eq(positions.id, p.id)).returning();
+      await this.audit.record(tx, { actor, action: 'position.carry_forward', entityType: 'position', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { symbol: inst?.symbol, qty: p.netQty, cfMargin: cfMargin.toString(), day: today } });
+      return { position: u, marginMinor: cfMargin };
+    });
+  }
+
+  /** Turn carry forward off: the position is intraday again and the extra margin is released. */
+  async cancelCarryForward(actor: Actor, positionId: string, ip: string) {
+    return this.dbs.db.transaction(async (tx) => {
+      const [p] = await tx.select().from(positions).where(eq(positions.id, positionId)).for('update');
+      if (!p || p.userId !== actor.userId) throw notFound('Position');
+      if (!p.cfDate) return p;
+      const [u] = await tx.update(positions).set({ cfDate: null, updatedAt: new Date() }).where(eq(positions.id, p.id)).returning();
+      await this.audit.record(tx, { actor, action: 'position.carry_forward_off', entityType: 'position', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { symbol: this.market.instrument(p.instrumentId)?.symbol, qty: p.netQty } });
+      return u;
+    });
   }
 
   async listPositions(actor: Actor, userId: string, ip?: string) {

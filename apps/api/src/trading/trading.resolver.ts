@@ -27,7 +27,7 @@ import { LedgerService } from '../ledger/ledger.service';
 import { MarketDataService } from '../market/market-data.service';
 import { pubsub, TOPIC } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
-import { OrdersService } from './orders.service';
+import { istDay, OrdersService } from './orders.service';
 
 @InputType()
 class PlaceOrderInput {
@@ -200,8 +200,16 @@ export class TradingResolver {
         realizedPnl: formatMoney(p.realizedPnlMinor),
         unrealizedPnl: mark !== undefined && p.netQty !== 0 ? formatMoney((mark - p.avgPriceMinor) * BigInt(p.netQty)) : '0.00',
         ltp: q ? formatMoney(q.ltpMinor) : undefined,
+        carriedForward: p.netQty !== 0 && p.cfDate === istDay(),
       };
     });
+  }
+
+  @Mutation(() => Boolean, { description: 'Turn carry forward on (needs the carry-forward margin; fails with a message otherwise) or off for an open position. Returns the new state.' })
+  async setCarryForward(@CurrentActor() a: Actor, @Args('positionId', { type: () => ID }) id: string, @Args('enabled') enabled: boolean, @Ctx() c: GqlContext) {
+    if (enabled) await this.orderSvc.carryForward(a, id, c.ip);
+    else await this.orderSvc.cancelCarryForward(a, id, c.ip);
+    return enabled;
   }
 
   @Query(() => AccountSummary)
