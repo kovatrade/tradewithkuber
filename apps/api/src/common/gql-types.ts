@@ -218,6 +218,7 @@ export class LedgerLine {
 
 @ObjectType()
 export class PaymentRequest {
+  @Field({ defaultValue: false }) isDemo: boolean = false;
   @Field(() => PaymentEvidence, { nullable: true }) paymentEvidence?: PaymentEvidence;
   @Field({ nullable: true }) requestedByName?: string;
   @Field({ nullable: true }) reviewedByName?: string;

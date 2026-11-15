@@ -28,7 +28,7 @@ export function BrokerHome({ b, name, banner, base = '' }: { b: Broker; name: st
             <Points items={[
               ['Transparent charges', 'Account opening, brokerage and other charges are listed upfront, before you sign up.'],
               ['No tips, no gimmicks', 'No stock tips, no pressure to trade more, no gamified notifications.'],
-              ['Learn and practise first', 'A free practice account with virtual money, and courses on markets, commodities and risk.'],
+              ['Learn and practise first', 'A free practice account with practice funds, and courses on markets, commodities and risk.'],
               ['Your money stays yours', 'Funds and holdings are handled under exchange and depository rules, and you get transaction alerts from them directly.'],
             ]} />
             <p className="ws-links"><Link href={`${base}/open-account`}>Open an account</Link><Link href="/courses">Explore courses</Link></p>
@@ -46,7 +46,7 @@ export function BrokerHome({ b, name, banner, base = '' }: { b: Broker; name: st
       <section className="ws-strip">
         <div className="ws-wrap ws-strip-in">
           <b>Practice app</b>
-          <p>Try every order type with virtual money before you trade for real, on web, Android and iPhone. <Link href="/download">Get the app</Link></p>
+          <p>Try every order type with practice funds before you trade for real, on web, Android and iPhone. <Link href="/download">Get the app</Link></p>
         </div>
       </section>
 

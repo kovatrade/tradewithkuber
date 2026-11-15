@@ -37,7 +37,8 @@ let url: string;
 let pg: Pool;
 const PW = process.env.SEED_PASSWORD!;
 let fundPayeeId: string;
-const fundEvidence = (utr = 'TEST' + randomUUID().replace(/-/g, '').slice(0, 24)) => ({ payeeAccountId: fundPayeeId, utr: utr.toUpperCase(), payerName: 'Test Payer', paidAt: new Date(Date.now() - 60_000).toISOString() });
+const fundProof = `data:image/png;base64,${Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(120)]).toString('base64')}`;
+const fundEvidence = (utr = 'TEST1' + randomUUID().replace(/-/g, '').slice(0, 11)) => ({ payeeAccountId: fundPayeeId, utr: utr.toUpperCase(), payerName: 'Test Payer', paidAt: new Date(Date.now() - 60_000).toISOString(), proof: fundProof });
 
 type Res = { data?: any; errors?: Array<{ message: string; extensions?: { code?: string } }> };
 
@@ -255,7 +256,7 @@ describe('payments: idempotency, maker-checker, step-up', () => {
     const admin = await adminLogin('admin');
     const checker = await adminLogin('admin');
     const t2 = await login('trader.two');
-    const r = await gql(`mutation($u:ID,$k:String!){ requestPayment(input:{type:DEPOSIT, amount:"50000.00", idempotencyKey:$k, userId:$u}){ id } }`, { u: t2.user.id, k: randomUUID() }, { token: admin.token });
+    const r = await gql(`mutation($u:ID,$k:String!,$p:PaymentEvidenceInput!){ requestPayment(input:{type:DEPOSIT, amount:"50000.00", idempotencyKey:$k, userId:$u,payment:$p}){ id } }`, { u: t2.user.id, k: randomUUID(), p: fundEvidence() }, { token: admin.token });
     const id = r.data.requestPayment.id;
     const self = await gql(`mutation($id:ID!){ approvePayment(id:$id){ status } }`, { id }, { token: admin.token, stepUp: await stepUp(admin.token, 'admin') });
     expect(self.data.approvePayment.status).toBe('POSTED');
@@ -1364,7 +1365,7 @@ describe('loss watch: warning at 80%, all trades cut at 95%', () => {
     market.setPrice(inst, 636450n);
     // A fresh trader with ₹50,000 (approved by the second admin, opening amount credited).
     const admin = await adminLogin('admin');
-    const created = await gql(`mutation($i:CreateUserInput!){ createUser(input:$i){ id } }`, { i: { username: 'trader.risk', displayName: 'Risk Trader', phone: '9898000102', role: 'TRADER', tempPassword: PW, openingAmount: '50000' } }, { token: admin.token });
+    const created = await gql(`mutation($i:CreateUserInput!){ createUser(input:$i){ id } }`, { i: { username: 'trader.risk', displayName: 'Risk Trader', phone: '9898000102', role: 'TRADER', tempPassword: PW, openingAmount: '50000', payment: fundEvidence() } }, { token: admin.token });
     const uid = created.data.createUser.id;
     const chk = await adminLogin('admin');
     await gql(`mutation($u:ID!){ approveUser(userId:$u){ status } }`, { u: uid }, { token: chk.token, stepUp: await stepUp(chk.token, 'admin') });
@@ -1409,7 +1410,7 @@ describe('broker creates a trader with an opening amount', () => {
     const b = await login('broker.one');
     const tok = { token: b.accessToken };
     const CREATE = `mutation($i:CreateUserInput!){ createUser(input:$i){ id status brokerId openingAmount } }`;
-    const base = { username: 'trader.opening', displayName: 'Opening Trader', role: 'TRADER', tempPassword: 'Trad3r!Open#26' };
+    const base = { username: 'trader.opening', displayName: 'Opening Trader', phone: '9898000112', role: 'TRADER', tempPassword: 'Trad3r!Open#26' };
     expect(code(await gql(CREATE, { i: base }, tok))).toBe('BAD_USER_INPUT'); // amount required from a broker
     expect(code(await gql(CREATE, { i: { ...base, openingAmount: '1000' } }, tok))).toBe('BAD_USER_INPUT'); // below the minimum
     const r = await gql(CREATE, { i: { ...base, openingAmount: '75000', payment: fundEvidence() } }, tok);
@@ -1418,7 +1419,8 @@ describe('broker creates a trader with an opening amount', () => {
     const admin = await adminLogin('admin');
     const n = await pg.query(`SELECT n.title, n.body FROM notifications n JOIN users u ON u.id = n.user_id WHERE u.username = 'admin' AND n.kind = 'user.review' ORDER BY n.created_at DESC LIMIT 1`);
     expect(n.rows[0].body).toContain('trader.opening');
-    expect(n.rows[0].body).toContain('75,000');
+    expect(n.rows[0].body).not.toContain('75,000');
+    expect(n.rows[0].body).toContain('\u2022\u2022\u2022\u2022');
     const seen = await gql(`query($id:ID!){ user(id:$id){ openingAmount status } }`, { id }, { token: admin.token });
     expect(seen.data.user).toMatchObject({ openingAmount: '75000.00', status: 'PENDING' });
     const su = await stepUp(admin.token, 'admin');
@@ -1450,7 +1452,7 @@ describe('broker creates a trader with an opening amount', () => {
     const broker = await login('broker.one'), other = await login('broker.two'), admin = await adminLogin('admin');
     const proof = `data:image/png;base64,${Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a1e2ad3d0000000049454e44ae426082','hex'),Buffer.alloc(150*1024)]).toString('base64')}`;
     const payment = {...fundEvidence(),proof};
-    const created = await gql(`mutation($i:CreateUserInput!){ createUser(input:$i){ id status } }`, {i:{username:'trader.proof',displayName:'Proof Trader',role:'TRADER',tempPassword:PW,openingAmount:'65000',payment}}, {token:broker.accessToken,headers:{'x-upload':'fee-proof'}});
+    const created = await gql(`mutation($i:CreateUserInput!){ createUser(input:$i){ id status } }`, {i:{username:'trader.proof',displayName:'Proof Trader',phone:'9898000113',role:'TRADER',tempPassword:PW,openingAmount:'65000',payment}}, {token:broker.accessToken,headers:{'x-upload':'fee-proof'}});
     expect(created.errors).toBeUndefined();
     const id = created.data.createUser.id;
     const view = `query($id:ID!){ openingPayment(userId:$id){ id amount utr payerName paidAt hasProof accountNumber ifsc branch upiId } }`;
@@ -1479,14 +1481,14 @@ describe('broker creates a trader with an opening amount', () => {
   it('rolls back invalid account payment details and prevents reusing an opening payment as a deposit', async () => {
     const broker = await login('broker.one');
     const create = `mutation($i:CreateUserInput!){ createUser(input:$i){ id } }`;
-    const base = {username:'trader.reference',displayName:'Reference Trader',role:'TRADER',tempPassword:PW,openingAmount:'50000'};
+    const base = {username:'trader.reference',displayName:'Reference Trader',phone:'9898000114',role:'TRADER',tempPassword:PW,openingAmount:'50000'};
     expect(code(await gql(create,{i:base},{token:broker.accessToken}))).toBe('BAD_USER_INPUT');
     expect(code(await gql(create,{i:{...base,payment:{...fundEvidence(),payeeAccountId:randomUUID()}}},{token:broker.accessToken}))).toBe('BAD_USER_INPUT');
     expect(code(await gql(create,{i:{...base,payment:{...fundEvidence(),paidAt:'2099-01-01T00:00:00Z'}}},{token:broker.accessToken}))).toBe('BAD_USER_INPUT');
     expect((await pg.query(`SELECT count(*)::int AS n FROM users WHERE username='trader.reference'`)).rows[0].n).toBe(0);
     const payment = fundEvidence();
     expect((await gql(create,{i:{...base,payment}},{token:broker.accessToken})).errors).toBeUndefined();
-    expect(code(await gql(create,{i:{...base,username:'trader.reference.dup',payment}},{token:broker.accessToken}))).toBe('CONFLICT');
+    expect(code(await gql(create,{i:{...base,username:'trader.reference.dup',phone:'9898000116',payment}},{token:broker.accessToken}))).toBe('CONFLICT');
     expect((await pg.query(`SELECT count(*)::int AS n FROM users WHERE username='trader.reference.dup'`)).rows[0].n).toBe(0);
     const trader = await login('trader.one');
     expect(code(await gql(`mutation($i:PaymentRequestInput!){requestPayment(input:$i){id}}`,{i:{type:'DEPOSIT',amount:'50000',idempotencyKey:randomUUID(),payment}},{token:trader.accessToken}))).toBe('CONFLICT');
@@ -1513,7 +1515,7 @@ describe('broker creates a trader with an opening amount', () => {
 
   it('serializes competing account approval and rejection without crediting a rejected trader', async () => {
     const broker = await login('broker.one'), admin = await adminLogin('admin');
-    const created = await gql(`mutation($i:CreateUserInput!){createUser(input:$i){id}}`,{i:{username:'trader.decision.race',displayName:'Decision Trader',role:'TRADER',tempPassword:PW,openingAmount:'50000',payment:fundEvidence()}},{token:broker.accessToken});
+    const created = await gql(`mutation($i:CreateUserInput!){createUser(input:$i){id}}`,{i:{username:'trader.decision.race',displayName:'Decision Trader',phone:'9898000115',role:'TRADER',tempPassword:PW,openingAmount:'50000',payment:fundEvidence()}},{token:broker.accessToken});
     const id=created.data.createUser.id;
     const outcomes = await Promise.all([
       gql(`mutation($id:ID!){approveUser(userId:$id){status}}`,{id},{token:admin.token}),

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { accountText } from '../common/account-text';
 import { JwtService } from '@nestjs/jwt';
 import { and, asc, eq, gte, lt, sql } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
@@ -174,7 +175,9 @@ export class StatementService {
       doc.moveDown(0.6);
       doc.rect(40, doc.y, W, 30).fill('#fff4e5');
       doc.fillColor('#8a5300').fontSize(8.5).text(
-        'SIMULATED TRADING. Balances are virtual and every fill is simulated - no order was sent to an exchange and no real money moved. This is not a contract note, ledger of a registered broker or tax document.',
+        u.isDemo
+          ? 'DEMO ACCOUNT. Balances are virtual and every fill is simulated - no order was sent to an exchange and no real money moved. This is not a contract note, ledger of a registered broker or tax document.'
+          : 'ACCOUNT STATEMENT. Trading entries record paper fills; orders are not sent to an exchange. This is not a contract note, ledger of a registered broker or tax document.',
         46,
         doc.y + 6,
         { width: W - 12 },
@@ -259,7 +262,7 @@ export class StatementService {
       for (const l of d.lines) {
         bal += l.amount;
         if (hideFees && l.kind === 'FEE') continue;
-        ledgerRows.push([fmtIst(l.at), l.memo, l.amount < 0n ? amt(-l.amount) : '', l.amount > 0n ? amt(l.amount) : '', amt(bal)]);
+        ledgerRows.push([fmtIst(l.at), accountText(l.memo, u.isDemo), l.amount < 0n ? amt(-l.amount) : '', l.amount > 0n ? amt(l.amount) : '', amt(bal)]);
       }
       table(
         'Ledger',
@@ -268,7 +271,7 @@ export class StatementService {
         'No ledger entries in this period.',
       );
       table(
-        'Trades (simulated fills)',
+        u.isDemo ? 'Trades (simulated fills)' : 'Trades',
         [{ h: 'Date & time', w: 80 }, { h: 'Instrument', w: 135 }, { h: 'Side', w: 45 }, { h: 'Type', w: 70 }, { h: 'Qty', w: 45, r: true }, { h: 'Price', w: 70, r: true }, { h: 'Value', w: W - 445, r: true }],
         d.fills.map((f) => [f.at ? fmtIst(f.at) : '', f.symbol, f.side, f.type.replace('_', ' '), String(f.qty), f.price ? amt(f.price) : '', f.price ? amt(f.price * BigInt(f.qty)) : '']),
         'No trades in this period.',
@@ -278,7 +281,7 @@ export class StatementService {
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i);
         doc.page.margins.bottom = 0; // footer sits in the margin; don't let it spill onto a new page
-        doc.font('Helvetica').fontSize(7.5).fillColor(grey).text(`${u.username} - ${c.from} to ${c.to} - Page ${i + 1} of ${range.count} - Simulated account`, 40, doc.page.height - 30, { width: W, align: 'center', lineBreak: false });
+        doc.font('Helvetica').fontSize(7.5).fillColor(grey).text(`${u.username} - ${c.from} to ${c.to} - Page ${i + 1} of ${range.count}${u.isDemo ? ' - Demo account' : ''}`, 40, doc.page.height - 30, { width: W, align: 'center', lineBreak: false });
       }
       doc.end();
     });

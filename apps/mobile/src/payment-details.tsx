@@ -1,3 +1,4 @@
+import { validPaymentReference, UTR_HINT } from './payment-reference';
 import { useEffect, useRef, useState } from 'react';
 import { Image, Linking, View } from 'react-native';
 import { QR, upiLink } from './qr';
@@ -40,12 +41,13 @@ export const paymentInput = (p: PaymentDraft) => ({
 });
 export function paymentError(p: PaymentDraft) {
   if (!p.payeeAccountId) return 'Choose the receiving account you paid.';
-  if (!/^[A-Za-z0-9]{6,30}$/.test(p.utr.trim())) return 'Enter the UTR / reference (6–30 letters and digits).';
+  if (!validPaymentReference(p.utr)) return UTR_HINT;
   if (p.payerName.trim().length < 2 || p.payerName.trim().length > 120)
     return 'Enter the payer’s name (2–120 characters).';
   const date = new Date(`${p.paidOn}T00:00:00+05:30`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.paidOn) || !Number.isFinite(date.getTime()) || date.getTime() > Date.now())
     return 'Enter a valid payment date that is not in the future (YYYY-MM-DD).';
+  if (!p.proof?.trim()) return 'Attach the payment screenshot before submitting.';
   return '';
 }
 export function ReceivingAccount({ payee }: { payee: Payee }) {
@@ -158,7 +160,8 @@ export function PaymentReferenceFields({
       />
       <Field
         label="UTR / payment reference"
-        maxLength={30}
+        maxLength={22}
+        hint={UTR_HINT}
         autoCapitalize="characters"
         autoCorrect={false}
         value={value.utr}
@@ -177,7 +180,7 @@ export function PaymentReferenceFields({
           onRemove={() => onChange({ ...value, proof: undefined })}
         />
       ) : (
-        <Button title="Attach screenshot (optional)" icon="file" busy={busy} onPress={() => void pick()} />
+        <Button title="Attach payment screenshot (required)" icon="file" busy={busy} onPress={() => void pick()} />
       )}
     </View>
   );

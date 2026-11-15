@@ -20,7 +20,7 @@ export default async function About() {
       <section className="ws-sec ws-sec-tight">
         <div className="ws-wrap ws-narrow ws-prose">
           <h2>Why a practice account comes first</h2>
-          <p>Most beginners lose money while they are still learning what an order type or a margin call is. Our students make those mistakes on a paper-trading account with virtual money, where a mistake costs nothing but teaches the same lesson.</p>
+          <p>Most beginners lose money while they are still learning what an order type or a margin call is. Our students make those mistakes on a paper-trading account with practice funds, where a mistake costs nothing but teaches the same lesson.</p>
           <h2>What we believe</h2>
           <ul>
             <li>Risk comes before returns. Every course covers position sizing and stop-losses.</li>

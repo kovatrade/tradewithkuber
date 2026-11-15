@@ -274,7 +274,7 @@ export class OrdersService implements OnModuleInit {
 
   /** Apply a simulated fill: update the order and position, post P&L and fees to the ledger. */
   private async fill(tx: Tx, o: OrderRow, price: bigint, fees: FeeRule, triggered = false): Promise<OrderRow> {
-    const [owner] = await tx.select({ brokerId: users.brokerId }).from(users).where(eq(users.id, o.userId));
+    const [owner] = await tx.select({ brokerId: users.brokerId, isDemo: users.isDemo }).from(users).where(eq(users.id, o.userId));
     const [broker] = owner?.brokerId ? await tx.select().from(users).where(eq(users.id, owner.brokerId)) : [];
     const mega = this.market.instrument(o.instrumentId)?.lotClass === 'MEGA';
     const defaultRate = await this.config.get(mega ? 'broker.commissionPerMegaLot' : 'broker.commissionPerMiniLot');
@@ -353,6 +353,7 @@ export class OrdersService implements OnModuleInit {
       'order.filled',
       triggered ? `${o.type === 'STOP_LOSS' ? 'Stop-loss' : 'Take-profit'} triggered` : `Simulated order filled`,
       `${o.side} ${o.quantity} @ ${(Number(price) / 100).toFixed(2)}${triggered ? ' at LTP' : ''} (simulated fill — not an exchange trade)`,
+      owner?.isDemo,
     );
     return filled;
   }

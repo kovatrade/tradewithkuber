@@ -325,7 +325,7 @@ export function PaymentDialog({ type, userId, onClose, onDone, available }: { ty
   const m = useMutation(`mutation($i:PaymentRequestInput!){ requestPayment(input:$i){ id status } }`);
   const { settings, me } = useAuth();
   const sole = useSoleAdmin() && me?.role === 'SUPER_ADMIN';
-  const needsPayment = type === 'DEPOSIT' && me?.role !== 'SUPER_ADMIN';
+  const needsPayment = type === 'DEPOSIT';
   const review = step === (needsPayment ? 3 : 1);
   const min = type === 'DEPOSIT' ? Number(settings?.minDeposit ?? 50000) : 0;
   const minLabel = `₹${inr(String(min), { decimals: false })}`;
@@ -1023,5 +1023,5 @@ export function LedgerTable({ userId }: { userId?: string }) {
   );
 }
 
-export interface Payment { paymentEvidence?: PaymentEvidence; requestedByName?: string; reviewedByName?: string; updatedAt?: string; reviewedAt?: string; reviewedById?: string; journalId?: string; externalRef?: string; id: string; userId: string; username?: string; type: string; mode: string; amount: string; status: string; reviewNote?: string; createdAt: string; requestedById: string }
-export const PAYMENT_FIELDS = `id userId username type mode amount status reviewNote createdAt updatedAt reviewedAt reviewedById journalId externalRef requestedById requestedByName reviewedByName paymentEvidence { ${EVIDENCE_FIELDS} }`;
+export interface Payment { isDemo?: boolean; paymentEvidence?: PaymentEvidence; requestedByName?: string; reviewedByName?: string; updatedAt?: string; reviewedAt?: string; reviewedById?: string; journalId?: string; externalRef?: string; id: string; userId: string; username?: string; type: string; mode: string; amount: string; status: string; reviewNote?: string; createdAt: string; requestedById: string }
+export const PAYMENT_FIELDS = `id userId username type mode isDemo amount status reviewNote createdAt updatedAt reviewedAt reviewedById journalId externalRef requestedById requestedByName reviewedByName paymentEvidence { ${EVIDENCE_FIELDS} }`;

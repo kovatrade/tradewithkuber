@@ -1,17 +1,18 @@
 import { Field, ID, InputType, ObjectType } from '@nestjs/graphql';
-import { IsISO8601, IsOptional, IsUUID, Length, Matches, MaxLength } from 'class-validator';
+import { IsISO8601, IsString, IsUUID, Length, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { UTR_RE, UTR_HINT } from '../common/payment-reference';
 
 @InputType()
 export class PaymentEvidenceInput {
   @Field(() => ID) @IsUUID('all') payeeAccountId: string;
   @Field()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
-  @Matches(/^[A-Za-z0-9]{6,30}$/, { message: 'Enter a UTR / payment reference of 6–30 letters and digits.' })
+  @Matches(UTR_RE, { message: UTR_HINT })
   utr: string;
   @Field() @Length(2, 120) payerName: string;
   @Field() @IsISO8601({ strict: true }) paidAt: string;
-  @Field({ nullable: true }) @IsOptional() @MaxLength(800_000) proof?: string;
+  @Field() @IsString() @Length(1, 800_000, { message: 'Attach a payment screenshot (JPG, PNG or WebP, max 550 kB).' }) proof: string;
 }
 
 @ObjectType()

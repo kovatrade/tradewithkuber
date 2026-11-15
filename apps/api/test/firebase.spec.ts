@@ -100,7 +100,7 @@ describe('Durable FCM delivery', () => {
     const f = fixture(); await f.service.drain();
     expect(dialect.sqlToQuery(f.execute.mock.calls[0][0]).sql).toContain('FOR UPDATE SKIP LOCKED');
     expect(dialect.sqlToQuery(f.execute.mock.calls[1][0]).sql).toContain('s.revoked_at IS NULL');
-    expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ notification: { title: note.title, body: note.body }, data: expect.objectContaining({ href: '/trader/orders', userId: 'trader' }), android: expect.objectContaining({ priority: 'high', notification: expect.objectContaining({ channelId: 'activity', tag: 'note' }) }) }));
+    expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ notification: { title: note.title, body: 'order' }, data: expect.objectContaining({ href: '/trader/orders', userId: 'trader' }), android: expect.objectContaining({ priority: 'high', notification: expect.objectContaining({ channelId: 'activity', tag: 'note' }) }) }));
     expect(f.updates[0]).toEqual({ finishedAt: expect.any(Date), lastError: null });
   });
   it('delivers notifications while Firebase SMS is disabled', async () => {

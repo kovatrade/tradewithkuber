@@ -22,7 +22,7 @@ export function AppCollage({ compact }: { compact?: boolean } = {}) {
         ))}
       </div>
       <div className="ws-shot ws-shot-main">
-        <div className="ws-shot-bar"><span className="ws-shot-dot" /><span>Practice account</span><span className="ws-shot-tag">Virtual money</span></div>
+        <div className="ws-shot-bar"><span className="ws-shot-dot" /><span>Demo account</span><span className="ws-shot-tag">Virtual money</span></div>
         <div className="ws-shot-stats">
           <div><small>Balance</small><b>4,96,476</b></div>
           <div><small>Live P/L</small><b className="ws-pos">+2,140</b></div>

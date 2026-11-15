@@ -1,4 +1,5 @@
 'use client';
+import { validPaymentReference, UTR_HINT } from '@/lib/payment-reference';
 import { useSoleAdmin } from '@/lib/sole-admin';
 import { useEffect, useState, type ReactNode } from 'react';
 import { toProofDataUrl } from '@/lib/image';
@@ -122,7 +123,7 @@ function FeeForm({ payee, onClose, onDone }: { payee: Payee; onClose: () => void
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const toast = useToast();
-  const ok = /^\d{1,9}(\.\d{1,2})?$/.test(amount) && Number(amount) > 0 && purpose.trim().length >= 2 && /^[A-Za-z0-9]{6,30}$/.test(utr.trim()) && !!proof;
+  const ok = /^\d{1,9}(\.\d{1,2})?$/.test(amount) && Number(amount) > 0 && purpose.trim().length >= 2 && validPaymentReference(utr) && !!proof;
   const pick = async (file?: File | null) => {
     if (!file) return;
     setReading(true); setErr(null);
@@ -139,7 +140,7 @@ function FeeForm({ payee, onClose, onDone }: { payee: Payee; onClose: () => void
       }}>
         <div className="field"><label htmlFor="fee-amt">Amount paid (₹)</label><input id="fee-amt" className="input" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))} autoFocus /></div>
         <div className="field"><label htmlFor="fee-for">What it’s for</label><input id="fee-for" className="input" maxLength={120} placeholder="e.g. Course fee, November batch" value={purpose} onChange={(e) => setPurpose(e.target.value)} /></div>
-        <div className="field"><label htmlFor="fee-utr">UTR / reference number</label><input id="fee-utr" className="input" maxLength={30} placeholder="From your bank or UPI app" value={utr} onChange={(e) => setUtr(e.target.value.replace(/\s/g, ''))} /><span className="t3 xs">The 12-digit UPI reference, or the bank transfer UTR.</span></div>
+        <div className="field"><label htmlFor="fee-utr">UTR / reference number</label><input id="fee-utr" className="input" maxLength={22} placeholder="From your bank or UPI app" value={utr} onChange={(e) => setUtr(e.target.value.replace(/\s/g, ''))} /><span className="t3 xs">{UTR_HINT}</span></div>
         <div className="field"><label htmlFor="fee-proof">Payment screenshot</label>
           {proof ? (
             <div className="proof-pick">

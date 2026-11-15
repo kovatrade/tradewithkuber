@@ -9,6 +9,7 @@ import type { Actor } from '../common/context';
 import { env } from '../config/env';
 import { FirebaseService } from '../firebase/firebase.service';
 import { notificationDestination } from './navigation';
+import { presentNotification } from './presentation';
 
 @Injectable()
 export class PushService implements OnModuleInit, OnModuleDestroy {
@@ -74,9 +75,10 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
         WHERE p.id = ${job.id} AND n.created_at > now() - interval '24 hours'`);
       if (!n) { await this.finish(job.id, 'expired-or-signed-out'); return; }
       const href = notificationDestination(n.role, n.kind) ?? '/notifications';
+      const text = presentNotification(n);
       await this.firebase.messaging.send({
         token: decryptField(n.token_enc, 'push_devices.token'),
-        notification: { title: n.title, body: n.body },
+        notification: { title: text.title, body: text.body },
         data: { notificationId: n.notification_id, kind: n.kind, href, userId: n.user_id },
         android: { priority: 'high', ttl: 86_400_000, notification: { channelId: 'activity', sound: 'default', tag: n.notification_id } },
         apns: { headers: { 'apns-priority': '10', 'apns-push-type': 'alert', 'apns-collapse-id': n.notification_id, 'apns-expiration': String(Math.floor(new Date(n.created_at).getTime() / 1000) + 86400) }, payload: { aps: { sound: 'default' } } },

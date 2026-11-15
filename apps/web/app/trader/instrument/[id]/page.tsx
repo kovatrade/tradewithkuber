@@ -1,4 +1,5 @@
 'use client';
+import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
@@ -15,6 +16,7 @@ type Side = 'BUY' | 'SELL';
 interface Preview { price: string; value: string; intradayMargin: string; carryForwardMargin: string; brokerage: string }
 
 function StockPage() {
+  const demo = useAuth().me?.isDemo === true;
   const { id } = useParams<{ id: string }>();
   const sp = useSearchParams();
   const inst = useQuery<{ instrument: Instrument }>(`query($id:ID!){ instrument(id:$id){ id symbol name exchange segment expiry lotSize tickSize lotClass lotLabel category quote{ ${QUOTE_FIELDS} } } }`, { id });
@@ -193,7 +195,7 @@ function StockPage() {
               <div className="details-row zebra"><span className="k">Tick Size</span><span className="v">{curSign(i)}{i.tickSize}</span></div>
               <div className="details-row"><span className="k">Exchange</span><span className="v">{i.exchange} · {i.segment}</span></div>
               <div className="details-row zebra"><span className="k">Lot Type</span><span className="v">{i.lotClass === 'MEGA' ? 'Mega lot' : 'Mini lot'}</span></div>
-              <div className="details-row"><span className="k">Price Source</span><span className="v">{q?.source === 'SIMULATED' ? 'Simulated feed' : q?.source ?? '—'}</span></div>
+              <div className="details-row"><span className="k">Price Source</span><span className="v">{q?.source === 'SIMULATED' ? (demo ? 'Simulated feed' : 'Practice feed') : q?.source ?? '—'}</span></div>
             </div>
           )}
         </section>
@@ -223,6 +225,7 @@ function roundToTick(v: number, tick: number) {
 }
 
 function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument: Instrument; q?: { bid: string; ask: string; ltp: string }; initialSide: Side; initialQty: string }) {
+  const demo = useAuth().me?.isDemo === true;
   const toast = useToast();
   const { prefs } = usePrefs();
   const sum = useSummary();
@@ -388,7 +391,7 @@ function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument:
         <button className={`btn btn-lg btn-block ${side === 'BUY' ? 'btn-buy' : 'btn-sell'}`} disabled={!valid || !preview} onClick={handleTradeClick}>
           {side === 'BUY' ? 'Buy' : 'Sell'}{valid && preview ? ` ${n} @ ${type === 'MARKET' ? inr(side === 'BUY' ? q?.ask : q?.bid) : inr(price)}` : ''}
         </button>
-        <p className="t3" style={{ textAlign: 'center' }}>Simulated order. Never sent to an exchange.</p>
+        {demo && <p className="t3" style={{ textAlign: 'center' }}>Simulated order. Never sent to an exchange.</p>}
       </div>
       {confirm && preview && (
         <Confirm
@@ -402,7 +405,7 @@ function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument:
             ['Margin required', `₹${inr(preview.intradayMargin)}`],
             ['Carry-forward margin', `₹${inr(preview.carryForwardMargin)}`],
           ]}
-          warning={type === 'MARKET' ? 'Market orders execute at the best available simulated price, which can differ slightly from the estimate.' : isTrig(type) ? 'When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.' : undefined}
+          warning={type === 'MARKET' ? demo ? 'Market orders execute at the best available simulated price, which can differ slightly from the estimate.' : 'Market orders execute at the best available price, which can differ slightly from the estimate.' : isTrig(type) ? 'When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.' : undefined}
           confirmLabel={`Confirm ${side === 'BUY' ? 'buy' : 'sell'}`}
           tone={side === 'BUY' ? 'buy' : 'sell'}
           pending={place.pending}

@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export async function generateMetadata(): Promise<Metadata> {
   const { name } = await getSiteName();
-  return { title: `Open a free practice account | ${name}`, description: 'Sign up with your mobile number for a free paper-trading account with virtual money.', robots: { index: true, follow: true } };
+  return { title: `Open a free practice account | ${name}`, description: 'Sign up with your mobile number for a free paper-trading account with practice funds.', robots: { index: true, follow: true } };
 }
 
 export default async function OpenAccount() {
@@ -21,7 +21,7 @@ export default async function OpenAccount() {
   if (broker?.mode === 'live') return <BrokerOpenAccount b={broker} name={name} />;
   return (
     <SiteFrame>
-      <PageIntro title="Open a free practice account" center>Practise trading with virtual money on web, Android and iPhone, and learn with live courses when you’re ready.</PageIntro>
+      <PageIntro title="Open a free practice account" center>Practise trading with practice funds on web, Android and iPhone, and learn with live courses when you’re ready.</PageIntro>
 
       <section className="ws-sec ws-sec-flush">
         <div className="ws-wrap ws-open">
@@ -57,7 +57,7 @@ export default async function OpenAccount() {
         <div className="ws-wrap">
           <Split title={`Why practise with ${name}`} art={Art.benefits} titleBelowArt>
             <Points items={[
-            ['No real money at risk', 'Every order uses virtual money, so mistakes teach you without costing you.'],
+            ['No real money at risk', 'Every order uses practice funds, so mistakes teach you without costing you.'],
             ['Live prices, real rules', 'MCX timings, lot sizes, margins and auto cut at market close work as they do in real trading.'],
             ['No spam or gimmicks', 'No stock tips and no push to trade more. The app is for practice and learning.'],
             ['Learn alongside', 'Join a course when you want structure, and review your practice trades with a mentor.'],
@@ -73,7 +73,7 @@ export default async function OpenAccount() {
         </div>
       </section>
 
-      <CtaBand title={`Start practising with ${name}`} text="A free practice account, live prices and virtual money." primary={{ href: '/open-account', label: 'Sign up for free' }} secondary={{ href: '/courses', label: 'Explore courses' }} />
+      <CtaBand title={`Start practising with ${name}`} text="A free practice account, live prices and practice funds." primary={{ href: '/open-account', label: 'Sign up for free' }} secondary={{ href: '/courses', label: 'Explore courses' }} />
     </SiteFrame>
   );
 }

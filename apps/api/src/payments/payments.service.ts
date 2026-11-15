@@ -66,6 +66,7 @@ export class PaymentsService {
       const [u] = await tx.select().from(users).where(eq(users.id, userId));
       if (!u || u.role !== 'TRADER') throw notFound('Account');
       if (u.status !== 'ACTIVE') throw badInput('Account is not active.');
+      if (input.type === 'DEPOSIT' && !u.isDemo && !input.payment) throw badInput('Enter the payment reference and attach the payment screenshot.');
       // Demo balances are practice money: only a Super Admin may adjust them.
       if (u.isDemo && actor.role !== 'SUPER_ADMIN') throw forbidden('Adding funds and withdrawing are not available in demo accounts.');
 
@@ -84,7 +85,7 @@ export class PaymentsService {
       await this.audit.record(tx, { actor, action: `payment.${input.type.toLowerCase()}_requested`, entityType: 'payment', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { userId, amount: input.amountMinor, mode: u.mode } });
       const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
       for (const a of admins) {
-        await this.notifications.notify(tx, a.id, 'payment.review', `${input.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} awaiting review`, `${u.username}: ₹${formatMoney(input.amountMinor)} (${u.mode.toLowerCase()})`);
+        await this.notifications.notify(tx, a.id, 'payment.review', `${input.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} awaiting review`, `${u.username}: ₹${formatMoney(input.amountMinor)}${u.isDemo ? ' (virtual)' : ''}`, u.isDemo);
       }
       return p;
     });
@@ -153,6 +154,7 @@ export class PaymentsService {
       if (!p) throw notFound('Payment request');
       if (p.status === 'POSTED') return p; // idempotent re-approval
       if (p.status !== 'REQUESTED') throw conflict(`Request is ${p.status.toLowerCase()}.`);
+      const [owner] = await tx.select({ isDemo: users.isDemo }).from(users).where(eq(users.id, p.userId));
       if (p.userId === actor.userId || (p.requestedById === actor.userId && !(await soleAdminMayApprove(tx)))) {
         await this.audit.recordStandalone({ actor, action: 'payment.self_approval_blocked', entityType: 'payment', entityId: p.id, outcome: 'DENIED', ip });
         throw forbidden('Maker-checker: you cannot approve a request you created or that is for your own account.');
@@ -189,7 +191,7 @@ export class PaymentsService {
         .where(eq(paymentRequests.id, p.id))
         .returning();
       await this.audit.record(tx, { actor, action: 'payment.approved', entityType: 'payment', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { journalId: j.id, amount: p.amountMinor, type: p.type, requestedBy: p.requestedById } });
-      await this.notifications.notify(tx, p.userId, 'payment.posted', `${p.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} approved`, `₹${formatMoney(p.amountMinor)} has been ${p.type === 'DEPOSIT' ? 'credited' : 'debited'}${p.mode === 'SIMULATED' ? ' (virtual)' : ''}.`);
+      await this.notifications.notify(tx, p.userId, 'payment.posted', `${p.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} approved`, `₹${formatMoney(p.amountMinor)} has been ${p.type === 'DEPOSIT' ? 'credited' : 'debited'}${owner?.isDemo ? ' (virtual)' : ''}.`, owner?.isDemo);
       return done;
     }
   }

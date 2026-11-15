@@ -1,3 +1,4 @@
+import { validPaymentReference, UTR_HINT } from '@/payment-reference';
 /** Funds → Pay fees: the company's bank / UPI details (real money, not the virtual balance) and "I've paid" with the UTR. */
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
@@ -62,7 +63,7 @@ function PaidSheet({ payee, onClose, onDone }: { payee: Payee; onClose: () => vo
   const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const ok = /^\d{1,9}(\.\d{1,2})?$/.test(amount) && Number(amount) > 0 && purpose.trim().length >= 2 && /^[A-Za-z0-9]{6,30}$/.test(utr.trim()) && !!proof;
+  const ok = /^\d{1,9}(\.\d{1,2})?$/.test(amount) && Number(amount) > 0 && purpose.trim().length >= 2 && validPaymentReference(utr) && !!proof;
   const pick = async () => {
     setReading(true); setErr(null);
     try { const d = await pickProof(); if (d) setProof(d); } catch (e) { setErr((e as Error).message); } finally { setReading(false); }
@@ -71,7 +72,7 @@ function PaidSheet({ payee, onClose, onDone }: { payee: Payee; onClose: () => vo
     <Sheet visible title="Tell us about your payment" sub={`Paid to ${payee.label}. We’ll check it against our bank statement.`} onClose={onClose}>
       <Field label="Amount paid (₹)" keyboardType="decimal-pad" value={amount} onChangeText={(v) => setAmount(v.replace(/[^\d.]/g, ''))} />
       <Field label="What it’s for" placeholder="e.g. Course fee, November batch" maxLength={120} value={purpose} onChangeText={setPurpose} />
-      <Field label="UTR / reference number" placeholder="From your bank or UPI app" autoCapitalize="characters" maxLength={30} value={utr} onChangeText={(v) => setUtr(v.replace(/\s/g, ''))} hint="The 12-digit UPI reference, or the bank transfer UTR." />
+      <Field label="UTR / reference number" placeholder="From your bank or UPI app" autoCapitalize="characters" maxLength={22} value={utr} onChangeText={(v) => setUtr(v.replace(/\s/g, ''))} hint={UTR_HINT} />
       <View style={{ gap: S[2] }}>
         <T v="sm" c="text2" w="500">Payment screenshot</T>
         {proof ? <ProofPicked uri={proof} onChange={() => void pick()} onRemove={() => setProof(null)} /> : (

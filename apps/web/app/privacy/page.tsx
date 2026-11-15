@@ -18,7 +18,7 @@ export default async function Privacy() {
       <h2>What we collect</h2>
       <ul>
         <li><b>Call-back requests:</b> your name, mobile number, optional email, the course you chose and any message you write.</li>
-        <li><b>Practice accounts:</b> your username, contact details given at sign-up, and your practice orders and positions (virtual money only).</li>
+        <li><b>Practice accounts:</b> your username, contact details given at sign-up, and your practice orders and positions (practice funds only).</li>
         <li><b>Security records:</b> sign-in times, device and IP address, used to protect accounts and investigate misuse.</li>
       </ul>
       <h2>How we use it</h2>

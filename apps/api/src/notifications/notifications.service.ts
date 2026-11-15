@@ -8,6 +8,7 @@ import { mergeNavigationCounts, notificationDestination } from './navigation';
 import { afterWipe } from '../wipe/visibility';
 import { env } from '../config/env';
 import { badInput } from '../common/errors';
+import { presentNotification } from './presentation';
 
 /**
  * In-process pub/sub for GraphQL subscriptions. For multiple API instances, swap for
@@ -37,10 +38,11 @@ export class NotificationsService {
     });
   }
 
-  async notify(tx: DbOrTx, userId: string, kind: string, title: string, body: string): Promise<typeof notifications.$inferSelect> {
+  async notify(tx: DbOrTx, userId: string, kind: string, title: string, body: string, demo = false): Promise<typeof notifications.$inferSelect> {
     if (env().FIREBASE_PUSH_ENABLED && tx === this.dbs.db)
-      return this.dbs.db.transaction(inner => this.notify(inner, userId, kind, title, body));
-    const [n] = await tx.insert(notifications).values({ userId, kind, title, body }).returning();
+      return this.dbs.db.transaction(inner => this.notify(inner, userId, kind, title, body, demo));
+    const text = presentNotification({ title: demo && !/^Demo[: —]/i.test(title) ? `Demo: ${title}` : title, body });
+    const [n] = await tx.insert(notifications).values({ userId, kind, ...text }).returning();
     if (env().FIREBASE_PUSH_ENABLED) await tx.execute(sql`
       INSERT INTO push_deliveries (notification_id, device_id)
       SELECT ${n.id}::uuid, d.id FROM push_devices d
@@ -52,7 +54,7 @@ export class NotificationsService {
   }
 
   list(userId: string, limit: number) {
-    return this.dbs.db.select().from(notifications).where(and(eq(notifications.userId, userId), afterWipe(notifications.createdAt, userId))).orderBy(desc(notifications.createdAt)).limit(limit);
+    return this.dbs.db.select().from(notifications).where(and(eq(notifications.userId, userId), afterWipe(notifications.createdAt, userId))).orderBy(desc(notifications.createdAt)).limit(limit).then(rows => rows.map(presentNotification));
   }
 
   async unreadCount(userId: string) {

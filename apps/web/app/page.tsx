@@ -38,7 +38,7 @@ export default async function Home() {
           <div>
             <h2>Learn with confidence</h2>
             <Points items={[
-              ['Practice before money', 'Every student gets a paper-trading account with virtual money, so mistakes cost nothing while you learn.'],
+              ['Practice before money', 'Every student gets a paper-trading account with practice funds, so mistakes cost nothing while you learn.'],
               ['No tips, no hype', 'We teach how markets and risk work. No stock tips, no promised returns, no pressure to trade.'],
               ['Everything in one place', 'Live classes, recordings, the practice app and weekly reviews with a mentor, under one login.'],
               ['Fees shown upfront', 'One fee per course, listed on the course page. Nothing to buy inside the course.'],
@@ -52,7 +52,7 @@ export default async function Home() {
       <section className="ws-strip">
         <div className="ws-wrap ws-strip-in">
           <b>Practice app</b>
-          <p>Watchlists, live MCX prices, orders, positions and carry forward, on web, Android and iPhone, with virtual money. <Link href="/download">Get the app</Link></p>
+          <p>Watchlists, live MCX prices, orders, positions and carry forward, on web, Android and iPhone, with practice funds. <Link href="/download">Get the app</Link></p>
         </div>
       </section>
 
@@ -64,7 +64,7 @@ export default async function Home() {
             <Link href="/courses">See course fees</Link>
           </div>
           <dl className="ws-price-nums">
-            <div><dt>₹0</dt><dd>Practice account with virtual money</dd></div>
+            <div><dt>₹0</dt><dd>Practice account with practice funds</dd></div>
             <div><dt>{from !== null && Number.isFinite(from) ? rupees(String(from)) : '—'}</dt><dd>Courses starting from</dd></div>
             <div><dt>{courses.length || '—'}</dt><dd>Courses from beginner to advanced</dd></div>
           </dl>

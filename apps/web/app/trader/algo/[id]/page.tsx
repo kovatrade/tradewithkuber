@@ -1,4 +1,5 @@
 'use client';
+import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -285,6 +286,7 @@ function InstrumentPicker({ value, onChange }: { value: Inst | null; onChange: (
 /* ======================================================================= backtest */
 
 function Backtest({ s, draft, dirty, save }: { s: Strategy | null; draft: Draft; dirty: boolean; save: () => Promise<Strategy | null> }) {
+  const demo = useAuth().me?.isDemo === true;
   const periods = PERIODS[draft.interval];
   const [days, setDays] = useState(periods[periods.length - 1].days);
   const [runs, setRuns] = useState<Run[]>([]);
@@ -349,7 +351,7 @@ function Backtest({ s, draft, dirty, save }: { s: Strategy | null; draft: Draft;
           </dl>
           <BacktestCharts instrumentId={s?.instrumentId ?? draft.instrument?.id ?? ''} interval={sel.interval} from={Date.parse(sel.from)} to={Date.parse(sel.to)} trades={trades} equity={equity} />
           <Trades trades={trades} interval={sel.interval} />
-          <p className="t3 sm">Simulated history; past performance doesn’t guarantee future results.</p>
+          <p className="t3 sm">{demo ? 'Simulated history' : 'Backtest history'}; past performance doesn’t guarantee future results.</p>
         </div>
       )}
     </section>
@@ -400,6 +402,7 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-IN', { day: '2
 /* ======================================================================= live */
 
 function LiveControls({ s, dirty, onChange, save }: { s: Strategy; dirty: boolean; onChange: (s: Strategy) => void; save: () => Promise<Strategy | null> }) {
+  const demo = useAuth().me?.isDemo === true;
   const toast = useToast();
   const router = useRouter();
   const [ask, setAsk] = useState<'start' | 'stop' | 'delete' | null>(null);
@@ -447,12 +450,12 @@ function LiveControls({ s, dirty, onChange, save }: { s: Strategy; dirty: boolea
           </>}
       {ask === 'start' && (
         <Confirm
-          title={`Start “${s.name}”?`} sub="Paper trading on the simulated feed"
+          title={`Start “${s.name}”?`} sub={demo ? "Paper trading on the simulated feed" : "Strategy trading"}
           lines={[
             ['Instrument', symbol], ['Timeframe', INTERVALS.find((i) => i.v === s.interval)?.label ?? s.interval], ['Each trade', `${rules.side === 'LONG' ? 'Buy' : 'Sell'} ${s.quantity} at market`],
             ['Stop-loss / take-profit', `${rules.stopLossPct ?? '—'}% / ${rules.takeProfitPct ?? '—'}%`], ['Stops for the day after losing', `₹${inr(s.maxDailyLoss)}`], ['Max orders per day', String(s.maxOrdersPerDay)],
           ]}
-          warning={`${describe(rules, s.quantity, symbol)} Orders are simulated and use your virtual balance, with the same checks as manual orders.${dirty ? ' Your unsaved changes are saved first.' : ''}`}
+          warning={`${describe(rules, s.quantity, symbol)} ${demo ? 'Orders are simulated and use your virtual balance' : 'Orders use your trading balance'}, with the same checks as manual orders.${dirty ? ' Your unsaved changes are saved first.' : ''}`}
           confirmLabel="Start strategy" tone="buy" pending={busy} error={err} onConfirm={act} onClose={() => setAsk(null)}
         />
       )}

@@ -451,7 +451,7 @@ export function PaymentSheet({ type, userId, available, onClose }: { type: 'DEPO
   const key = useMemo(newKey, [amount, payment.utr, payment.payeeAccountId]);
   const { settings, me } = useAuth();
   const sole = useSoleAdmin() && me?.role === 'SUPER_ADMIN';
-  const needsPayment = type === 'DEPOSIT' && me?.role !== 'SUPER_ADMIN';
+  const needsPayment = type === 'DEPOSIT';
   const review = step === (needsPayment ? 3 : 1);
   const min = type === 'DEPOSIT' ? Number(settings?.minDeposit ?? 50000) : 0;
   const minLabel = `₹${inr(String(min)).replace('.00', '')}`;

@@ -39,6 +39,7 @@ export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: (
   const sole = useSoleAdmin();
   const { me, settings } = useAuth();
   const asBroker = me?.role === 'BROKER';
+  const needsPayment = asBroker || (f.role === 'TRADER' && Number(f.openingAmount) > 0);
   const minOpen = Number(settings?.minDeposit ?? 50000);
   const minLabel = minOpen.toLocaleString('en-IN');
   const [touched, setTouched] = useState(false);
@@ -48,7 +49,7 @@ export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: (
   const errs = {
     username: !/^[a-z][a-z0-9_.@#-]{3,39}$/.test(f.username.trim().toLowerCase()) ? '4–40 chars, start with letter' : '',
     displayName: !f.displayName.trim() ? 'Enter a name' : '',
-    phone: !asBroker && !f.phone ? 'Mobile number is required' : f.phone && !/^[6-9]\d{9}$/.test(f.phone) ? 'Enter a 10-digit mobile' : '',
+    phone: !f.phone ? 'Mobile number is required' : f.phone && !/^[6-9]\d{9}$/.test(f.phone) ? 'Enter a 10-digit mobile' : '',
     email: f.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email) ? 'Enter a valid email' : '',
     tempPassword: f.tempPassword.length < 10 ? 'At least 10 characters' : '',
     openingAmount: f.role === 'TRADER' && (asBroker || f.openingAmount.trim()) && !(/^\d{1,12}(\.\d{1,2})?$/.test(f.openingAmount.trim()) && Number(f.openingAmount) >= minOpen) ? `Enter at least ₹${minLabel}` : '',
@@ -58,17 +59,17 @@ export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: (
   const bad = Object.values(errs).some(Boolean);
   const E = ({ k }: { k: keyof typeof errs }) => (touched && errs[k] ? <span className="err" style={{ fontSize: '11px', marginTop: 2 }}>{errs[k]}</span> : null);
   return (
-    <Dialog title={asBroker ? 'Add trader' : 'Create account'} sub={asBroker ? `Step ${step + 1} of 3 · ${['Account details', 'Super Admin receiving account', 'Payment reference and proof'][step]}` : sole ? 'The account can sign in straight away.' : 'New accounts can sign in after Super Admin approval.'} size="lg" onClose={onClose}>
+    <Dialog title={asBroker ? 'Add trader' : 'Create account'} sub={needsPayment ? `Step ${step + 1} of 3 · ${['Account details', 'Super Admin receiving account', 'Payment reference and proof'][step]}` : sole ? 'The account can sign in straight away.' : 'New accounts can sign in after Super Admin approval.'} size="lg" onClose={onClose}>
       <form noValidate onSubmit={async (e) => {
         e.preventDefault(); setTouched(true);
         if (bad) { setStep(0); return; }
         setPaymentErr('');
-        if (asBroker) {
+        if (needsPayment) {
           if (step === 0) { if (!payment.payerName) setPayment({ ...payment, payerName: f.displayName });setStep(1);return; }
           if (step === 1) { if (!payment.payeeAccountId) {setPaymentErr('Choose the receiving account paid by the trader.');return;} setStep(2);return; }
           const err = paymentError(payment);if (err) {setPaymentErr(err);return;}
         }
-        const r = await m.run({ i: { username: f.username, displayName: f.displayName, role: f.role, phone: f.phone || undefined, email: f.email || undefined, brokerId: f.role === 'TRADER' && f.brokerId ? f.brokerId : undefined, tempPassword: f.tempPassword, commissionPerMiniLot: f.role === 'BROKER' && f.commMini.trim() ? f.commMini.trim() : undefined, commissionPerMegaLot: f.role === 'BROKER' && f.commMega.trim() ? f.commMega.trim() : undefined, openingAmount: f.role === 'TRADER' && f.openingAmount.trim() ? f.openingAmount.trim() : undefined, payment: asBroker ? paymentInput(payment) : undefined } });
+        const r = await m.run({ i: { username: f.username, displayName: f.displayName, role: f.role, phone: f.phone || undefined, email: f.email || undefined, brokerId: f.role === 'TRADER' && f.brokerId ? f.brokerId : undefined, tempPassword: f.tempPassword, commissionPerMiniLot: f.role === 'BROKER' && f.commMini.trim() ? f.commMini.trim() : undefined, commissionPerMegaLot: f.role === 'BROKER' && f.commMega.trim() ? f.commMega.trim() : undefined, openingAmount: f.role === 'TRADER' && f.openingAmount.trim() ? f.openingAmount.trim() : undefined, payment: needsPayment ? paymentInput(payment) : undefined } });
         if (r) { toast((r as { createUser?: { status?: string } }).createUser?.status === 'ACTIVE' ? 'Account created and active' : asBroker ? 'Request sent to the Super Admin' : 'Account created and sent for approval'); onDone(); onClose(); }
       }}>
         {step === 0 && <div className="form-grid-2">
@@ -95,8 +96,8 @@ export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: (
             <E k="username" />
           </div>
           <div className="field">
-            <label htmlFor="ph">{asBroker ? 'Mobile (optional)' : 'Mobile number'}</label>
-            <input id="ph" required={!asBroker} className="input num" placeholder="10-digit number" inputMode="tel" maxLength={10} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, '') })} aria-invalid={touched && !!errs.phone} />
+            <label htmlFor="ph">Mobile number</label>
+            <input id="ph" required className="input num" placeholder="10-digit number" inputMode="tel" maxLength={10} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value.replace(/\D/g, '') })} aria-invalid={touched && !!errs.phone} />
             <E k="phone" />
           </div>
           <div className="field">
@@ -156,13 +157,13 @@ export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: (
             </div>
           )}
         </div>}
-        {asBroker && step === 1 && <ReceivingAccountPicker value={payment.payeeAccountId} onChange={(id) => setPayment((p) => ({ ...p, payeeAccountId: id }))} />}
-        {asBroker && step === 2 && <><p className="w6">Amount paid / opening balance: ₹{inr(f.openingAmount)}</p><PaymentReferenceFields value={payment} onChange={setPayment} onBusyChange={setProofBusy} /><p className="hint">The Super Admin checks these details before approving the trader and adding the opening balance.</p></>}
+        {needsPayment && step === 1 && <ReceivingAccountPicker value={payment.payeeAccountId} onChange={(id) => setPayment((p) => ({ ...p, payeeAccountId: id }))} />}
+        {needsPayment && step === 2 && <><p className="w6">Amount paid / opening balance: ₹{inr(f.openingAmount)}</p><PaymentReferenceFields value={payment} onChange={setPayment} onBusyChange={setProofBusy} /><p className="hint">The Super Admin checks these details before approving the trader and adding the opening balance.</p></>}
         {paymentErr && <div className="notice err" role="alert">{paymentErr}</div>}
         {m.error && <div className="notice err" role="alert" style={{ marginTop: 8 }}><Icon name="alert" size={18} />{m.error}</div>}
         <div className="actions" style={{ marginTop: 12 }}>
           <button type="button" className="btn" disabled={m.pending || proofBusy} onClick={() => step ? setStep(step - 1) : onClose()}>{step ? 'Back' : 'Cancel'}</button>
-          <button className="btn btn-primary" disabled={m.pending || proofBusy}>{m.pending ? (asBroker ? 'Sending…' : 'Creating…') : asBroker ? step < 2 ? 'Next' : 'Send for approval' : 'Create account'}</button>
+          <button className="btn btn-primary" disabled={m.pending || proofBusy}>{m.pending ? (asBroker ? 'Sending…' : 'Creating…') : needsPayment && step < 2 ? 'Next' : asBroker ? 'Send for approval' : 'Create account'}</button>
         </div>
       </form>
     </Dialog>

@@ -9,11 +9,11 @@ import { EVIDENCE_FIELDS, PaymentEvidenceDetails, type PaymentEvidence } from '@
 import { inr, when } from '@/theme';
 import { Button, Empty, ErrorState, Field, Lines, ListRow, Notice, Row, Screen, Sheet, Skeleton, T, toast, useQuery } from '@/ui';
 
-interface P { paymentEvidence?: PaymentEvidence; id: string; userId: string; username?: string; type: string; mode: string; amount: string; status: string; createdAt: string; requestedById: string }
+interface P { isDemo: boolean; paymentEvidence?: PaymentEvidence; id: string; userId: string; username?: string; type: string; mode: string; amount: string; status: string; createdAt: string; requestedById: string }
 export default function Approvals() {
   const { me } = useAuth();
   const sole = useSoleAdmin();
-  const { data, error, loading, refetch } = useQuery<{ paymentRequests: P[] }>(`{ paymentRequests(status:[REQUESTED], limit:100){ id userId username type mode amount status createdAt requestedById paymentEvidence { ${EVIDENCE_FIELDS} } } }`, undefined, 10000, !me?.mfaEnabled);
+  const { data, error, loading, refetch } = useQuery<{ paymentRequests: P[] }>(`{ paymentRequests(status:[REQUESTED], limit:100){ id userId username type mode isDemo amount status createdAt requestedById paymentEvidence { ${EVIDENCE_FIELDS} } } }`, undefined, 10000, !me?.mfaEnabled);
   const [sel, setSel] = useState<P | null>(null);
   const [mode, setMode] = useState<'approve' | 'reject'>('approve');
   const [note, setNote] = useState('');
@@ -35,13 +35,13 @@ export default function Approvals() {
       <T v="sm" c="text2">Approving posts to the ledger straight away. You can’t approve a request you raised.</T>
       {loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} /> : !data!.paymentRequests.length ? <Empty icon="check" title="Nothing to review" /> : data!.paymentRequests.map((p) => (
         <ListRow key={p.id} onPress={own(p) ? undefined : () => { setErr(null); setMode('approve'); setSel(p); }} label={`Review ${p.username}`}
-          title={`${p.username} · ${p.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'}`} sub={`${when(p.createdAt)}${p.mode === 'SIMULATED' ? ' · virtual' : ''}${own(p) ? ' · needs another admin' : ''}`}
+          title={`${p.username} · ${p.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'}`} sub={`${when(p.createdAt)}${p.isDemo ? ' · virtual' : ''}${own(p) ? ' · needs another admin' : ''}`}
           right={<T v="num">₹{inr(p.amount)}</T>} />
       ))}
       <Sheet visible={!!sel} title={mode === 'approve' ? 'Approve request?' : 'Reject request?'} sub="You’ll confirm with your password." onClose={() => setSel(null)}>
         {sel && <Lines lines={[['Account', sel.username ?? ''], ['Type', sel.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'], ['Amount', `₹${inr(sel.amount)}`]]} />}
         {sel?.paymentEvidence && <PaymentEvidenceDetails evidence={sel.paymentEvidence} />}
-        {sel?.mode === 'SIMULATED' && mode === 'approve' && <Notice>This changes a virtual balance only. No money moves.</Notice>}
+        {sel?.isDemo && mode === 'approve' && <Notice>This changes a virtual balance only. No money moves.</Notice>}
         {mode === 'reject' && <Field label="Reason shown to the requester" value={note} onChangeText={setNote} />}
         {err && <Notice tone="err">{err}</Notice>}
         <Row>

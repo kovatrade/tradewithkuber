@@ -1,3 +1,4 @@
+import { useAuth } from '@/auth';
 import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { CandleChart } from '@/candle-chart';
@@ -15,6 +16,7 @@ interface I { id: string; symbol: string; name: string; exchange: string; segmen
 
 /** Groww-style stock screen: price, live chart, performance, details, sticky Buy/Sell bar. */
 export default function StockScreen() {
+  const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { id, side: s0, qty: q0, view } = useLocalSearchParams<{ id: string; side?: string; qty?: string; view?: string }>();
@@ -179,7 +181,7 @@ export default function StockScreen() {
             ['Tick size', i ? `₹${i.tickSize}` : '—'],
             ['Exchange', `${i?.exchange} · ${i?.segment}`],
             ['Lot type', i?.lotClass === 'MEGA' ? 'Mega lot' : 'Mini lot'],
-            ['Price source', q?.source === 'SIMULATED' ? 'Simulated feed' : q?.source ?? '—'],
+            ['Price source', q?.source === 'SIMULATED' ? (demo ? 'Simulated feed' : 'Practice feed') : q?.source ?? '—'],
           ]} />
         </Section>
       )}
@@ -205,6 +207,7 @@ function QtyChip({ text, onPress, tone }: { text: string; onPress?: () => void; 
 }
 
 function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { bid: string; ask: string; ltp: string }; side: Side; setSide: (s: Side) => void; initialQty: string; onClose: () => void }) {
+  const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const priv = usePrivate();
   const sum = useSummary();
@@ -330,13 +333,13 @@ function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { 
             setErr(null);
             setReview(true);
           }} />
-          <T v="xs" style={{ textAlign: 'center' }}>Simulated order. Never sent to an exchange.</T>
+          {demo && <T v="xs" style={{ textAlign: 'center' }}>Simulated order. Never sent to an exchange.</T>}
         </>
       ) : preview && (
         <>
           <Row gap={S[2]}><Badge text={side === 'BUY' ? 'Buy' : 'Sell'} tone={side === 'BUY' ? 'ok' : 'bad'} /><T w="600">{shortSymbol(i.symbol)}</T></Row>
           <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['Margin required', `₹${inr(preview.intradayMargin)}`], ['Carry-forward margin', `₹${inr(preview.carryForwardMargin)}`]]} />
-          {type === 'MARKET' && <Notice>Market orders execute at the best simulated price, which can differ slightly from the estimate.</Notice>}
+          {type === 'MARKET' && <Notice>{demo ? 'Market orders execute at the best simulated price, which can differ slightly from the estimate.' : 'Market orders execute at the best available price, which can differ slightly from the estimate.'}</Notice>}
           {isTrig(type) && <Notice>When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.</Notice>}
           {err && <Notice tone="err">{err}</Notice>}
           <Row>

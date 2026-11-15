@@ -89,14 +89,15 @@ export class UsersService {
     if (!USERNAME_RE.test(username)) throw badInput('Username: 4–40 characters, starting with a letter; letters, digits and _ . - @ # only.');
     if (input.role === 'SUPER_ADMIN') throw forbidden('Super Admin accounts are provisioned by operations, not via the API.');
     if (actor.role === 'BROKER' && input.role !== 'TRADER') throw forbidden('Brokers can only create trader accounts.');
+    if (!input.phone?.trim()) throw badInput('Mobile number is required when creating an account.');
     if (actor.role === 'BROKER' && !input.payment) throw badInput('Enter the trader’s payment details before sending the account for approval.');
+    if (input.role === 'TRADER' && input.openingAmountMinor && input.openingAmountMinor > 0n && !input.payment) throw badInput('Attach the opening payment details and screenshot before creating this trader.');
     if (input.payment && (input.role !== 'TRADER' || !input.openingAmountMinor || input.openingAmountMinor <= 0n)) throw badInput('Payment details require a trader opening amount.');
     const brokerId = actor.role === 'BROKER' ? actor.userId : input.role === 'TRADER' ? input.brokerId : undefined;
     const commissionShareBps = input.role === 'BROKER' && input.commissionPct?.trim() ? parseCommissionPct(input.commissionPct) : null;
     const commissionMiniMinor = input.role === 'BROKER' && input.commissionPerMiniLot?.trim() ? parseRupees(input.commissionPerMiniLot, 'Mini lot') : null;
     const commissionMegaMinor = input.role === 'BROKER' && input.commissionPerMegaLot?.trim() ? parseRupees(input.commissionPerMegaLot, 'Mega lot') : null;
     this.passwords.assertStrong(input.tempPassword, username);
-    if (actor.role === 'SUPER_ADMIN' && !input.phone?.trim()) throw badInput('Mobile number is required when creating an account.');
     const phone = input.phone?.trim() ? normalizePhone(input.phone.trim()) : null;
     const email = input.email ? normalizeEmail(input.email) : null;
     const hash = await this.passwords.hash(input.tempPassword);

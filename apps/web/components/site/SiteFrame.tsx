@@ -48,7 +48,7 @@ export async function SiteFrame({ children, broker, banner }: { children: ReactN
         </div>
         {broker && <Regulatory b={broker} name={name} />}
         <div className="ws-wrap ws-disclaimer">
-          {broker ? <p>The practice account and courses are for learning; practice orders use virtual money and are not sent to an exchange.</p> : <p>{name} offers education and a paper-trading practice account that uses virtual money only. Nothing on this website is investment advice or a recommendation to buy or sell. Trading in shares, commodities and derivatives carries a high risk of loss; past results do not predict future returns. Course content is for learning purposes.</p>}
+          {broker ? <p>The practice account and courses are for learning; practice orders use practice funds and are not sent to an exchange.</p> : <p>{name} offers education and a paper-trading practice account that uses practice funds only. Nothing on this website is investment advice or a recommendation to buy or sell. Trading in shares, commodities and derivatives carries a high risk of loss; past results do not predict future returns. Course content is for learning purposes.</p>}
           <p>© {new Date().getFullYear()} {name}</p>
         </div>
       </footer>

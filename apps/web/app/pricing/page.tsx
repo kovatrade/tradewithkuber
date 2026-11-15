@@ -35,7 +35,7 @@ export default async function Pricing() {
           )}
           <div className="ws-price-free">
             <p className="ws-price-big">₹0</p>
-            <div><h2>Practice account</h2><p>Paper trading with virtual money on web, Android and iPhone, free for every student while you learn.</p></div>
+            <div><h2>Practice account</h2><p>Paper trading with practice funds on web, Android and iPhone, free for every student while you learn.</p></div>
           </div>
           {courses === null ? <p className="ws-empty">Fees could not be loaded right now. Please refresh in a minute.</p> : courses.length === 0 ? <p className="ws-empty">New batches are being planned. <Link href="/contact">Leave your number</Link>.</p> : (
             <div className="ws-table-wrap">
@@ -58,7 +58,7 @@ export default async function Pricing() {
             <ul>
               <li>Live online classes with a mentor</li>
               <li>Recordings of every class</li>
-              <li>The practice app with virtual money</li>
+              <li>The practice app with practice funds</li>
               <li>Weekly reviews of your practice trades</li>
             </ul>
             <p>Fees are confirmed when a mentor calls you, together with batch dates and payment details. <Link href="/contact">Ask for a call back</Link>.</p>

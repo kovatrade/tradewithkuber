@@ -91,6 +91,7 @@ export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: s
   const sole = useSoleAdmin();
   const { me, settings } = useAuth();
   const asBroker = me?.role === 'BROKER';
+  const needsPayment = asBroker || (f.role === 'TRADER' && Number(f.openingAmount) > 0);
   const [step, setStep] = useState(0);
   const [payment, setPayment] = useState(newPaymentDraft);
   const [proofBusy, setProofBusy] = useState(false);
@@ -102,7 +103,7 @@ export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: s
   const errs = {
     username: !/^[a-z][a-z0-9_.@#-]{3,39}$/.test(f.username.trim().toLowerCase()) ? '4–40 characters starting with a letter: letters, digits and _ . - @ #' : null,
     displayName: !f.displayName.trim() ? 'Enter a name' : null,
-    phone: !asBroker && !f.phone ? 'Mobile number is required' : f.phone && !/^[6-9]\d{9}$/.test(f.phone) ? 'Enter a 10-digit mobile number' : null,
+    phone: !f.phone ? 'Mobile number is required' : f.phone && !/^[6-9]\d{9}$/.test(f.phone) ? 'Enter a 10-digit mobile number' : null,
     tempPassword: f.tempPassword.length < 10 ? 'At least 10 characters' : null,
     commMini: f.role === 'BROKER' && f.commMini.trim() && !/^\d{1,7}(\.\d{1,2})?$/.test(f.commMini.trim()) ? 'Enter rupees, e.g. 170' : null,
     commMega: f.role === 'BROKER' && f.commMega.trim() && !/^\d{1,7}(\.\d{1,2})?$/.test(f.commMega.trim()) ? 'Enter rupees, e.g. 1700' : null,
@@ -111,12 +112,12 @@ export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: s
   const bad = Object.values(errs).some(Boolean);
   const e = (k: keyof typeof errs) => (touched ? errs[k] : null);
   return (
-    <Sheet visible title={asBroker ? 'Add trader' : 'New account'} sub={asBroker ? `Step ${step + 1} of 3 · ${['Account details', 'Super Admin receiving account', 'Payment reference and proof'][step]}` : sole ? 'It can sign in straight away.' : 'It can sign in after a Super Admin approves it.'} onClose={onClose}>
+    <Sheet visible title={asBroker ? 'Add trader' : 'New account'} sub={needsPayment ? `Step ${step + 1} of 3 · ${['Account details', 'Super Admin receiving account', 'Payment reference and proof'][step]}` : sole ? 'It can sign in straight away.' : 'It can sign in after a Super Admin approves it.'} onClose={onClose}>
       {step === 0 && <>
       {!asBroker && <Chips value={f.role} onChange={(role) => setF({ ...f, role })} items={[{ k: 'TRADER', label: 'Trader' }, { k: 'BROKER', label: 'Broker' }]} />}
       <Field label="Full name" value={f.displayName} maxLength={120} onChangeText={(v) => setF({ ...f, displayName: v })} error={e('displayName')} />
       <Field label="Username" autoCapitalize="none" autoCorrect={false} value={f.username} onChangeText={(v) => setF({ ...f, username: v.toLowerCase() })} error={e('username')} />
-      <Field label={asBroker ? 'Mobile (optional)' : 'Mobile number'} keyboardType="phone-pad" maxLength={10} value={f.phone} onChangeText={(v) => setF({ ...f, phone: v.replace(/\D/g, '') })} error={e('phone')} />
+      <Field label="Mobile number" keyboardType="phone-pad" maxLength={10} value={f.phone} onChangeText={(v) => setF({ ...f, phone: v.replace(/\D/g, '') })} error={e('phone')} />
       {f.role === 'BROKER' && <Field label="Broker earns per mini lot (₹)" keyboardType="decimal-pad" placeholder="170" maxLength={10} value={f.commMini} onChangeText={(v) => setF({ ...f, commMini: v.replace(/[^\d.]/g, '') })} error={e('commMini')} hint="For every lot their traders open or cut. Empty: platform default." />}
       {f.role === 'BROKER' && <Field label="Broker earns per mega lot (₹)" keyboardType="decimal-pad" placeholder="1700" maxLength={10} value={f.commMega} onChangeText={(v) => setF({ ...f, commMega: v.replace(/[^\d.]/g, '') })} error={e('commMega')} />}
       {f.role === 'TRADER' && brokers.length > 0 && (
@@ -125,22 +126,22 @@ export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: s
       {f.role === 'TRADER' && <Field label={`Opening amount (₹)${asBroker ? '' : ' — optional'}`} keyboardType="decimal-pad" placeholder={minLabel} maxLength={15} value={f.openingAmount} onChangeText={(v) => setF({ ...f, openingAmount: v.replace(/[^\d.]/g, '') })} error={e('openingAmount')} hint={`Minimum ₹${minLabel}. Added to the trader’s balance when the account is approved.`} />}
       <Field label="Temporary password" secureTextEntry textContentType="newPassword" value={f.tempPassword} onChangeText={(v) => setF({ ...f, tempPassword: v })} error={e('tempPassword')} hint="Use three of: lowercase, uppercase, digits, symbols. Share it privately." />
       </>}
-      {asBroker && step === 1 && <ReceivingAccountPicker value={payment.payeeAccountId} onChange={(payeeAccountId) => setPayment((p) => ({ ...p, payeeAccountId }))} />}
-      {asBroker && step === 2 && <><T w="600">Amount paid / opening balance: ₹{inr(f.openingAmount)}</T><PaymentReferenceFields value={payment} onChange={setPayment} onBusyChange={setProofBusy} /><Notice>The Super Admin checks these details before approving the trader and adding the opening balance.</Notice></>}
+      {needsPayment && step === 1 && <ReceivingAccountPicker value={payment.payeeAccountId} onChange={(payeeAccountId) => setPayment((p) => ({ ...p, payeeAccountId }))} />}
+      {needsPayment && step === 2 && <><T w="600">Amount paid / opening balance: ₹{inr(f.openingAmount)}</T><PaymentReferenceFields value={payment} onChange={setPayment} onBusyChange={setProofBusy} /><Notice>The Super Admin checks these details before approving the trader and adding the opening balance.</Notice></>}
       {err && <Notice tone="err">{err}</Notice>}
       {step > 0 && <Button title="Back" disabled={busy} onPress={() => setStep(step - 1)} />}
-      <Button kind="primary" size="lg" title={asBroker ? step < 2 ? 'Next' : 'Send for approval' : 'Create account'} busy={busy || proofBusy} onPress={async () => {
+      <Button kind="primary" size="lg" title={needsPayment && step < 2 ? 'Next' : asBroker ? 'Send for approval' : 'Create account'} busy={busy || proofBusy} onPress={async () => {
         setTouched(true);
         if (bad) {setStep(0);return;}
         setErr(null);
-        if (asBroker) {
+        if (needsPayment) {
           if (step === 0) {if (!payment.payerName) setPayment({ ...payment, payerName: f.displayName });setStep(1);return;}
           if (step === 1) {if (!payment.payeeAccountId) {setErr('Choose the receiving account paid by the trader.');return;}setStep(2);return;}
           const error = paymentError(payment);if (error) {setErr(error);return;}
         }
         setBusy(true); setErr(null);
         try {
-          const d = await gql<{ createUser: { status: string } }>(`mutation($i:CreateUserInput!){ createUser(input:$i){ id status } }`, { i: { username: f.username, displayName: f.displayName, role: f.role, phone: f.phone || undefined, brokerId: f.role === 'TRADER' && f.brokerId ? f.brokerId : undefined, tempPassword: f.tempPassword, commissionPerMiniLot: f.role === 'BROKER' && f.commMini.trim() ? f.commMini.trim() : undefined, commissionPerMegaLot: f.role === 'BROKER' && f.commMega.trim() ? f.commMega.trim() : undefined, openingAmount: f.role === 'TRADER' && f.openingAmount.trim() ? f.openingAmount.trim() : undefined, payment: asBroker ? paymentInput(payment) : undefined } });
+          const d = await gql<{ createUser: { status: string } }>(`mutation($i:CreateUserInput!){ createUser(input:$i){ id status } }`, { i: { username: f.username, displayName: f.displayName, role: f.role, phone: f.phone || undefined, brokerId: f.role === 'TRADER' && f.brokerId ? f.brokerId : undefined, tempPassword: f.tempPassword, commissionPerMiniLot: f.role === 'BROKER' && f.commMini.trim() ? f.commMini.trim() : undefined, commissionPerMegaLot: f.role === 'BROKER' && f.commMega.trim() ? f.commMega.trim() : undefined, openingAmount: f.role === 'TRADER' && f.openingAmount.trim() ? f.openingAmount.trim() : undefined, payment: needsPayment ? paymentInput(payment) : undefined } });
           toast(d.createUser.status === 'ACTIVE' ? 'Account created and active' : asBroker ? 'Request sent to the Super Admin' : 'Account created and sent for approval'); onDone(); onClose();
         } catch (x) { setErr((x as Error).message); } finally { setBusy(false); }
       }} />

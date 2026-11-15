@@ -1,4 +1,5 @@
 'use client';
+import { validPaymentReference, UTR_HINT } from '@/lib/payment-reference';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/lib/hooks';
 import { inr } from '@/lib/format';
@@ -28,12 +29,13 @@ export const paymentInput = (p: PaymentDraft) => ({
 });
 export function paymentError(p: PaymentDraft) {
   if (!p.payeeAccountId) return 'Choose the receiving account you paid.';
-  if (!/^[A-Za-z0-9]{6,30}$/.test(p.utr.trim())) return 'Enter the UTR / reference (6–30 letters and digits).';
+  if (!validPaymentReference(p.utr)) return UTR_HINT;
   if (p.payerName.trim().length < 2 || p.payerName.trim().length > 120)
     return 'Enter the payer’s name (2–120 characters).';
   const date = new Date(`${p.paidOn}T00:00:00+05:30`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(p.paidOn) || !Number.isFinite(date.getTime()) || date.getTime() > Date.now())
     return 'Enter a valid payment date that is not in the future.';
+  if (!p.proof?.trim()) return 'Attach the payment screenshot before submitting.';
   return '';
 }
 
@@ -148,10 +150,12 @@ export function PaymentReferenceFields({
             className="input"
             autoCapitalize="characters"
             autoComplete="off"
-            maxLength={30}
+            maxLength={22}
+            aria-describedby="payment-utr-hint"
             value={value.utr}
             onChange={(e) => onChange({ ...value, utr: e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase() })}
           />
+          <span id="payment-utr-hint" className="hint">{UTR_HINT}</span>
         </div>
         <div className="field">
           <label htmlFor="payment-date">Payment date</label>
@@ -166,12 +170,13 @@ export function PaymentReferenceFields({
         </div>
       </div>
       <div className="field">
-        <label htmlFor="fund-proof">Payment screenshot (optional)</label>
+        <label htmlFor="fund-proof">Payment screenshot (required)</label>
         <input
           id="fund-proof"
           disabled={busy}
           className="input"
           type="file"
+          required={!value.proof}
           accept="image/jpeg,image/png,image/webp"
           onChange={async (e) => {
             const file = e.target.files?.[0];

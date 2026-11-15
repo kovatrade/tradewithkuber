@@ -6,7 +6,8 @@ import { badInput, conflict, notFound } from '../common/errors';
 import { formatMoney } from '../common/money';
 import { DbService, type Tx } from '../db/db';
 import { payeeAccounts, paymentEvidence } from '../db/schema';
-import { openPayee, parseProof, UTR_RE } from '../fees/fees.service';
+import { openPayee, parseProof } from '../fees/fees.service';
+import { UTR_HINT, validPaymentReference } from '../common/payment-reference';
 import { PolicyService } from '../policy/policy.service';
 import { afterWipeFor } from '../wipe/visibility';
 import { PaymentEvidenceInput } from './payment-evidence.types';
@@ -31,11 +32,12 @@ export class PaymentEvidenceService {
     const utr = input.utr.trim().toUpperCase(),
       payerName = input.payerName.trim();
     const paidAt = new Date(input.paidAt);
-    if (!UTR_RE.test(utr)) throw badInput('Enter the UTR / payment reference (6–30 letters and digits).');
+    if (!validPaymentReference(utr)) throw badInput(UTR_HINT);
     if (payerName.length < 2 || payerName.length > 120) throw badInput('Enter the payer name (2–120 characters).');
     if (!Number.isFinite(paidAt.getTime()) || paidAt.getTime() > Date.now() + 5 * 60_000)
       throw badInput('Enter a valid payment date that is not in the future.');
-    const proof = input.proof ? parseProof(input.proof) : undefined;
+    if (!input.proof?.trim()) throw badInput('Attach the payment screenshot before submitting.');
+    const proof = parseProof(input.proof);
     const [payee] = await tx
       .select({ id: payeeAccounts.id })
       .from(payeeAccounts)

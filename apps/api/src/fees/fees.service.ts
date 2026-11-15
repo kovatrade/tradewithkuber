@@ -9,11 +9,12 @@ import { blindIndex, decryptField, encryptField, openOpt, sealOpt } from '../com
 import { DbService } from '../db/db';
 import { feePaymentProofs, feePayments, payeeAccounts, users } from '../db/schema';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UTR_HINT, validPaymentReference } from '../common/payment-reference';
+export { UTR_RE } from '../common/payment-reference';
 
 export const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 export const ACCOUNT_RE = /^\d{9,18}$/;
 export const UPI_RE = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/;
-export const UTR_RE = /^[A-Za-z0-9]{6,30}$/;
 const MAX_FEE_MINOR = 10_000_000n * 100n; // ₹1 crore
 const A_ACC = 'payee_accounts.account_number', A_UPI = 'payee_accounts.upi_id', A_UTR = 'fee_payments.utr';
 const tail = (v?: string | null) => (v ? `…${v.slice(-4)}` : undefined);
@@ -134,7 +135,7 @@ export class FeesService {
     const utr = i.utr.trim().toUpperCase();
     if (i.amountMinor <= 0n || i.amountMinor > MAX_FEE_MINOR) throw badInput('Enter the amount you paid.');
     if (purpose.length < 2 || purpose.length > 120) throw badInput('Say what the fee is for, like “Course fee, November batch”.');
-    if (!UTR_RE.test(utr)) throw badInput('Enter the UTR / reference number from your bank or UPI app (6–30 letters and digits).');
+    if (!validPaymentReference(utr)) throw badInput(UTR_HINT);
     const [payee] = await this.dbs.db.select().from(payeeAccounts).where(and(eq(payeeAccounts.id, i.payeeAccountId), eq(payeeAccounts.status, 'ACTIVE')));
     if (!payee) throw notFound('Payment details');
     const utrHash = blindIndex(utr, 'utr');

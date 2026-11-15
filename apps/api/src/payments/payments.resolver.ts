@@ -35,11 +35,11 @@ export class PaymentsResolver {
 
   private async withNames(rows: Awaited<ReturnType<PaymentsService['list']>>) {
     const ids = [...new Set(rows.flatMap((r) => [r.userId, r.requestedById, ...(r.reviewedById ? [r.reviewedById] : [])]))];
-    const names = ids.length ? await this.dbs.db.select({ id: users.id, username: users.username, displayName: users.displayName }).from(users).where(inArray(users.id, ids)) : [];
+    const names = ids.length ? await this.dbs.db.select({ id: users.id, username: users.username, displayName: users.displayName, isDemo: users.isDemo }).from(users).where(inArray(users.id, ids)) : [];
     const map = new Map(names.map((n) => [n.id, n.username]));
     const display = new Map(names.map((n) => [n.id, `${n.displayName} (${n.username})`]));
     const evidence = new Map((await this.evidence.forRequests(rows.map((r) => r.id))).map((e) => [e.paymentRequestId, e]));
-    return rows.map((r) => ({ ...toPayment(r, map.get(r.userId)), paymentEvidence: evidence.get(r.id), requestedByName: display.get(r.requestedById), reviewedByName: r.reviewedById ? display.get(r.reviewedById) : undefined }));
+    return rows.map((r) => ({ ...toPayment(r, map.get(r.userId)), isDemo: names.find(n => n.id === r.userId)?.isDemo ?? false, paymentEvidence: evidence.get(r.id), requestedByName: display.get(r.requestedById), reviewedByName: r.reviewedById ? display.get(r.reviewedById) : undefined }));
   }
 
   @Roles('SUPER_ADMIN', 'BROKER', 'TRADER')
@@ -62,7 +62,7 @@ export class PaymentsResolver {
     } catch {
       throw badInput('Enter a valid amount (up to 2 decimals).');
     }
-    return toPayment(await this.payments.request(a, { ...input, amountMinor: amount }, c.ip));
+    return (await this.withNames([await this.payments.request(a, { ...input, amountMinor: amount }, c.ip)]))[0];
   }
 
   @Query(() => [PaymentRequest])
@@ -85,17 +85,17 @@ export class PaymentsResolver {
   @RequireStepUp()
   @Mutation(() => PaymentRequest, { description: 'Checker approval. Posts to the ledger atomically. Requester cannot approve.' })
   async approvePayment(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('note', { nullable: true }) note: string, @Ctx() c: GqlContext) {
-    return toPayment(await this.payments.approve(a, id, note, c.ip));
+    return (await this.withNames([await this.payments.approve(a, id, note, c.ip)]))[0];
   }
 
   @Roles('SUPER_ADMIN')
   @Mutation(() => PaymentRequest)
   async rejectPayment(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('note') note: string, @Ctx() c: GqlContext) {
-    return toPayment(await this.payments.reject(a, id, note, c.ip));
+    return (await this.withNames([await this.payments.reject(a, id, note, c.ip)]))[0];
   }
 
   @Mutation(() => PaymentRequest)
   async cancelPayment(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
-    return toPayment(await this.payments.cancel(a, id, c.ip));
+    return (await this.withNames([await this.payments.cancel(a, id, c.ip)]))[0];
   }
 }
