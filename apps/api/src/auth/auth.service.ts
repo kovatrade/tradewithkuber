@@ -9,7 +9,8 @@ import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../config-mgmt/config.service';
 import { env } from '../config/env';
 import { DbService, type Tx } from '../db/db';
-import { deviceCredentials, otpChallenges, sessions, users, type UserRow } from '../db/schema';
+import { deviceCredentials, firebasePhoneUses, otpChallenges, sessions, users, type UserRow } from '../db/schema';
+import { FirebaseService } from '../firebase/firebase.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PasswordService } from './password.service';
@@ -57,6 +58,7 @@ export class AuthService {
     private readonly ledger: LedgerService,
     private readonly notifications: NotificationsService,
     private readonly sms: SmsProvider,
+    private readonly firebase: FirebaseService = new FirebaseService(),
   ) {}
 
   // ---------------------------------------------------------------- tokens
@@ -320,14 +322,14 @@ export class AuthService {
       expiresAt: new Date(Date.now() + OTP_TTL_MS),
       requestIp: ip,
     });
-    await this.sms.sendOtp(phone, code);
+    if (env().SMS_PROVIDER !== 'firebase') await this.sms.sendOtp(phone, code);
     await this.audit.recordStandalone({ action: 'auth.otp_requested', outcome: 'SUCCESS', ip, metadata: { phone: maskPhone(phone) } });
-    return { sentTo: maskPhone(phone), resendAfterSec: 30, devCode: this.sms.isDev ? code : null };
+    return { sentTo: maskPhone(phone), resendAfterSec: 30, provider: env().SMS_PROVIDER, devCode: this.sms.isDev ? code : null };
   }
 
   async verifyDemoOtp(rawPhone: string, code: string, meta: ClientMeta) {
     const phone = this.normalizePhone(rawPhone);
-    if (!/^\d{6}$/.test(code)) throw badInput('Enter the 6-digit OTP.');
+    if (env().SMS_PROVIDER !== 'firebase' && !/^\d{6}$/.test(code)) throw badInput('Enter the 6-digit OTP.');
     return this.dbs.serializable(async (tx) => {
       const [ch] = await tx
         .select()
@@ -337,7 +339,10 @@ export class AuthService {
         .limit(1)
         .for('update');
       if (!ch || ch.attempts >= OTP_MAX_ATTEMPTS) throw new AppError('UNAUTHENTICATED', 'OTP expired. Please request a new one.');
-      if (!safeEqualHex(ch.codeHash, peppered(`${phone}:${code}`))) {
+      const valid = env().SMS_PROVIDER === 'firebase'
+        ? await this.consumeFirebasePhone(tx, phone, 'demo', code)
+        : safeEqualHex(ch.codeHash, peppered(`${phone}:${code}`));
+      if (!valid) {
         await tx.update(otpChallenges).set({ attempts: ch.attempts + 1 }).where(eq(otpChallenges.id, ch.id));
         return { error: 'Incorrect OTP.' } as const;
       }
@@ -395,13 +400,13 @@ export class AuthService {
     if (c >= OTP_MAX_PER_WINDOW) throw new AppError('RATE_LIMITED', 'Too many OTP requests. Please wait a few minutes.');
     const code = numericCode(6);
     await this.dbs.db.insert(otpChallenges).values({ phone: phoneIndex(phone), purpose, codeHash: peppered(`${purpose}:${phone}:${code}`), expiresAt: new Date(Date.now() + OTP_TTL_MS), requestIp: ip });
-    await this.sms.sendOtp(phone, code);
+    if (env().SMS_PROVIDER !== 'firebase') await this.sms.sendOtp(phone, code);
     return code;
   }
 
   /** Returns true and consumes the challenge when the code matches; counts a failed attempt otherwise. */
   private async consumeOtp(tx: Tx, phone: string, purpose: 'signup' | 'reset' | 'device' | 'wipe', code: string): Promise<boolean> {
-    if (!/^\d{6}$/.test(code)) return false;
+    if (env().SMS_PROVIDER !== 'firebase' && !/^\d{6}$/.test(code)) return false;
     const [ch] = await tx
       .select()
       .from(otpChallenges)
@@ -410,12 +415,22 @@ export class AuthService {
       .limit(1)
       .for('update');
     if (!ch || ch.attempts >= OTP_MAX_ATTEMPTS) return false;
-    if (!safeEqualHex(ch.codeHash, peppered(`${purpose}:${phone}:${code}`))) {
+    const valid = env().SMS_PROVIDER === 'firebase'
+      ? await this.consumeFirebasePhone(tx, phone, purpose, code)
+      : safeEqualHex(ch.codeHash, peppered(`${purpose}:${phone}:${code}`));
+    if (!valid) {
       await tx.update(otpChallenges).set({ attempts: ch.attempts + 1 }).where(eq(otpChallenges.id, ch.id));
       return false;
     }
     await tx.update(otpChallenges).set({ consumedAt: new Date() }).where(eq(otpChallenges.id, ch.id));
     return true;
+  }
+
+  private async consumeFirebasePhone(tx: Tx, phone: string, purpose: string, proof: string) {
+    let assertionHash: string;
+    try { assertionHash = await this.firebase.verifyPhone(proof, phone); } catch { return false; }
+    const inserted = await tx.insert(firebasePhoneUses).values({ assertionHash, purpose }).onConflictDoNothing().returning();
+    return inserted.length === 1;
   }
 
   // ---------------------------------------------------------------- self sign-up (approved by a Super Admin)
@@ -425,7 +440,7 @@ export class AuthService {
     const phone = this.normalizePhone(rawPhone);
     const code = await this.issueOtp(phone, 'signup', ip);
     await this.audit.recordStandalone({ action: 'auth.signup_otp_requested', outcome: 'SUCCESS', ip, metadata: { phone: maskPhone(phone) } });
-    return { sentTo: maskPhone(phone), resendAfterSec: 30, devCode: this.sms.isDev ? code : null };
+    return { sentTo: maskPhone(phone), resendAfterSec: 30, provider: env().SMS_PROVIDER, devCode: this.sms.isDev ? code : null };
   }
 
   /**
@@ -466,9 +481,9 @@ export class AuthService {
     return { username: r.user.username, status: r.user.status };
   }
 
-  // ---------------------------------------------------------------- authenticator password recovery
+  // ---------------------------------------------------------------- password recovery (Firebase SMS or legacy authenticator)
 
-  /** Same response for every username; recovery never sends SMS or email. */
+  /** Same response for every username. With Firebase, the client sends SMS to the supplied phone. */
   async requestPasswordReset(rawUsername: string, ip: string) {
     const username = rawUsername.trim().toLowerCase().slice(0, 40);
     const key = peppered(`reset:${username}`);
@@ -481,14 +496,16 @@ export class AuthService {
       await tx.insert(otpChallenges).values({ phone: key, purpose: 'reset', codeHash: peppered('pending-reset'), expiresAt: new Date(Date.now() + OTP_TTL_MS), requestIp: ip });
     });
     await this.audit.recordStandalone({ action: 'auth.password_reset_requested', outcome: 'SUCCESS', ip });
-    return { message: 'Enter the current 6-digit code from the authenticator enrolled on your account. If you have not set one up or lost access, contact your administrator.', resendAfterSec: 30, devCode: null };
+    return { provider: env().SMS_PROVIDER === 'firebase' ? 'firebase' : 'authenticator', message: env().SMS_PROVIDER === 'firebase'
+      ? 'Enter the SMS code sent to the mobile number you supplied. It must match the number registered to your account.'
+      : 'Enter the current 6-digit code from the authenticator enrolled on your account. If you have not set one up or lost access, contact your administrator.', resendAfterSec: 30, devCode: null };
   }
 
   async resetPassword(rawUsername: string, code: string, newPassword: string, ip: string) {
     const username = rawUsername.trim().toLowerCase().slice(0, 40);
     const key = peppered(`reset:${username}`);
-    const generic = new AppError('UNAUTHENTICATED', 'Invalid authentication code or reset request. Start again and use the current code from your authenticator.');
-    if (!/^\d{6}$/.test(code.trim())) throw generic;
+    const generic = new AppError('UNAUTHENTICATED', 'Invalid authentication code or reset request. Start again and verify your account.');
+    if (env().SMS_PROVIDER !== 'firebase' && !/^\d{6}$/.test(code.trim())) throw generic;
     const ok = await this.dbs.serializable(async (tx) => {
       const [u] = await tx.select().from(users).where(eq(users.username, username)).for('update');
       const [ch] = await tx.select().from(otpChallenges)
@@ -498,7 +515,10 @@ export class AuthService {
       const codeHash = peppered(`${u?.id ?? username}:reset:${code.trim()}`);
       const [used] = await tx.select({ id: otpChallenges.id }).from(otpChallenges)
         .where(and(eq(otpChallenges.phone, key), eq(otpChallenges.purpose, 'reset'), eq(otpChallenges.codeHash, codeHash), gt(otpChallenges.consumedAt, new Date(Date.now() - 10 * 60_000)))).limit(1);
-      const valid = u && u.status === 'ACTIVE' && u.mfaEnabled && u.mfaSecretEnc && !used && authenticator.check(code.trim(), decryptSecret(u.mfaSecretEnc));
+      const phone = u && readPhone(u);
+      const valid = u && u.status === 'ACTIVE' && (env().SMS_PROVIDER === 'firebase'
+        ? phone && await this.consumeFirebasePhone(tx, phone, 'reset', code)
+        : u.mfaEnabled && u.mfaSecretEnc && !used && authenticator.check(code.trim(), decryptSecret(u.mfaSecretEnc)));
       if (!valid) {
         await tx.update(otpChallenges).set({ attempts: ch.attempts + 1 }).where(eq(otpChallenges.id, ch.id));
         return false;
@@ -511,7 +531,7 @@ export class AuthService {
       await tx.update(sessions).set({ revokedAt: new Date(), revokedReason: 'password_reset' }).where(and(eq(sessions.userId, u.id), isNull(sessions.revokedAt)));
       await this.revokeTrustedDevices(tx, u.id, 'password_reset');
       await this.audit.record(tx, { actor: { userId: u.id, role: u.role }, action: 'auth.password_reset', entityType: 'user', entityId: u.id, outcome: 'SUCCESS', ip });
-      await this.notifications.notify(tx, u.id, 'security.password_reset', 'Password was reset', 'Your password was reset using your authenticator, and all devices were signed out. If this was not you, contact support.');
+      await this.notifications.notify(tx, u.id, 'security.password_reset', 'Password was reset', 'Your password was reset after identity verification, and all devices were signed out. If this was not you, contact support.');
       return true;
     });
     if (!ok) {

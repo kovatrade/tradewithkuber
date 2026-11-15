@@ -49,6 +49,7 @@ import { EodCutService } from './risk/eod-cut.service';
 import { RiskResolver } from './risk/risk.resolver';
 import { AlgoService } from './algo/algo.service';
 import { NotificationsService } from './notifications/notifications.service';
+import { PushResolver } from './notifications/push.resolver';
 import { PaymentsResolver } from './payments/payments.resolver';
 import { PaymentsService } from './payments/payments.service';
 import { PolicyService } from './policy/policy.service';
@@ -214,6 +215,7 @@ function formatError(f: GraphQLFormattedError, err: unknown): GraphQLFormattedEr
     { provide: APP_GUARD, useClass: GqlAuthGuard },
     { provide: APP_PIPE, useValue: validationPipe },
     AuthResolver,
+    PushResolver,
     StatementService,
     AppReleasesService,
     AppReleasesResolver,

@@ -10,6 +10,7 @@ import { homeFor, useAuth } from '@/lib/auth';
 import { Icon, Logo } from '@/components/icons';
 import { useToast } from '@/components/ui';
 import { MarketBoard } from '@/components/MarketBoard';
+import { usePhoneOtp } from '@/lib/phone-otp';
 
 const LAST_USER = 'k.lastUsername';
 
@@ -19,6 +20,7 @@ type Step = 'conflict' | 'signin' | 'mfa' | 'phone' | 'otp' | 'forgot' | 'reset'
 const DEVICE = typeof navigator !== 'undefined' ? `Web · ${navigator.platform || 'browser'}` : 'Web';
 
 export default function Login() {
+  const otp = usePhoneOtp();
   const { me, signIn, settings, loading } = useAuth();
   const router = useRouter();
   const [cooldown, setCooldown] = useState<{ username: string; until: number } | null>(null);
@@ -139,7 +141,8 @@ export default function Login() {
   const sendOtp = (e?: FormEvent) => {
     e?.preventDefault();
     void go(async () => {
-      const d = await gql(`mutation($p:String!){ requestDemoOtp(phone:$p){ sentTo resendAfterSec devCode } }`, { p: phone });
+      const d = await gql(`mutation($p:String!){ requestDemoOtp(phone:$p){ sentTo resendAfterSec devCode provider } }`, { p: phone });
+      await otp.send(phone, d.requestDemoOtp.provider);
       setSentTo(d.requestDemoOtp.sentTo);
       setDevCode(d.requestDemoOtp.devCode);
       setResendIn(d.requestDemoOtp.resendAfterSec);
@@ -150,7 +153,7 @@ export default function Login() {
   const verifyOtp = (e: FormEvent) => {
     e.preventDefault();
     void go(async () => {
-      const d = await gql(`mutation($p:String!,$c:String!,$d:String){ verifyDemoOtp(phone:$p, code:$c, deviceName:$d){ ${AUTH_FIELDS} } }`, { p: phone, c: code, d: DEVICE });
+      const d = await gql(`mutation($p:String!,$c:String!,$d:String){ verifyDemoOtp(phone:$p, code:$c, deviceName:$d){ ${AUTH_FIELDS} } }`, { p: phone, c: await otp.verify(code), d: DEVICE });
       await done(d.verifyDemoOtp);
     });
   };
@@ -159,7 +162,8 @@ export default function Login() {
   const sendReset = (e?: FormEvent) => {
     e?.preventDefault();
     void go(async () => {
-      const d = await gql(`mutation($u:String!){ requestPasswordReset(username:$u){ message resendAfterSec devCode } }`, { u: username });
+      const d = await gql(`mutation($u:String!){ requestPasswordReset(username:$u){ message resendAfterSec devCode provider } }`, { u: username });
+      await otp.send(phone, d.requestPasswordReset.provider);
       setInfo(d.requestPasswordReset.message);
       setDevCode(d.requestPasswordReset.devCode);
       setResendIn(d.requestPasswordReset.resendAfterSec);
@@ -171,7 +175,7 @@ export default function Login() {
   const doReset = (e: FormEvent) => {
     e.preventDefault();
     void go(async () => {
-      await gql(`mutation($u:String!,$c:String!,$p:String!){ resetPassword(username:$u, code:$c, newPassword:$p) }`, { u: username, c: code, p: newPw });
+      await gql(`mutation($u:String!,$c:String!,$p:String!){ resetPassword(username:$u, code:$c, newPassword:$p) }`, { u: username, c: await otp.verify(code), p: newPw });
       toast('Password changed. Sign in with your new password.');
       setPassword('');
       setStep('signin');
@@ -181,7 +185,8 @@ export default function Login() {
   const sendSignupOtp = (e?: FormEvent) => {
     e?.preventDefault();
     void go(async () => {
-      const d = await gql(`mutation($p:String!){ requestSignupOtp(phone:$p){ sentTo resendAfterSec devCode } }`, { p: phone });
+      const d = await gql(`mutation($p:String!){ requestSignupOtp(phone:$p){ sentTo resendAfterSec devCode provider } }`, { p: phone });
+      await otp.send(phone, d.requestSignupOtp.provider);
       setSentTo(d.requestSignupOtp.sentTo);
       setDevCode(d.requestSignupOtp.devCode);
       setResendIn(d.requestSignupOtp.resendAfterSec);
@@ -192,20 +197,20 @@ export default function Login() {
   const register = (e: FormEvent) => {
     e.preventDefault();
     void go(async () => {
-      await gql(`mutation($i:RegisterInput!){ registerTrader(input:$i){ username status } }`, { i: { ...su, email: su.email || undefined, phone, code } });
+      await gql(`mutation($i:RegisterInput!){ registerTrader(input:$i){ username status } }`, { i: { ...su, email: su.email || undefined, phone, code: await otp.verify(code) } });
       setUsername(su.username.trim().toLowerCase());
       setStep('signupDone');
     });
   };
 
-  const title = { conflict: 'Already signed in', signin: `Welcome to ${settings?.appName ?? 'The K'}`, mfa: 'Two-step verification', phone: 'Try a demo account', otp: 'Verify your number', forgot: 'Reset your password', reset: 'Authenticator verification', signup: 'Create an account', signupDetails: 'Your details', signupDone: 'Request received' }[step];
+  const title = { conflict: 'Already signed in', signin: `Welcome to ${settings?.appName ?? 'The K'}`, mfa: 'Two-step verification', phone: 'Try a demo account', otp: 'Verify your number', forgot: 'Reset your password', reset: otp.provider === 'firebase' ? 'SMS verification' : 'Authenticator verification', signup: 'Create an account', signupDetails: 'Your details', signupDone: 'Request received' }[step];
   const sub = {
     conflict: conflict && conflict.limit > 1 ? `Your account can be signed in on ${conflict.limit} devices at once, and it already is.` : 'Your account is signed in on another device. You can sign that device out and continue here.',
     signin: 'Sign in with the username from your broker or administrator.',
     mfa: 'Enter the 6-digit code from your authenticator app.',
     phone: 'Enter your mobile number. We’ll text a one-time code to get started.',
     otp: `Enter the code sent to ${sentTo}.`,
-    forgot: 'Use the authenticator enrolled on your account. No SMS or email is sent.',
+    forgot: otp.provider === 'firebase' ? 'Verify the mobile number registered to your account.' : 'Use the authenticator enrolled on your account.',
     reset: info ?? '',
     signup: 'Start with your mobile number. We’ll text a code to verify it.',
     signupDetails: `Enter the code sent to ${sentTo} and choose your sign-in details.`,
@@ -352,15 +357,16 @@ export default function Login() {
                 <label htmlFor="fu">Username</label>
                 <input id="fu" className="input" autoComplete="username" autoCapitalize="none" value={username} onChange={(e) => setUsername(e.target.value)} required maxLength={40} autoFocus />
               </div>
+              {otp.provider === 'firebase' && phoneInput}
               {errNote}
-              <button className="btn btn-primary btn-lg btn-block" disabled={busy || !username}>{busy ? <><span className="spin" aria-hidden />Preparing...</> : 'Continue'}</button>
-              <p className="t3" style={{ textAlign: 'center' }}>No enrolled authenticator or lost access? Contact your administrator for an account reset.</p>
+              <button className="btn btn-primary btn-lg btn-block" disabled={busy || !username || !otp.provider || (otp.provider === 'firebase' && phone.length !== 10)}>{busy ? <><span className="spin" aria-hidden />Preparing...</> : 'Continue'}</button>
+              <p className="t3" style={{ textAlign: 'center' }}>Lost access to your verification method? Contact your administrator for an account reset.</p>
             </form>
           )}
 
           {step === 'reset' && (
             <form className="stack" onSubmit={doReset}>
-              <div className="field"><label htmlFor="rc">Authenticator code</label><input id="rc" className="input num" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required autoFocus /></div>
+              <div className="field"><label htmlFor="rc">{otp.provider === 'firebase' ? 'SMS code' : 'Authenticator code'}</label><input id="rc" className="input num" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} required autoFocus /></div>
               <div className="field">
                 <label htmlFor="np">New password</label>
                 <input id="np" className="input" type="password" autoComplete="new-password" value={newPw} onChange={(e) => setNewPw(e.target.value)} required maxLength={128} />

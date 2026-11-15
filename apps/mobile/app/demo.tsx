@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { gql } from '@/api';
+import { usePhoneOtp } from '@/phone-otp';
 import { AUTH_FIELDS, ConflictPrompt, type AuthPayload } from '@/conflict';
 import { DEVICE_NAME, homeFor, useAuth } from '@/auth';
 import { S, useTheme } from '@/theme';
@@ -10,6 +11,7 @@ import { Button, Field, IconButton, Notice, T, toast } from '@/ui';
 
 export default function Demo() {
   const t = useTheme();
+  const otp = usePhoneOtp();
   const { signIn } = useAuth();
   const [phone, setPhone] = useState('');
   const [sent, setSent] = useState<{ sentTo: string; devCode?: string | null } | null>(null);
@@ -22,13 +24,13 @@ export default function Demo() {
   useEffect(() => { if (wait > 0) { const h = setTimeout(() => setWait(wait - 1), 1000); return () => clearTimeout(h); } }, [wait]);
   const send = async () => {
     setBusy(true); setErr(null);
-    try { const d = await gql(`mutation($p:String!){ requestDemoOtp(phone:$p){ sentTo resendAfterSec devCode } }`, { p: phone }); setSent(d.requestDemoOtp); setWait(d.requestDemoOtp.resendAfterSec); setCode(''); }
+    try { const d = await gql(`mutation($p:String!){ requestDemoOtp(phone:$p){ sentTo resendAfterSec devCode provider } }`, { p: phone }); await otp.send(phone, d.requestDemoOtp.provider); setSent(d.requestDemoOtp); setWait(d.requestDemoOtp.resendAfterSec); setCode(''); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   const verify = async () => {
     setBusy(true); setErr(null);
     try {
-      const d = await gql(`mutation($p:String!,$c:String!,$d:String){ verifyDemoOtp(phone:$p, code:$c, deviceName:$d){ ${AUTH_FIELDS} } }`, { p: phone, c: code, d: DEVICE_NAME });
+      const d = await gql(`mutation($p:String!,$c:String!,$d:String){ verifyDemoOtp(phone:$p, code:$c, deviceName:$d){ ${AUTH_FIELDS} } }`, { p: phone, c: await otp.verify(code), d: DEVICE_NAME });
       if (d.verifyDemoOtp.sessionConflict) { setConflict(d.verifyDemoOtp); return; }
       const me = await signIn(d.verifyDemoOtp.accessToken, d.verifyDemoOtp.refreshToken);
       if (me) { toast('Signed in. Welcome to your demo account!'); router.replace(homeFor(me.role)); }

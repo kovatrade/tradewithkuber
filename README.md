@@ -103,3 +103,6 @@ apps/web/        Next.js portal: /trader, /broker, /admin, /account
 apps/mobile/     Expo app: (trader), (broker), (admin) tab groups
 docs/            architecture, security, authorization matrix, going-live checklist
 ```
+## Firebase setup
+
+See [Firebase OTP and notifications](docs/firebase-setup.md) for Android/iOS app registration, web reCAPTCHA and push, API credentials, database migration, CI secrets, and delivery testing.

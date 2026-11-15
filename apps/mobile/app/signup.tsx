@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { gql } from '@/api';
+import { usePhoneOtp } from '@/phone-otp';
 import { S, useTheme } from '@/theme';
 import { Button, Field, IconButton, Notice, T } from '@/ui';
 
 /** Create account: verify the mobile by OTP, choose sign-in details; a Super Admin approves the account. */
 export default function Signup() {
   const t = useTheme();
+  const otp = usePhoneOtp();
   const [phone, setPhone] = useState('');
   const [sent, setSent] = useState<{ sentTo: string; devCode?: string | null } | null>(null);
   const [code, setCode] = useState('');
@@ -20,11 +22,11 @@ export default function Signup() {
   useEffect(() => { if (wait > 0) { const h = setTimeout(() => setWait(wait - 1), 1000); return () => clearTimeout(h); } }, [wait]);
   const run = async (fn: () => Promise<void>) => { setBusy(true); setErr(null); try { await fn(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } };
   const send = () => run(async () => {
-    const d = await gql(`mutation($p:String!){ requestSignupOtp(phone:$p){ sentTo resendAfterSec devCode } }`, { p: phone });
-    setSent(d.requestSignupOtp); setWait(d.requestSignupOtp.resendAfterSec); setCode('');
+    const d = await gql(`mutation($p:String!){ requestSignupOtp(phone:$p){ sentTo resendAfterSec devCode provider } }`, { p: phone });
+    await otp.send(phone, d.requestSignupOtp.provider); setSent(d.requestSignupOtp); setWait(d.requestSignupOtp.resendAfterSec); setCode('');
   });
   const register = () => run(async () => {
-    const d = await gql(`mutation($i:RegisterInput!){ registerTrader(input:$i){ username status } }`, { i: { ...f, email: f.email || undefined, phone, code } });
+    const d = await gql(`mutation($i:RegisterInput!){ registerTrader(input:$i){ username status } }`, { i: { ...f, email: f.email || undefined, phone, code: await otp.verify(code) } });
     setDone(d.registerTrader.username);
   });
   return (

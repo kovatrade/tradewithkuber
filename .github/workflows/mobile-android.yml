@@ -38,8 +38,22 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run test:notifications
+      - name: Configure Firebase Android app
+        env:
+          FIREBASE_CONFIG: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -n "$FIREBASE_CONFIG" ]; then
+            printf '%s' "$FIREBASE_CONFIG" | base64 -d > google-services.json
+            node -e "const c=require('./google-services.json'); if(!c.client.some(x=>x.client_info.android_client_info.package_name==='com.techrover.tradedesk')) throw new Error('Firebase Android package must be com.techrover.tradedesk');"
+          else
+            echo "::error::Missing repository Actions secret GOOGLE_SERVICES_JSON_BASE64. The local ignored google-services.json is not available on GitHub runners. See docs/firebase-setup.md."
+            exit 1
+          fi
       - name: Generate the native Android project
         run: npx expo prebuild -p android --no-install --clean
+      - name: Check Firebase Android manifest and app configuration
+        run: node scripts/check-firebase-android.cjs
       - name: Release signing (only when the keystore secrets exist)
         env:
           KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

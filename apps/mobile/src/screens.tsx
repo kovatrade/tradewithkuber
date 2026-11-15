@@ -11,6 +11,7 @@ import { NUM_SCALE, usePrefs, usePrivate } from './prefs';
 import { useSplashActive } from './splash';
 import { CONSENT_FIELDS, deviceLabel, LOGIN_FIELDS, LOGIN_LABEL, stamp, type ConsentRecord, type LoginEvent } from './activity';
 import { useAuth } from './auth';
+import { PushPermission } from './push-permission';
 import { newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, ReceivingAccountPicker } from './payment-details';
 import { QuickTradeSheet } from './quick-trade';
 import { expiryLabel, fullName } from './names';
@@ -1024,11 +1025,20 @@ const NoteRow = memo(function NoteRow({ n }: { n: Note }) {
   );
 });
 export function NotificationsView() {
+  const [testingPush, setTestingPush] = useState(false);
   const { data, error, loading, refetch } = useQuery<{ notifications: Note[] }>(`{ notifications(limit:100){ id kind title body readAt createdAt } }`);
+  useEffect(() => subscribe('subscription { notificationAdded { id } }', {}, () => { void refetch(); }), [refetch]);
   const unread = data?.notifications.filter((n) => !n.readAt).length ?? 0;
   const state = loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} /> : <Empty icon="bell" title="You’re all caught up">Order fills, fund requests and security alerts appear here.</Empty>;
   return (
     <Screen title="Notifications" back scroll={false} right={unread ? <Button size="sm" kind="ghost" title="Mark read" onPress={async () => { await gql(`mutation { markNotificationsRead }`).catch(() => undefined); void refetch(); }} /> : undefined}>
+      <PushPermission />
+      <Button kind="ghost" size="sm" title="Send test notification" busy={testingPush} onPress={async () => {
+        setTestingPush(true);
+        try { await gql('mutation { sendTestNotification }'); toast('Test notification queued.'); void refetch(); }
+        catch (e) { toast((e as Error).message); }
+        finally { setTestingPush(false); }
+      }} />
       <VList data={data?.notifications ?? []} keyOf={(n) => n.id} empty={state} render={(n) => <NoteRow n={n} />} />
     </Screen>
   );

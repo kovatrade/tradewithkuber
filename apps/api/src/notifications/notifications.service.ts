@@ -2,10 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DbService, type DbOrTx } from '../db/db';
-import { notifications } from '../db/schema';
+import { notifications, pushDevices } from '../db/schema';
 import type { Actor } from '../common/context';
 import { mergeNavigationCounts, notificationDestination } from './navigation';
 import { afterWipe } from '../wipe/visibility';
+import { env } from '../config/env';
+import { badInput } from '../common/errors';
 
 /**
  * In-process pub/sub for GraphQL subscriptions. For multiple API instances, swap for
@@ -24,8 +26,26 @@ export const TOPIC = {
 export class NotificationsService {
   constructor(private readonly dbs: DbService) {}
 
-  async notify(tx: DbOrTx, userId: string, kind: string, title: string, body: string) {
+  async sendTest(actor: Actor) {
+    if (!env().FIREBASE_PUSH_ENABLED) throw badInput('Push notifications have not been enabled on the server yet.');
+    return this.dbs.db.transaction(async tx => {
+      const [device] = await tx.select({ id: pushDevices.id }).from(pushDevices)
+        .where(and(eq(pushDevices.userId, actor.userId), eq(pushDevices.sessionId, actor.sessionId))).limit(1);
+      if (!device) throw badInput('Allow notifications on this device, then reopen the app or enable browser notifications and try again.');
+      await this.notify(tx, actor.userId, 'system.test', 'Test notification', 'Your account can receive notifications. Tap to open your notifications.');
+      return true;
+    });
+  }
+
+  async notify(tx: DbOrTx, userId: string, kind: string, title: string, body: string): Promise<typeof notifications.$inferSelect> {
+    if (env().FIREBASE_PUSH_ENABLED && tx === this.dbs.db)
+      return this.dbs.db.transaction(inner => this.notify(inner, userId, kind, title, body));
     const [n] = await tx.insert(notifications).values({ userId, kind, title, body }).returning();
+    if (env().FIREBASE_PUSH_ENABLED) await tx.execute(sql`
+      INSERT INTO push_deliveries (notification_id, device_id)
+      SELECT ${n.id}::uuid, d.id FROM push_devices d
+      JOIN sessions s ON s.id = d.session_id AND s.revoked_at IS NULL AND s.expires_at > now()
+      WHERE d.user_id = ${userId}::uuid`);
     // publish after commit would be ideal; a lost realtime push is harmless because clients refetch.
     setImmediate(() => void pubsub.publish(TOPIC.notification(userId), { notificationAdded: n }));
     return n;

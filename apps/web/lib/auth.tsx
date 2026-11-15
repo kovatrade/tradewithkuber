@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { gql, refreshSession, rememberSignedOut, resetWs, setSignedOutHandler, subscribe, tokenStore } from './api';
 import { requestSplash } from './splash';
+import { unregisterBrowserPush, useBrowserPush } from './push';
 
 export type Role = 'SUPER_ADMIN' | 'BROKER' | 'TRADER';
 export interface Me {
@@ -49,6 +50,7 @@ export const homeFor = (r: Role) => (r === 'SUPER_ADMIN' ? '/admin' : r === 'BRO
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
+  useBrowserPush(me?.id);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<Settings | null>(null);
   const router = useRouter();
@@ -102,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    await unregisterBrowserPush().catch(() => undefined);
     await gql(`mutation { logout }`).catch(() => undefined);
     tokenStore.set(null);
     resetWs();

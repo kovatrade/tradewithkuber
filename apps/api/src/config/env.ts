@@ -31,7 +31,10 @@ const schema = z
     /** HMAC pepper for OTP and refresh-token hashing. */
     HASH_PEPPER: z.string().min(32),
 
-    SMS_PROVIDER: z.enum(['dev', 'msg91', 'twilio']).default('dev'),
+    SMS_PROVIDER: z.enum(['dev', 'msg91', 'twilio', 'firebase']).default('dev'),
+    FIREBASE_PROJECT_ID: z.preprocess(v => v === '' ? undefined : v, z.string().min(1).optional()),
+    FIREBASE_SERVICE_ACCOUNT_JSON: z.preprocess(v => v === '' ? undefined : v, z.string().min(1).optional()),
+    FIREBASE_PUSH_ENABLED: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
     /** MSG91 (SMS_PROVIDER=msg91): account auth key and the DLT-approved OTP template id. Secrets: never in config tables. */
     MSG91_AUTH_KEY: z.string().min(8).optional(),
     MSG91_OTP_TEMPLATE_ID: z.string().min(4).optional(),
@@ -81,6 +84,14 @@ const schema = z
     PROXY_SHARED_SECRET: z.string().min(32, 'PROXY_SHARED_SECRET must be at least 32 chars').optional(),
   })
   .superRefine((env, ctx) => {
+    if ((env.SMS_PROVIDER === 'firebase' || env.FIREBASE_PUSH_ENABLED) && !env.FIREBASE_PROJECT_ID)
+      ctx.addIssue({ code: 'custom', message: 'FIREBASE_PROJECT_ID is required for Firebase OTP/push.' });
+    if (env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      try {
+        const account = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+        if (!account.private_key || !account.client_email || account.project_id !== env.FIREBASE_PROJECT_ID) throw new Error();
+      } catch { ctx.addIssue({ code: 'custom', message: 'FIREBASE_SERVICE_ACCOUNT_JSON must contain a service account for FIREBASE_PROJECT_ID.' }); }
+    }
     if (env.NODE_ENV === 'production') {
       if (env.SMS_PROVIDER === 'dev')
         ctx.addIssue({ code: 'custom', message: 'SMS_PROVIDER=dev is not allowed in production' });
