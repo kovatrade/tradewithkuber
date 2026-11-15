@@ -1527,6 +1527,40 @@ describe('broker creates a trader with an opening amount', () => {
   });
 });
 
+describe('course website', () => {
+  it('lists courses publicly, takes enquiries (encrypted, spam-trapped) and lets only a Super Admin work them', async () => {
+    const courses = (await gql(`{ siteCourses { slug title fee modules { title topics } } }`)).data.siteCourses;
+    expect(courses.length).toBeGreaterThanOrEqual(3);
+    const slug = courses[0].slug;
+    const SEND = `mutation($i:CourseEnquiryInput!){ submitCourseEnquiry(input:$i) }`;
+    expect(code(await gql(SEND, { i: { name: 'Asha', phone: '12345' } }))).toBe('BAD_USER_INPUT');
+    expect(code(await gql(SEND, { i: { name: 'Asha', phone: '9876543210', courseSlug: 'no-such-course' } }))).toBe('BAD_USER_INPUT');
+    expect((await gql(SEND, { i: { name: 'Asha Rao', phone: '98765 43210', email: 'Asha@Example.com', courseSlug: slug, message: 'Weekend batch?' } })).data.submitCourseEnquiry).toBe(true);
+    expect((await gql(SEND, { i: { name: 'Bot', phone: '9876543211', website: 'http://spam' } })).data.submitCourseEnquiry).toBe(true); // trapped, not stored
+    const raw = (await pg.query(`SELECT name, phone_enc FROM course_enquiries ORDER BY created_at`)).rows;
+    expect(raw.map((r: { name: string }) => r.name)).toEqual(['Asha Rao']);
+    expect(raw[0].phone_enc).not.toContain('9876543210');
+    const t = await login('trader.one');
+    const LIST = `{ courseEnquiries { id name phone email courseSlug status } }`;
+    expect(code(await gql(LIST, {}, { token: t.accessToken }))).toBe('FORBIDDEN');
+    const admin = await adminLogin('admin');
+    const list = (await gql(LIST, {}, { token: admin.token })).data.courseEnquiries;
+    expect(list[0]).toMatchObject({ name: 'Asha Rao', phone: '+919876543210', email: 'asha@example.com', courseSlug: slug, status: 'NEW' });
+    const upd = await gql(`mutation($id:ID!){ setCourseEnquiryStatus(id:$id, status:"CONTACTED", note:"Called, wants weekend batch"){ status note } }`, { id: list[0].id }, { token: admin.token });
+    expect(upd.data.setCourseEnquiryStatus).toMatchObject({ status: 'CONTACTED', note: 'Called, wants weekend batch' });
+    expect((await gql(`{ courseEnquiries(status:"NEW") { id } }`, {}, { token: admin.token })).data.courseEnquiries).toEqual([]);
+  });
+
+  it('keeps the broker website off by default and only allows live with registration details', async () => {
+    expect((await gql(`{ siteBroker { mode offerings brokerage { delivery intraday } } }`)).data.siteBroker).toMatchObject({ mode: 'off', brokerage: { delivery: '0', intraday: '20' } });
+    const { CONFIG_REGISTRY } = await import('../src/config-mgmt/registry');
+    const s = CONFIG_REGISTRY['site.broker'];
+    expect(s.schema.safeParse({ ...s.default, mode: 'live' }).success).toBe(false);
+    expect(s.schema.safeParse({ ...s.default, mode: 'preview' }).success).toBe(true);
+    expect(s.schema.safeParse({ ...s.default, mode: 'live', legalName: 'Example Broking Pvt Ltd', sebiRegNo: 'INZ000000000', exchanges: [{ name: 'MCX', memberId: '12345' }], address: 'Jaipur', grievanceEmail: 'complaints@example.com' }).success).toBe(true);
+  });
+});
+
 describe('wipe out', () => {
   const PLACE = `mutation($i:PlaceOrderInput!){ placeOrder(input:$i){ id status } }`;
   let instrumentId: string;

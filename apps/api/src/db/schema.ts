@@ -765,3 +765,20 @@ export const appReleases = pgTable('app_releases', {
   createdAt: ts('created_at').notNull().defaultNow(),
 }, (t) => [index('app_releases_latest_idx').on(t.platform, t.active, t.createdAt)]);
 export type AppReleaseRow = typeof appReleases.$inferSelect;
+
+/** Course website: enquiries from the public forms (phone/email encrypted). */
+export const courseEnquiries = pgTable('course_enquiries', {
+  id: id(),
+  name: varchar('name', { length: 80 }).notNull(),
+  phoneEnc: text('phone_enc').notNull(),
+  emailEnc: text('email_enc'),
+  courseSlug: varchar('course_slug', { length: 80 }),
+  message: varchar('message', { length: 1000 }),
+  status: varchar('status', { length: 16 }).notNull().default('NEW'), // NEW | CONTACTED | ENROLLED | CLOSED
+  note: varchar('note', { length: 500 }),
+  ip: varchar('ip', { length: 64 }),
+  handledById: uuid('handled_by_id').references(() => users.id, { onDelete: 'set null' }),
+  handledAt: ts('handled_at'),
+  createdAt: ts('created_at').notNull().defaultNow(),
+}, (t) => [index('course_enquiries_status_idx').on(t.status, t.createdAt)]);
+export type CourseEnquiryRow = typeof courseEnquiries.$inferSelect;

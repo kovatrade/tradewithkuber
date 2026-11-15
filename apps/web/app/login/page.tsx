@@ -59,8 +59,14 @@ export default function Login() {
   useEffect(() => { try { const u = localStorage.getItem(LAST_USER); if (u) setUsername(u); } catch { /* storage unavailable */ } }, []);
 
   useEffect(() => {
-    const m = new URLSearchParams(window.location.search).get('mode');
-    if (m === 'signup') setStep('signup');
+    const q = new URLSearchParams(window.location.search);
+    const m = q.get('mode');
+    if (m === 'signup') {
+      setStep('signup');
+      // Coming from the website's "Sign up now" box: the number is already filled in.
+      const ph = q.get('phone');
+      if (ph && /^[6-9]\d{9}$/.test(ph)) setPhone(ph);
+    }
     if (m === 'forgot') setStep('forgot');
   }, []);
 

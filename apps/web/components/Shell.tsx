@@ -42,6 +42,7 @@ const NAV: Record<Role, Item[]> = {
     { href: '/admin/reconciliation', label: 'Reconciliation', icon: 'scale' },
     { href: '/admin/fees', label: 'Fees · bank & UPI', icon: 'wallet' },
     { href: '/admin/app-releases', label: 'App downloads', icon: 'download' },
+    { href: '/admin/enquiries', label: 'Course enquiries', icon: 'users' },
     { href: '/admin/reset', label: 'Data reset', icon: 'alert' },
   ],
 };

@@ -232,6 +232,13 @@
       "when": 1794497000004,
       "tag": "0032_position_carry_forward",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1794497000005,
+      "tag": "0033_course_enquiries",
+      "breakpoints": true
     }
   ]
 }

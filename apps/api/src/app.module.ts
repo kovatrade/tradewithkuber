@@ -13,6 +13,8 @@ import { StatementController } from './statements/statement.controller';
 import { AppReleasesController } from './app-releases/app-releases.controller';
 import { AppReleasesResolver } from './app-releases/app-releases.resolver';
 import { AppReleasesService } from './app-releases/app-releases.service';
+import { SiteResolver } from './site/site.resolver';
+import { SiteService } from './site/site.service';
 import { StatementResolver } from './statements/statement.resolver';
 import { StatementService } from './statements/statement.service';
 import type { Request, Response } from 'express';
@@ -215,6 +217,8 @@ function formatError(f: GraphQLFormattedError, err: unknown): GraphQLFormattedEr
     StatementService,
     AppReleasesService,
     AppReleasesResolver,
+    SiteService,
+    SiteResolver,
     StatementResolver,
     ConsentResolver,
     MarketResolver,
