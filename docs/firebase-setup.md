@@ -118,9 +118,13 @@ NEXT_PUBLIC_FIREBASE_APP_ID=<appId>
 NEXT_PUBLIC_FIREBASE_VAPID_KEY=<public-Web-Push-key>
 ```
 
-These are public app configuration values. They are different from the private service-account key. Redeploy/rebuild Next.js after changing them. OTP uses Firebase's reCAPTCHA challenge. If you use a custom Content Security Policy, allow the Google/Firebase reCAPTCHA and Firebase SDK resources documented by Firebase.
+These are public app configuration values. They are different from the private service-account key and Android configuration. Set all six on Render's **web service**, not just the API service. Redeploy/rebuild Next.js after changing them: `NEXT_PUBLIC_` values are embedded at build time. The website's CSP permits the Firebase SDK and the specific FCM registration endpoints. OTP uses Firebase's reCAPTCHA challenge.
 
 Sign in → Notifications → **Enable browser notifications**. The website registers `/firebase-messaging-sw.js` and sends its FCM token to the authenticated API. HTTPS is required outside localhost. On iOS, web push requires a supported installed Home Screen web app; use the native iOS app if that is your distribution channel.
+
+Permission **Allowed** means the browser may display notifications; successful Firebase token registration is a separate step. **Send test notification** now completes registration for the current sign-in before requesting a test. If registration fails, it reports that failure instead of sending a test for an unregistered session.
+
+If `/firebase-messaging-sw.js` returns **503**, the web deployment is missing configuration; its response identifies missing environment variable names without exposing values. Fix those on the web service and rebuild. A working endpoint returns **200** with JavaScript. In DevTools Network, a test should include `registerPushToken` followed by `sendTestNotification`. The `{ notifications(limit:100) { ... } }` query only reads the inbox and does not register or send push notifications. GraphQL errors may appear inside an HTTP 200 response, so inspect the response's `errors` field too.
 
 Reference: [Firebase web phone auth](https://firebase.google.com/docs/auth/web/phone-auth), [web FCM setup](https://firebase.google.com/docs/cloud-messaging/js/client).
 

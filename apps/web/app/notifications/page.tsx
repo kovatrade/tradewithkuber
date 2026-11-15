@@ -5,7 +5,7 @@ import { gql, subscribe } from '@/lib/api';
 import { when } from '@/lib/format';
 import { useQuery } from '@/lib/hooks';
 import { useEffect, useState } from 'react';
-import { registerBrowserPush } from '@/lib/push';
+import { BROWSER_PUSH_ERROR_EVENT, browserPushSetupMessage, registerBrowserPush, sendBrowserTestNotification } from '@/lib/push';
 
 interface N { id: string; kind: string; title: string; body: string; readAt?: string; createdAt: string }
 const ico = (k: string) => (k.startsWith('security') ? 'shield' : k.startsWith('payment') ? 'wallet' : k.startsWith('order') ? 'list' : 'bell') as 'bell';
@@ -13,8 +13,16 @@ const ico = (k: string) => (k.startsWith('security') ? 'shield' : k.startsWith('
 export default function Notifications() {
   const [pushStatus, setPushStatus] = useState('');
   const [testingPush, setTestingPush] = useState(false);
+  const [enablingPush, setEnablingPush] = useState(false);
   const { data, loading, error, refetch } = useQuery<{ notifications: N[] }>(`{ notifications(limit:100){ id kind title body readAt createdAt } }`);
   const unread = data?.notifications.filter((n) => !n.readAt).length ?? 0;
+  useEffect(() => {
+    const setupError = browserPushSetupMessage();
+    if (setupError) setPushStatus(setupError);
+    const registrationError = (event: Event) => setPushStatus((event as CustomEvent<string>).detail);
+    window.addEventListener(BROWSER_PUSH_ERROR_EVENT, registrationError);
+    return () => window.removeEventListener(BROWSER_PUSH_ERROR_EVENT, registrationError);
+  }, []);
   useEffect(() => subscribe('subscription { notificationAdded { id } }', {}, () => { void refetch(); }), [refetch]);
   useEffect(() => { const refresh = () => { void refetch(); }; window.addEventListener('focus', refresh); window.addEventListener('td:notification', refresh); return () => { window.removeEventListener('focus', refresh); window.removeEventListener('td:notification', refresh); }; }, [refetch]);
   return (
@@ -23,10 +31,16 @@ export default function Notifications() {
         {unread > 0 && <button className="btn btn-sm" onClick={async () => { await gql(`mutation { markNotificationsRead }`).catch(() => undefined); void refetch(); }}><Icon name="check" size={16} />Mark all as read</button>}
       </PageHead>
       <div className="stack" style={{ marginBottom: 16 }}>
-        <button className="btn" onClick={async () => { try { await registerBrowserPush(true); setPushStatus('Browser notifications enabled.'); } catch (e) { setPushStatus((e as Error).message); } }}>Enable browser notifications</button>
-        <button className="btn" disabled={testingPush} onClick={async () => {
+        <button className="btn" disabled={enablingPush || testingPush} onClick={async () => {
+          setEnablingPush(true); setPushStatus('Enabling browser notifications…');
+          try { await registerBrowserPush(true); setPushStatus('Browser notifications enabled for this sign-in.'); }
+          catch (e) { setPushStatus((e as Error).message); }
+          finally { setEnablingPush(false); }
+        }}>{enablingPush ? 'Enabling…' : 'Enable browser notifications'}</button>
+        <button className="btn" disabled={testingPush || enablingPush} onClick={async () => {
           setTestingPush(true);
-          try { await gql('mutation { sendTestNotification }'); setPushStatus('Test notification queued.'); void refetch(); }
+          setPushStatus('Registering browser and sending test notification…');
+          try { await sendBrowserTestNotification(); setPushStatus('Test notification queued.'); void refetch(); }
           catch (e) { setPushStatus((e as Error).message); }
           finally { setTestingPush(false); }
         }}>{testingPush ? 'Sending…' : 'Send test notification'}</button>

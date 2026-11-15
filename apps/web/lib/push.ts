@@ -5,35 +5,57 @@ import { gql } from './api';
 import { firebaseApp, firebaseConfigured } from './firebase';
 
 const INSTALLATION = 'td.push.installation';
+export const BROWSER_PUSH_ERROR_EVENT = 'td:push-registration-error';
+let registering: Promise<void> | null = null;
+
+export function browserPushSetupMessage() {
+  if (!firebaseConfigured || !process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY?.trim()) return 'Browser notifications are not configured for this website yet. Contact support.';
+  return null;
+}
 function installationId() {
   let id = localStorage.getItem(INSTALLATION);
   if (!id) { id = crypto.randomUUID(); localStorage.setItem(INSTALLATION, id); }
   return id;
 }
 async function registration() {
-  if (!firebaseConfigured || !process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY) throw new Error('Browser notifications are not configured yet.');
+  const setupError = browserPushSetupMessage();
+  if (setupError) throw new Error(setupError);
   if (!(await isSupported())) throw new Error('This browser does not support push notifications.');
   const worker = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
   // Wait for this worker, rather than another service worker registered on the origin.
   if (!worker.active) await new Promise<void>((resolve, reject) => {
     const installing = worker.installing ?? worker.waiting;
     if (!installing) { reject(new Error('Notification worker could not start.')); return; }
-    const timeout = setTimeout(() => reject(new Error('Notification worker took too long to start.')), 15000);
-    installing.addEventListener('statechange', () => {
-      if (installing.state === 'activated') { clearTimeout(timeout); resolve(); }
-      if (installing.state === 'redundant') { clearTimeout(timeout); reject(new Error('Notification worker could not start.')); }
-    });
+    const cleanup = () => { clearTimeout(timeout); installing.removeEventListener('statechange', changed); };
+    const changed = () => {
+      if (installing.state === 'activated') { cleanup(); resolve(); }
+      if (installing.state === 'redundant') { cleanup(); reject(new Error('Notification worker could not start.')); }
+    };
+    const timeout = setTimeout(() => { cleanup(); reject(new Error('Notification worker took too long to start.')); }, 15000);
+    installing.addEventListener('statechange', changed);
+    changed();
   });
   return worker;
 }
 export async function registerBrowserPush(ask = false) {
   if (!('Notification' in window)) throw new Error('Notifications are not supported by this browser.');
+  const setupError = browserPushSetupMessage();
+  if (setupError) throw new Error(setupError);
   if (ask && Notification.permission === 'default') await Notification.requestPermission();
   if (Notification.permission !== 'granted') { if (ask) throw new Error('Allow notifications in your browser site settings.'); return; }
-  const worker = await registration();
-  const token = await getToken(getMessaging(firebaseApp()), { vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY, serviceWorkerRegistration: worker });
-  const result = await gql('mutation($token:String!,$platform:String!,$installationId:String!){ registerPushToken(token:$token, platform:$platform, installationId:$installationId) }', { token, platform: 'web', installationId: installationId() });
-  if (!result.registerPushToken) throw new Error('Push delivery has not been enabled on the server yet.');
+  if (!registering) registering = (async () => {
+    const worker = await registration();
+    const token = await getToken(getMessaging(firebaseApp()), { vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY, serviceWorkerRegistration: worker });
+    if (!token) throw new Error('The browser could not register for notifications. Reload the page and try again.');
+    const result = await gql('mutation($token:String!,$platform:String!,$installationId:String!){ registerPushToken(token:$token, platform:$platform, installationId:$installationId) }', { token, platform: 'web', installationId: installationId() });
+    if (!result.registerPushToken) throw new Error('Push delivery has not been enabled on the server yet.');
+  })().finally(() => { registering = null; });
+  await registering;
+}
+export async function sendBrowserTestNotification() {
+  // Permission alone is insufficient: bind this token to the current API session first.
+  await registerBrowserPush(true);
+  await gql('mutation { sendTestNotification }');
 }
 export async function unregisterBrowserPush() {
   const id = localStorage.getItem(INSTALLATION);
@@ -43,14 +65,16 @@ export async function unregisterBrowserPush() {
 }
 export function useBrowserPush(userId?: string) {
   useEffect(() => {
-    if (!userId || !firebaseConfigured || !('Notification' in window)) return;
+    if (!userId || !('Notification' in window)) return;
     let stop: (() => void) | undefined, disposed = false;
-    const refresh = () => { void registerBrowserPush().catch(() => undefined); };
+    const refresh = () => { void registerBrowserPush().catch(error => {
+      if (!disposed) window.dispatchEvent(new CustomEvent(BROWSER_PUSH_ERROR_EVENT, { detail: (error as Error).message }));
+    }); };
     refresh();
     window.addEventListener('focus', refresh);
     const timer = setInterval(refresh, 3600000);
     void isSupported().then(supported => {
-      if (!supported || disposed) return;
+      if (!supported || disposed || !firebaseConfigured) return;
       stop = onMessage(getMessaging(firebaseApp()), async message => {
         if (message.data?.userId !== userId || !message.notification || Notification.permission !== 'granted') return;
         const worker = await registration();

@@ -9,7 +9,8 @@ export const firebaseConfig = {
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
-export const firebaseConfigured = !!Object.values(firebaseConfig).every(Boolean);
+export const missingFirebaseConfig = Object.entries(firebaseConfig).filter(([, value]) => !value?.trim()).map(([key]) => key);
+export const firebaseConfigured = missingFirebaseConfig.length === 0;
 export function firebaseApp() {
   if (!firebaseConfigured) throw new Error('Firebase is not configured for this website. Contact support.');
   return getApps().find(a => a.name === 'tradedesk') ?? initializeApp(firebaseConfig, 'tradedesk');

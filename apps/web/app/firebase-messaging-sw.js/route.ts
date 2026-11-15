@@ -7,7 +7,12 @@ export function GET() {
     messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
   };
-  if (!Object.values(config).every(Boolean)) return new Response('// Firebase not configured', { status: 503 });
+  const fields = {
+    apiKey: 'NEXT_PUBLIC_FIREBASE_API_KEY', authDomain: 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
+    projectId: 'NEXT_PUBLIC_FIREBASE_PROJECT_ID', messagingSenderId: 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID', appId: 'NEXT_PUBLIC_FIREBASE_APP_ID',
+  };
+  const missing = (Object.keys(config) as (keyof typeof config)[]).filter(key => !config[key]?.trim()).map(key => fields[key]);
+  if (missing.length) return new Response(`// Firebase not configured. Set these on the web service and rebuild: ${missing.join(', ')}`, { status: 503, headers: { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-store' } });
   const script = `
 self.addEventListener('notificationclick', event => {
   event.stopImmediatePropagation();
