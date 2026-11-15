@@ -17,10 +17,12 @@ import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { SmsProvider } from './sms.provider';
 import { ActivityLogService } from '../logging/activity-log.service';
+import { FirebaseService } from '../firebase/firebase.service';
+import { PushService } from '../notifications/push.service';
 
 /** Core singletons shared by the GraphQL context factory, guards and resolvers. */
 @Module({
-  providers: [DhanCredentialsService, DhanCatalogService, ActivityLogService, AuthService, PasswordService, SmsProvider, AuditService, ConfigService, LedgerService, NotificationsService, PolicyService, DhanFeedService, DhanGlobalFeedService, YahooFeedService, MarketDataService, SimulatedVenue, OrdersService, ConsentService],
-  exports: [DhanCredentialsService, DhanCatalogService, ActivityLogService, AuthService, PasswordService, SmsProvider, AuditService, ConfigService, LedgerService, NotificationsService, PolicyService, DhanFeedService, DhanGlobalFeedService, YahooFeedService, MarketDataService, SimulatedVenue, OrdersService, ConsentService],
+  providers: [FirebaseService, PushService, DhanCredentialsService, DhanCatalogService, ActivityLogService, AuthService, PasswordService, SmsProvider, AuditService, ConfigService, LedgerService, NotificationsService, PolicyService, DhanFeedService, DhanGlobalFeedService, YahooFeedService, MarketDataService, SimulatedVenue, OrdersService, ConsentService],
+  exports: [FirebaseService, PushService, DhanCredentialsService, DhanCatalogService, ActivityLogService, AuthService, PasswordService, SmsProvider, AuditService, ConfigService, LedgerService, NotificationsService, PolicyService, DhanFeedService, DhanGlobalFeedService, YahooFeedService, MarketDataService, SimulatedVenue, OrdersService, ConsentService],
 })
 export class AuthGuardDeps {}

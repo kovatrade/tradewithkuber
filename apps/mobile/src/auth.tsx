@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 import { clearSession, gql, refreshOutcome, refreshSession, rememberSignedOut, setPersistRefresh, setSignedOutHandler, storeSession, subscribe } from './api';
 import { forgetQuickDevice, quickDevice, RELOCK_AFTER_MS, type QuickOwner } from './quick';
 import { requestSplash } from './splash';
+import { unregisterPush } from './push';
 
 export type Role = 'SUPER_ADMIN' | 'BROKER' | 'TRADER';
 export interface Me { id: string; username: string; displayName: string; role: Role; isDemo: boolean; mfaEnabled: boolean; termsAccepted: boolean; /** Traders: broker's WhatsApp digits, e.g. 919876543210. */ brokerWhatsapp?: string | null }
@@ -125,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     // With quick unlock on, signing out returns to the lock screen (MPIN/fingerprint signs back in).
     if (quickRef.current && meRef.current?.id === quickRef.current.owner.userId) return lock();
+    await unregisterPush();
     await gql(`mutation { logout }`).catch(() => undefined);
     await clearSession();
     setMe(null);

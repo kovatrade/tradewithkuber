@@ -765,3 +765,30 @@ export const appReleases = pgTable('app_releases', {
   createdAt: ts('created_at').notNull().defaultNow(),
 }, (t) => [index('app_releases_latest_idx').on(t.platform, t.active, t.createdAt)]);
 export type AppReleaseRow = typeof appReleases.$inferSelect;
+
+export const firebasePhoneUses = pgTable('firebase_phone_uses', {
+  assertionHash: char('assertion_hash', { length: 64 }).primaryKey(),
+  purpose: varchar('purpose', { length: 12 }).notNull(),
+  createdAt: ts('created_at').notNull().defaultNow(),
+});
+
+export const pushDevices = pgTable('push_devices', {
+  id: id(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  sessionId: uuid('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
+  installationId: varchar('installation_id', { length: 100 }).notNull().unique(),
+  tokenHash: char('token_hash', { length: 64 }).notNull().unique(),
+  tokenEnc: text('token_enc').notNull(),
+  platform: varchar('platform', { length: 12 }).notNull(),
+  updatedAt: ts('updated_at').notNull().defaultNow(),
+});
+
+export const pushDeliveries = pgTable('push_deliveries', {
+  id: id(),
+  notificationId: uuid('notification_id').notNull().references(() => notifications.id, { onDelete: 'cascade' }),
+  deviceId: uuid('device_id').notNull().references(() => pushDevices.id, { onDelete: 'cascade' }),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: ts('next_attempt_at').notNull().defaultNow(),
+  finishedAt: ts('finished_at'),
+  lastError: varchar('last_error', { length: 100 }),
+}, t => [index('push_deliveries_due_idx').on(t.nextAttemptAt).where(sql`${t.finishedAt} IS NULL`)]);

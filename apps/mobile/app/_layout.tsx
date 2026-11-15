@@ -11,9 +11,11 @@ import { useTheme } from '@/theme';
 import { StepUpHost, ToastHost } from '@/ui';
 import { KSplash } from '@/splash';
 import { LockScreen } from '@/lock';
+import { usePushNotifications } from '@/push';
 
 function Inner() {
   const { me, settings, locked, ready } = useAuth();
+  usePushNotifications(me, locked);
   const t = useTheme();
   const { prefs } = usePrefs();
   // Root window colour follows the theme, so screen transitions and the keyboard never flash white in dark mode.

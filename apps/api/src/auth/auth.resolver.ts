@@ -52,6 +52,7 @@ class AuthPayload {
 
 @ObjectType()
 class OtpRequestResult {
+  @Field() provider: string;
   @Field() sentTo: string;
   @Field(() => Int) resendAfterSec: number;
   @Field({ nullable: true, description: 'Development only. Always null in production.' }) devCode?: string;
@@ -65,6 +66,7 @@ class SignupResult {
 
 @ObjectType()
 class PasswordResetRequest {
+  @Field() provider: string;
   @Field() message: string;
   @Field(() => Int) resendAfterSec: number;
   @Field({ nullable: true, description: 'Development only. Always null in production.' }) devCode?: string;
@@ -77,7 +79,7 @@ class RegisterInput {
   @Field() @Matches(RX.phoneIn, { message: 'Enter a valid mobile number.' }) phone: string;
   @Field({ nullable: true }) @IsOptional() @IsEmail({}, { message: 'Enter a valid email address.' }) @MaxLength(254) email?: string;
   @Field() @Length(10, 128, { message: 'Password must be 10–128 characters.' }) password: string;
-  @Field({ description: 'OTP sent by requestSignupOtp' }) @Matches(RX.otp, { message: 'Enter the 6-digit code.' }) code: string;
+  @Field({ description: 'SMS code or firebase:<verified ID token>' }) @Length(6, 8192) code: string;
 }
 
 @ObjectType()
@@ -133,6 +135,10 @@ export class AuthResolver {
     private readonly auth: AuthService,
     private readonly dbs: DbService,
   ) {}
+
+  @Public()
+  @Query(() => String)
+  phoneOtpProvider() { return env().SMS_PROVIDER; }
 
   private meta(c: GqlContext, deviceName?: string) {
     return { ip: c.ip, userAgent: c.userAgent || 'unknown', deviceName };
@@ -209,6 +215,7 @@ export class AuthResolver {
   @Throttle({ default: { limit: lim(10), ttl: 60_000 } })
   @Mutation(() => AuthPayload)
   async verifyDemoOtp(@Args('phone') phone: string, @Args('code') code: string, @Args('deviceName', { nullable: true }) deviceName: string, @Ctx() c: GqlContext) {
+    if (code.length > 8192) throw unauthenticated();
     const r = await this.auth.verifyDemoOtp(phone, code, this.meta(c, deviceName));
     return this.finish(c, r);
   }
@@ -253,22 +260,22 @@ export class AuthResolver {
   @Throttle({ default: { limit: lim(5), ttl: 60_000 } })
   @Mutation(() => SignupResult, { description: 'Step 2 of sign-up. The account stays PENDING until a Super Admin approves it.' })
   registerTrader(@Args('input') input: RegisterInput, @Ctx() c: GqlContext) {
-    if (input.password.length > 128 || input.code.length > 10) throw unauthenticated();
+    if (input.password.length > 128 || input.code.length > 8192) throw unauthenticated();
     return this.auth.registerTrader(input, c.ip);
   }
 
   @Public()
   @Throttle({ default: { limit: lim(5), ttl: 60_000 } })
-  @Mutation(() => PasswordResetRequest, { description: 'Starts authenticator password recovery for any role. Same answer whether or not the account exists.' })
+  @Mutation(() => PasswordResetRequest, { description: 'Starts password recovery using the configured verification provider. Same answer whether or not the account exists.' })
   requestPasswordReset(@Args('username') username: string, @Ctx() c: GqlContext) {
     return this.auth.requestPasswordReset(username, c.ip);
   }
 
   @Public()
   @Throttle({ default: { limit: lim(5), ttl: 60_000 } })
-  @Mutation(() => Boolean, { description: 'Sets a new password using the enrolled authenticator; signs out every device.' })
+  @Mutation(() => Boolean, { description: 'Sets a new password after Firebase phone verification or enrolled authenticator verification; signs out every device.' })
   resetPassword(@Args('username') username: string, @Args('code') code: string, @Args('newPassword') newPassword: string, @Ctx() c: GqlContext) {
-    if (newPassword.length > 128 || code.length > 10) throw unauthenticated();
+    if (newPassword.length > 128 || code.length > 8192) throw unauthenticated();
     return this.auth.resetPassword(username, code, newPassword, c.ip);
   }
 
