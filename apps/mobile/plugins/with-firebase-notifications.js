@@ -9,8 +9,16 @@ module.exports = config => {
     const names = ['com.google.firebase.messaging.default_notification_icon', 'expo.modules.notifications.default_notification_icon'];
     app['meta-data'] = (app['meta-data'] || []).filter(item => !names.includes(item.$['android:name']));
     for (const name of names) app['meta-data'].push({ $: { 'android:name': name, 'android:resource': '@drawable/ic_stat_k' } });
-    const color = app['meta-data'].find(item => item.$['android:name'] === 'com.google.firebase.messaging.default_notification_color');
-    if (color) color.$['tools:replace'] = 'android:resource';
+    const colorName = 'com.google.firebase.messaging.default_notification_color';
+    let color = app['meta-data'].find(item => item.$['android:name'] === colorName);
+    if (!color) {
+      color = { $: { 'android:name': colorName } };
+      app['meta-data'].push(color);
+    }
+    color.$['android:resource'] = '@color/notification_icon_color';
+    const replacements = new Set((color.$['tools:replace'] || '').split(',').map(value => value.trim()).filter(Boolean));
+    replacements.add('android:resource');
+    color.$['tools:replace'] = [...replacements].join(',');
     return mod;
   });
   return withDangerousMod(config, ['android', async mod => {

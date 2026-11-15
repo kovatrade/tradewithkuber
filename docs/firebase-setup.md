@@ -50,7 +50,7 @@ For a release keystore, use `keytool -list -v -keystore <path-to-keystore> -alia
 Repository → Settings → Secrets and variables → Actions:
 
 * Secret **`GOOGLE_SERVICES_JSON_BASE64`**: the base64 encoding of the entire Android config file.
-* Variable **`MOBILE_FIREBASE_REQUIRED=true`**: prevents publishing a build that accidentally omits Firebase configuration.
+* The APK workflow requires this secret and stops before Gradle if it is missing. A local `google-services.json` is ignored by Git and is not copied to GitHub runners.
 * Keep your existing Android release signing secrets, and register the release certificate's SHA-1/SHA-256 in Firebase.
 
 To copy the public Android config as base64 in PowerShell:
@@ -59,7 +59,7 @@ To copy the public Android config as base64 in PowerShell:
 [Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\apps\mobile\google-services.json))) | Set-Clipboard
 ```
 
-Run the **mobile-android** workflow after setting the secret. Install the resulting **new APK**. An existing APK cannot acquire native Firebase modules through a server deployment or a JavaScript reload. Expo Go does not include these native Firebase modules; use an installed development/release build.
+Run the **mobile-android** workflow after setting the secret. After clean prebuild, CI checks the Firebase manifest overrides, notification icon/channel, Google Services plugin and packaged app configuration before running Gradle. Install the resulting **new APK**. An existing APK cannot acquire native Firebase modules through a server deployment or a JavaScript reload. Expo Go does not include these native Firebase modules; use an installed development/release build.
 
 ## 3. Register iOS, if distributing an iPhone app
 

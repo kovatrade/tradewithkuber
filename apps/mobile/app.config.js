@@ -14,7 +14,8 @@ module.exports = ({ config }) => {
     extra: { ...config.extra, firebaseAndroidEnabled: androidReady, firebaseIosEnabled: iosReady },
     plugins: [
       // Expo composes manifest mods in reverse order. Set our vector icons after its defaults.
-      ...(enabled ? ['./plugins/with-firebase-notifications'] : []),
+      // Firebase native libraries are autolinked even when app configuration is missing.
+      './plugins/with-firebase-notifications',
       ...(config.plugins || []).filter(plugin => (Array.isArray(plugin) ? plugin[0] : plugin) !== 'expo-build-properties'),
       ['expo-notifications', { defaultChannel: 'activity', color: '#08a77b', enableBackgroundRemoteNotifications: true }],
       ['expo-build-properties', { ios: { useFrameworks: 'static' } }],
