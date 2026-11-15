@@ -58,14 +58,15 @@ function BidAsk({ id, qq, onPick, compact, slim }: { id: string; qq?: Quote; onP
       {(['SELL', 'BUY'] as const).map((sd) => {
         const v = sd === 'BUY' ? qq?.ask : qq?.bid;
         return (
-          <Pressable key={sd} onPress={() => { tap(); if (onPick) onPick(sd); else router.push(`/instrument/${id}?side=${sd}`); }} accessibilityRole="button" accessibilityLabel={`${sd === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ width: columnWidth, alignItems: 'stretch', gap: compact ? 3 : 5 }}>
-            <Flash value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
-              <View style={{ width: columnWidth, minHeight: slim ? 40 : CTL.tap, paddingVertical: slim ? 4 : compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable key={sd} onPress={() => { tap(); if (onPick) onPick(sd); else router.push(`/instrument/${id}?side=${sd}`); }} accessibilityRole="button" accessibilityLabel={`${sd === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ width: columnWidth, alignItems: 'stretch', gap: slim ? 2 : compact ? 3 : 5 }}>
+            <Flash over value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
+              <View style={{ width: columnWidth, minHeight: slim ? 34 : CTL.tap, paddingVertical: slim ? 5 : compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
                 <T v="num" c={sd === 'BUY' ? 'text' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{ fontSize: compact ? 13 : 14, ...(sd === 'BUY' ? { color: '#fff' } : {}) }}>{scriptPrice(v)}</T>
-                {slim && <T v="xs" n numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ fontSize: 9, lineHeight: 11, ...(sd === 'BUY' ? { color: '#ffffffcc' } : {}) }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
               </View>
             </Flash>
-            {!slim && <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center', fontSize: 10 }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
+            {slim
+              ? <T v="xs" n w="600" c="text2" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ textAlign: 'center', fontSize: 10, lineHeight: 12 }}>{sd === 'BUY' ? `H: ${scriptPrice(qq?.high)}` : `L: ${scriptPrice(qq?.low)}`}</T>
+              : <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center', fontSize: 10 }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}
           </Pressable>
         );
       })}
@@ -137,7 +138,7 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
 });
 
 /** Add mode is a simple contract picker; regular search also shows live prices. */
-export function SearchView({ addMode }: { addMode?: boolean } = {}) {
+export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; listIndex?: 0 | 1 } = {}) {
   const t = useTheme();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState<Cat>(addMode ? 'FUTURES' : '');
@@ -155,7 +156,7 @@ export function SearchView({ addMode }: { addMode?: boolean } = {}) {
     const h = setTimeout(() => gql<{ searchInstruments: Inst[] }>(`query($q:String!,$c:String,$l:String,$n:Int!){ searchInstruments(query:$q, category:$c, lotClass:$l, limit:$n){ ${INST_FIELDS} } }`, { q: q.trim(), c: cat || undefined, l: cat === 'MCX' && lot ? lot : undefined, n: addMode ? 500 : 100 }).then((d) => { if (current) { setErr(null); setRes(d.searchInstruments); } }).catch((e) => { if (current) { setErr((e as Error).message); setRes([]); } }), q ? 180 : 0);
     return () => { current = false; clearTimeout(h); };
   }, [q, cat, lot, nonce, addMode]);
-  const wl = useQuery<{ watchlist: { instrument: { id: string } }[] }>(`{ watchlist(listIndex:0){ instrument{ id } } }`);
+  const wl = useQuery<{ watchlist: { instrument: { id: string } }[] }>(`query($l:Int!){ watchlist(listIndex:$l){ instrument{ id } } }`, { l: listIndex });
   const inList = useMemo(() => {
     const selected = new Set((wl.data?.watchlist ?? []).map((w) => w.instrument.id));
     for (const [id, included] of Object.entries(selection)) {
@@ -171,13 +172,13 @@ export function SearchView({ addMode }: { addMode?: boolean } = {}) {
     const remove = inList.has(i.id);
     try {
       const mutation = remove ? 'removeFromWatchlist' : 'addToWatchlist';
-      await gql(`mutation($i:ID!){ ${mutation}(listIndex:0, instrumentId:$i) }`, { i: i.id });
+      await gql(`mutation($l:Int!,$i:ID!){ ${mutation}(listIndex:$l, instrumentId:$i) }`, { l: listIndex, i: i.id });
       setSelection((s) => ({ ...s, [i.id]: !remove }));
-      tap(); toast(`${shortSymbol(i.symbol)} ${remove ? 'removed from' : 'added to'} Watchlist 1`);
+      tap(); toast(`${shortSymbol(i.symbol)} ${remove ? 'removed from' : 'added to'} Watchlist ${listIndex + 1}`);
     }
     catch (e) { toast((e as Error).message, true); }
     finally { changing.current.delete(i.id); setPendingIds((ids) => ids.filter((id) => id !== i.id)); }
-  }, [inList]);
+  }, [inList, listIndex]);
   const pickerHeader = addMode ? (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingHorizontal: S[2], paddingVertical: S[2], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <IconButton icon="chevronLeft" label="Back to watchlist" onPress={() => router.canGoBack() ? router.back() : router.replace('/(trader)/watchlist')} />
@@ -302,7 +303,8 @@ interface Summary { balance: string; available: string; marginUsed: string; real
 export const SUMMARY = `query($u:ID){ accountSummary(userId:$u){ balance available marginUsed realizedPnl unrealizedPnl openPositions openOrders deposits withdrawals fees } }`;
 export const useSummary = (userId?: string) => useQuery<{ accountSummary: Summary }>(SUMMARY, { u: userId }, 5000);
 
-export function SummaryBlock({ userId, actions, title = 'Available to trade', compact, detail, addScript }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean }) {
+/** tiles: the watchlist card (small 'Available balance' label, bold amount, then Positions / Orders and Booked P/L tiles). */
+export function SummaryBlock({ userId, actions, title = 'Available to trade', compact, detail, addScript, tiles }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean; tiles?: boolean }) {
   const t = useTheme();
   const { data, error, loading, refetch } = useSummary(userId);
   const [pay, setPay] = useState<'DEPOSIT' | 'WITHDRAWAL' | null>(null);
@@ -317,6 +319,48 @@ export function SummaryBlock({ userId, actions, title = 'Available to trade', co
   const s = data?.accountSummary;
   if (loading && !s) return <Skeleton rows={2} />;
   if (error && !s) return <ErrorState error={error} retry={refetch} />;
+  if (tiles) {
+    const booked = toneOfValue(s?.realizedPnl);
+    const label = { fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' as const };
+    const box = { borderWidth: StyleSheet.hairlineWidth, borderColor: t.line2, borderRadius: R.lg, padding: S[3], backgroundColor: t.bg };
+    const tile = (title: string, a11y: string, value: ReactNode) => (
+      <View accessible accessibilityLabel={a11y} style={[box, { flex: 1, paddingVertical: 6, paddingHorizontal: S[3], gap: 1 }]}>
+        <T c="text2" w="600" style={{ ...label, fontSize: 10, letterSpacing: 0.5 }} numberOfLines={1}>{title}</T>
+        {value}
+      </View>
+    );
+    const big = { fontSize: 16, lineHeight: 21, fontWeight: '700' as const, fontVariant: ['tabular-nums' as const] };
+    return (
+      <View style={{ gap: S[2], borderWidth: StyleSheet.hairlineWidth, borderColor: t.line2, borderRadius: R.xl, padding: S[3], backgroundColor: t.bg2 }}>
+        <View style={[box, { backgroundColor: t.brandSoft, gap: 4, paddingTop: S[3] }]}>
+          <T c="text2" w="600" style={label}>{title}</T>
+          <T style={{ fontSize: 26, lineHeight: 34, fontWeight: '800', fontVariant: ['tabular-nums'] }} adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={1} accessibilityRole="text">{priv(`₹${inr(s?.available)}`, 8)}</T>
+        </View>
+        <Row gap={S[2]}>
+          {tile('Positions / Orders', `Positions ${s?.openPositions ?? 0}, open orders ${s?.openOrders ?? 0}`,
+            <T style={big} numberOfLines={1}>{s?.openPositions ?? 0}<T style={{ ...big, fontWeight: '400' }} c="text3"> / </T>{s?.openOrders ?? 0}</T>)}
+          {tile('Booked P/L', `Booked profit and loss ${inr(s?.realizedPnl, true)}`,
+            <T style={big} c={booked === 'flat' ? 'text' : (booked as 'pos')} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{inr(s?.realizedPnl, true)}</T>)}
+        </Row>
+        {actions && (
+          <Row gap={S[2]}>
+            {([['DEPOSIT', 'Deposit', 'download'], ['WITHDRAWAL', 'Withdraw', 'upload']] as const).map(([type, text, icon]) => {
+              const main = type === 'DEPOSIT';
+              return (
+                <Pressable key={type} onPress={() => openPayment(type)} accessibilityRole="button" accessibilityLabel={main ? 'Deposit funds' : 'Withdraw funds'}
+                  style={({ pressed }) => ({ flex: 1, height: 48, borderRadius: R.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: pressed ? 0.8 : 1,
+                    backgroundColor: main ? t.brand : t.bg, borderWidth: main ? 0 : 1, borderColor: t.line2 })}>
+                  <Icon name={icon} size={18} color={main ? t.brandInk : t.text} strokeWidth={2} />
+                  <T w="700" style={{ letterSpacing: 1, color: main ? t.brandInk : t.text }}>{text.toUpperCase()}</T>
+                </Pressable>
+              );
+            })}
+          </Row>
+        )}
+        {pay && <PaymentSheet type={pay} userId={userId} available={s?.available} onClose={() => { setPay(null); void refetch(); }} />}
+      </View>
+    );
+  }
   if (compact) {
     const toneC = (v?: string) => (toneOfValue(v) === 'flat' ? 'text2' : (toneOfValue(v) as 'pos'));
     return (
@@ -487,23 +531,28 @@ const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: {
   );
   return (
     <SwipeRow action={() => onRemove(e)} actionLabel="Remove">
-      <Flash value={qq?.ltp}>{row}</Flash>
+      {/* Only the bid and ask boxes flash when prices move; the row itself stays still. */}
+      {detailed ? row : <Flash value={qq?.ltp}>{row}</Flash>}
     </SwipeRow>
   );
 });
 
 /** Watchlists. `limit` = compact preview (Home); otherwise the full, virtualised list for the Watchlist tab. */
-/** The watchlist: one list, with a search bar on top that finds instruments and adds them in place. */
+/** Two watchlists: Watchlist 1 on the left, Add script in the middle, Watchlist 2 on the right. */
 export function WatchlistBlock({ limit, header }: { limit?: number; header?: ReactNode }) {
-  const { prefs } = usePrefs();
+  const { prefs, set } = usePrefs();
+  const list = prefs.watchlistIndex === 1 ? 1 : 0;
   const t = useTheme();
   const { width } = useWindowDimensions();
   const columnWidth = Math.min(130, Math.max(68, (width - 100) * .25) * Math.max(1, NUM_SCALE[prefs.numberSize]));
   const detailed = !limit && prefs.watchlistView === 'detailed';
-  const { data, error, loading, refetch } = useQuery<{ watchlist: WEntry[] }>(`query($l:Int!){ watchlist(listIndex:$l){ id instrument{ id symbol name exchange segment expiry category } quote{ ${QF} } } }`, { l: 0 });
+  const { data, error, loading, refetch } = useQuery<{ watchlist: WEntry[] }>(`query($l:Int!){ watchlist(listIndex:$l){ id instrument{ id symbol name exchange segment expiry category } quote{ ${QF} } } }`, { l: list });
+  const counts = useQuery<{ watchlistCounts: { listIndex: number; count: number }[] }>(`{ watchlistCounts { listIndex count } }`);
+  const countOf = (i: number) => counts.data?.watchlistCounts.find((c) => c.listIndex === i)?.count ?? 0;
   // Coming back from "Add script": reload so the scripts just added show up.
   const seen = useRef(false);
-  useFocusEffect(useCallback(() => { if (seen.current) void refetch(); seen.current = true; }, [refetch]));
+  const refetchCounts = counts.refetch;
+  useFocusEffect(useCallback(() => { if (seen.current) { void refetch(); void refetchCounts(); } seen.current = true; }, [refetch, refetchCounts]));
   const entries = useMemo(() => (data?.watchlist ?? []).slice(0, limit ?? 100), [data, limit]);
   const count = (data?.watchlist ?? []).length;
   const q = useLiveQuotes(entries.map((e) => e.instrument.id));
@@ -513,14 +562,30 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
   const onRemove = useCallback((e: WEntry) => setRemoving(e), []);
   const remove = async (e: WEntry) => {
     setRemoving(null);
-    try { await gql(`mutation($l:Int!,$i:ID!){ removeFromWatchlist(listIndex:$l, instrumentId:$i) }`, { l: 0, i: e.instrument.id }); toast(`${shortSymbol(e.instrument.symbol)} removed`); } catch (err) { toast((err as Error).message, true); }
-    void refetch();
+    try { await gql(`mutation($l:Int!,$i:ID!){ removeFromWatchlist(listIndex:$l, instrumentId:$i) }`, { l: list, i: e.instrument.id }); toast(`${shortSymbol(e.instrument.symbol)} removed`); } catch (err) { toast((err as Error).message, true); }
+    void refetch(); void counts.refetch();
   };
-  const addScript = () => router.push('/search?mode=add' as never);
+  const addScript = () => router.push(`/search?mode=add&list=${list}` as never);
+  const listTab = (i: 0 | 1) => {
+    const on = list === i;
+    return (
+      <Pressable onPress={() => { if (!on) { tap('select'); set('watchlistIndex', i); } }} accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={`Watchlist ${i + 1}, ${countOf(i)} scripts`}
+        style={{ paddingVertical: 8, paddingHorizontal: 2, borderBottomWidth: 2, borderBottomColor: on ? t.brand : 'transparent' }}>
+        <T w={on ? '700' : '500'} c={on ? 'brand' : 'text2'} numberOfLines={1}>Watchlist {i + 1} <T v="xs" c={on ? 'brand' : 'text3'}>({countOf(i)})</T></T>
+      </Pressable>
+    );
+  };
   const top = (
     <>
       {header}
-      {!limit && <SummaryBlock compact detail actions addScript title="Available balance" />}
+      {!limit && <SummaryBlock tiles actions title="Available balance" />}
+      {!limit && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: S[2], marginTop: S[2], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
+          {listTab(0)}
+          <Button size="sm" kind="primary" icon="plus" title="Add script" disabled={count >= 50} onPress={addScript} />
+          {listTab(1)}
+        </View>
+      )}
       {!!limit && (
         <Spread style={{ alignItems: 'center', marginBottom: S[1] }}>
           <View />

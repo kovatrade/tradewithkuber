@@ -71,7 +71,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose
     const v = side === 'BUY' ? q?.ask : q?.bid;
     return (
       <Pressable onPress={() => void place(side)} disabled={!!busy || !i} accessibilityRole="button" accessibilityLabel={`${side === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ alignItems: 'center', gap: 2 }}>
-        <Flash value={v} style={{ borderRadius: R.md, overflow: 'hidden' }}>
+        <Flash over value={v} style={{ borderRadius: R.md, overflow: 'hidden' }}>
           <View style={{ minWidth: 92, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: side === 'BUY' ? t.posSoft : t.negSoft, alignItems: 'center' }}>
             <T v="num" c={side === 'BUY' ? 'pos' : 'neg'}>{inr(v)}</T>
           </View>

@@ -9,9 +9,9 @@ import { useQuery } from '@/lib/hooks';
 import { Icon } from './icons';
 import { Dialog, Empty, ErrorState, SectionHead, SkeletonRows, Tabs, useToast } from './ui';
 
-export interface Payee { id: string; kind: 'BANK' | 'UPI'; label: string; accountName: string; bankName?: string; accountNumber?: string; ifsc?: string; branch?: string; upiId?: string; status: string; createdById: string; createdAt: string }
+export interface Payee { id: string; kind: 'BANK' | 'UPI'; label: string; accountName: string; bankName?: string; accountNumber?: string; ifsc?: string; branch?: string; upiId?: string; status: string; createdById: string; approved?: boolean; createdAt: string }
 export interface Fee { id: string; userId: string; username: string; displayName: string; payee: string; amount: string; purpose: string; utr: string; status: string; hasProof?: boolean; reviewNote?: string; reviewedAt?: string; createdAt: string }
-export const PAYEE_FIELDS = 'id kind label accountName bankName accountNumber ifsc branch upiId status createdById createdAt';
+export const PAYEE_FIELDS = 'id kind label accountName bankName accountNumber ifsc branch upiId status createdById approved createdAt';
 const FEE_FIELDS = 'id userId username displayName payee amount purpose utr hasProof status reviewNote reviewedAt createdAt';
 const FEE_STATUS: Record<string, [string, string]> = { SUBMITTED: ['Checking', 'warn'], VERIFIED: ['Received', 'ok'], REJECTED: ['Not confirmed', 'bad'] };
 const PAYEE_STATUS: Record<string, [string, string]> = { PENDING: ['Waiting for approval', 'warn'], ACTIVE: ['Live', 'ok'], REJECTED: ['Rejected', 'bad'], DISABLED: ['Disabled', ''] };
@@ -175,7 +175,7 @@ export function FeesAdmin({ meId }: { meId: string }) {
     <div className="stack" style={{ gap: 32 }}>
       <section className="section">
         <SectionHead title="Bank accounts & UPI"><button className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><Icon name="plus" size={16} />Add</button></SectionHead>
-        <p className="t3 sm" style={{ margin: 0 }}>Traders see only <b>Live</b> details. {sole ? 'You are the only Super Admin, so new details go live as soon as you add them.' : 'New details go live after a different Super Admin checks and approves them.'} To change details, disable the old ones and add new ones.</p>
+        <p className="t3 sm" style={{ margin: 0 }}>Traders see only <b>Live</b> details, and only <b>one bank account and one UPI ID</b> can be Live at a time: approving or enabling one turns off the Live one of the same type. {sole ? 'You are the only Super Admin, so new details go live as soon as you add them.' : 'New details go live after a different Super Admin checks and approves them.'} To change details, disable the old ones and add new ones.</p>
         {payees.loading && !payees.data ? <SkeletonRows rows={2} pad={false} /> : payees.error && !payees.data ? <ErrorState error={payees.error} retry={payees.refetch} /> : !payees.data!.payeeAccounts.length ? <Empty icon="wallet" title="No payment details yet">Add your company bank account or UPI ID.</Empty> : (
           <div className="panel"><div className="list list-pad">
             {payees.data!.payeeAccounts.map((p) => {
@@ -192,6 +192,7 @@ export function FeesAdmin({ meId }: { meId: string }) {
                     {p.status === 'PENDING' && (p.createdById !== meId || sole) && <button className="btn btn-sm btn-primary" onClick={() => void act(`mutation($id:ID!){ approvePayeeAccount(id:$id){ id } }`, p.id, 'Approved: traders can see it now')}>Approve</button>}
                     {p.status === 'PENDING' && <button className="btn btn-sm" onClick={() => void act(`mutation($id:ID!){ rejectPayeeAccount(id:$id){ id } }`, p.id, 'Rejected')}>Reject</button>}
                     {p.status === 'ACTIVE' && <button className="btn btn-sm btn-danger" onClick={() => void act(`mutation($id:ID!){ disablePayeeAccount(id:$id){ id } }`, p.id, 'Disabled')}>Disable</button>}
+                    {p.status === 'DISABLED' && p.approved && <button className="btn btn-sm btn-primary" onClick={() => void act(`mutation($id:ID!){ enablePayeeAccount(id:$id){ id } }`, p.id, `Enabled: traders now see “${p.label}”${payees.data!.payeeAccounts.some((o) => o.id !== p.id && o.kind === p.kind && o.status === 'ACTIVE') ? ` (the other Live ${p.kind === 'UPI' ? 'UPI ID' : 'bank account'} was turned off)` : ''}`)}>Enable</button>}
                   </div>
                 </div>
               );

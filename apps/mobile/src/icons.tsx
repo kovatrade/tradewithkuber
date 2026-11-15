@@ -44,6 +44,7 @@ export const ICON_PATHS = {
   type: 'M5 6V4h14v2M12 4v16M9 20h6',
   bold: 'M7 4h6a4 4 0 0 1 0 8H7z M7 12h7a4 4 0 0 1 0 8H7z',
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
+  upload: 'M12 16V5M7 10l5-5 5 5M5 20h14',
   calendar: 'M4 6h16v14H4z M4 10h16 M8 3v4M16 3v4',
   clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18Z M12 7v5l3 2',
   sliders: 'M5 4v6M5 14v6M12 4v4M12 12v8M19 4v10M19 18v2 M3 12h4M10 10h4M17 16h4',

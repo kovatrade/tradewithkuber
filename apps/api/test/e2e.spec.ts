@@ -129,7 +129,7 @@ beforeAll(async () => {
   execSync('npx ts-node --transpile-only scripts/migrate.ts', { stdio: 'inherit', env: process.env });
   execSync('npx ts-node --transpile-only scripts/seed.ts', { stdio: 'inherit', env: process.env });
   pg = new Pool({ connectionString: base });
-  fundPayeeId = (await pg.query(`INSERT INTO payee_accounts(kind,label,account_name,bank_name,account_number,ifsc,branch,upi_id,status,created_by_id) SELECT 'BANK','Test receiving account','K Training','HDFC Bank',$1,'HDFC0001234','Main Branch',$2,'ACTIVE',id FROM users WHERE username='admin' RETURNING id`, [encryptField('50100123456789', 'payee_accounts.account_number'), encryptField('thek@hdfc', 'payee_accounts.upi_id')])).rows[0].id;
+  fundPayeeId = (await pg.query(`INSERT INTO payee_accounts(kind,label,account_name,bank_name,account_number,ifsc,branch,upi_id,status,created_by_id,approved_at) SELECT 'BANK','Test receiving account','K Training','HDFC Bank',$1,'HDFC0001234','Main Branch',$2,'ACTIVE',id,now() FROM users WHERE username='admin' RETURNING id`, [encryptField('50100123456789', 'payee_accounts.account_number'), encryptField('thek@hdfc', 'payee_accounts.upi_id')])).rows[0].id;
 
   // Most suites sign the same users in many times: start with no concurrent-session limit.
   await setConfig('security.sessionPolicy', OPEN_POLICY);
@@ -1190,6 +1190,21 @@ describe('fees: bank & UPI details (maker-checker) and fee payments', () => {
     expect(await balance()).toBe(before); // fees never touch the virtual trading balance
     const mine = (await gql(`{ feePayments { utr status } }`, {}, { token: t.accessToken })).data.feePayments;
     expect(mine).toContainEqual({ utr, status: 'VERIFIED' });
+
+    // Only one bank account (and one UPI ID) is live at a time: the new one replaced the earlier live bank account.
+    const statusOf = async (pid: string) => (await pg.query(`SELECT status FROM payee_accounts WHERE id = $1`, [pid])).rows[0].status;
+    expect(await statusOf(fundPayeeId)).toBe('DISABLED');
+    expect(await visible()).not.toContain(fundPayeeId);
+    const ENABLE = `mutation($id:ID!){ enablePayeeAccount(id:$id){ id status approved } }`;
+    expect(code(await gql(ENABLE, { id: fundPayeeId }, { token: t.accessToken }))).toBe('FORBIDDEN');
+    expect((await gql(ENABLE, { id: fundPayeeId }, { token: admin.token, stepUp: suA })).data.enablePayeeAccount).toMatchObject({ status: 'ACTIVE', approved: true });
+    expect(await statusOf(id)).toBe('DISABLED');
+    expect(await visible()).toEqual(expect.arrayContaining([fundPayeeId]));
+    expect(await visible()).not.toContain(id);
+    expect(code(await gql(ENABLE, { id: fundPayeeId }, { token: admin.token, stepUp: suA }))).toBe('CONFLICT'); // already live
+    const never = (await pg.query(`INSERT INTO payee_accounts(kind,label,account_name,upi_id,status,created_by_id) SELECT 'UPI','Never approved','K Training','x','DISABLED',id FROM users WHERE username='admin' RETURNING id`)).rows[0].id;
+    expect(code(await gql(ENABLE, { id: never }, { token: admin.token, stepUp: suA }))).toBe('CONFLICT');
+    expect((await pg.query(`SELECT count(*)::int AS n FROM payee_accounts WHERE status = 'ACTIVE' GROUP BY kind HAVING count(*) > 1`)).rows).toEqual([]);
   });
 });
 

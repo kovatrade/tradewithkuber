@@ -1,7 +1,7 @@
 import { afterWipeFor } from '../wipe/visibility';
 import { Injectable } from '@nestjs/common';
 import { soleAdminMayApprove } from '../common/maker-checker';
-import { and, asc, desc, eq, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, type SQL, ne } from 'drizzle-orm';
 import type { Actor } from '../common/context';
 import { AppError, badInput, notFound } from '../common/errors';
 import { AuditService } from '../audit/audit.service';
@@ -93,20 +93,37 @@ export class FeesService {
     });
   }
 
-  /** approve: a different Super Admin, PENDING → ACTIVE. reject: PENDING → REJECTED. disable: ACTIVE → DISABLED (any Super Admin, immediate). */
-  async decidePayee(actor: Actor, id: string, action: 'approve' | 'reject' | 'disable', ip: string) {
+  /**
+   * approve: a different Super Admin, PENDING → ACTIVE. reject: PENDING → REJECTED. disable: ACTIVE → DISABLED (any
+   * Super Admin, immediate). enable: DISABLED → ACTIVE, only for details that were approved before.
+   * Only one BANK and one UPI account are live at a time: approving or enabling one turns off the other live one of
+   * the same kind.
+   */
+  async decidePayee(actor: Actor, id: string, action: 'approve' | 'reject' | 'disable' | 'enable', ip: string) {
     return this.dbs.db.transaction(async (tx) => {
       const [p] = await tx.select().from(payeeAccounts).where(eq(payeeAccounts.id, id)).for('update');
       if (!p) throw notFound('Payment details');
       if (action === 'disable') {
         if (p.status !== 'ACTIVE' && p.status !== 'PENDING') throw new AppError('CONFLICT', 'Already inactive.');
+      } else if (action === 'enable') {
+        if (p.status !== 'DISABLED') throw new AppError('CONFLICT', p.status === 'ACTIVE' ? 'Already live.' : 'Only disabled details can be turned back on.');
+        if (!p.approvedAt) throw new AppError('CONFLICT', 'These details were never approved. Add them again so another Super Admin can check them.');
       } else {
         if (p.status !== 'PENDING') throw new AppError('CONFLICT', 'This was already decided.');
         if (action === 'approve' && p.createdById === actor.userId && !(await soleAdminMayApprove(tx))) throw new AppError('FORBIDDEN', 'A different Super Admin has to approve details you added.');
       }
-      const status = action === 'approve' ? 'ACTIVE' : action === 'reject' ? 'REJECTED' : 'DISABLED';
-      const [u] = await tx.update(payeeAccounts).set({ status, decidedById: actor.userId, decidedAt: new Date(), updatedAt: new Date() }).where(eq(payeeAccounts.id, id)).returning();
-      await this.audit.record(tx, { actor, action: action === 'approve' ? 'fees.payee_approved' : action === 'reject' ? 'fees.payee_rejected' : 'fees.payee_disabled', entityType: 'payee_account', entityId: id, outcome: 'SUCCESS', ip, metadata: { label: p.label, from: p.status, to: status } });
+      const status = action === 'approve' || action === 'enable' ? 'ACTIVE' : action === 'reject' ? 'REJECTED' : 'DISABLED';
+      if (status === 'ACTIVE') {
+        // One live account per kind: turn off the one it replaces.
+        const others = await tx.select().from(payeeAccounts).where(and(eq(payeeAccounts.kind, p.kind), eq(payeeAccounts.status, 'ACTIVE'), ne(payeeAccounts.id, id))).for('update');
+        for (const o of others) {
+          await tx.update(payeeAccounts).set({ status: 'DISABLED', decidedById: actor.userId, decidedAt: new Date(), updatedAt: new Date() }).where(eq(payeeAccounts.id, o.id));
+          await this.audit.record(tx, { actor, action: 'fees.payee_disabled', entityType: 'payee_account', entityId: o.id, outcome: 'SUCCESS', ip, metadata: { label: o.label, from: 'ACTIVE', to: 'DISABLED', reason: 'replaced', by: p.label } });
+        }
+      }
+      const now = new Date();
+      const [u] = await tx.update(payeeAccounts).set({ status, decidedById: actor.userId, decidedAt: now, updatedAt: now, ...(action === 'approve' ? { approvedAt: now } : {}) }).where(eq(payeeAccounts.id, id)).returning();
+      await this.audit.record(tx, { actor, action: action === 'approve' ? 'fees.payee_approved' : action === 'reject' ? 'fees.payee_rejected' : action === 'enable' ? 'fees.payee_enabled' : 'fees.payee_disabled', entityType: 'payee_account', entityId: id, outcome: 'SUCCESS', ip, metadata: { label: p.label, from: p.status, to: status } });
       return openPayee(u);
     });
   }

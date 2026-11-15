@@ -22,6 +22,7 @@ class PayeeAccount {
   @Field({ nullable: true }) upiId?: string;
   @Field({ description: 'PENDING (waiting for a second Super Admin), ACTIVE, REJECTED, DISABLED' }) status: string;
   @Field(() => ID) createdById: string;
+  @Field({ description: 'True when the details were approved at some point (disabled ones can then be turned back on).' }) approved: boolean;
   @Field() createdAt: Date;
 }
 
@@ -57,7 +58,7 @@ class FeePayment {
 type PayeeRow = Awaited<ReturnType<FeesService['listPayees']>>[number];
 const toPayee = (p: PayeeRow): PayeeAccount => ({
   id: p.id, kind: p.kind, label: p.label, accountName: p.accountName, bankName: p.bankName ?? undefined, accountNumber: p.accountNumber ?? undefined,
-  ifsc: p.ifsc ?? undefined, branch: p.branch ?? undefined, upiId: p.upiId ?? undefined, status: p.status, createdById: p.createdById, createdAt: p.createdAt,
+  ifsc: p.ifsc ?? undefined, branch: p.branch ?? undefined, upiId: p.upiId ?? undefined, status: p.status, createdById: p.createdById, approved: !!p.approvedAt, createdAt: p.createdAt,
 });
 
 @Resolver()
@@ -95,6 +96,13 @@ export class FeesResolver {
   @Mutation(() => PayeeAccount, { description: 'Stop showing these details. To change details, disable and add new ones.' })
   async disablePayeeAccount(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return toPayee(await this.fees.decidePayee(a, id, 'disable', c.ip));
+  }
+
+  @Roles('SUPER_ADMIN')
+  @RequireStepUp()
+  @Mutation(() => PayeeAccount, { description: 'Turn disabled (previously approved) details back on. Only one bank account and one UPI ID are live at a time: the other live one of the same kind is turned off.' })
+  async enablePayeeAccount(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
+    return toPayee(await this.fees.decidePayee(a, id, 'enable', c.ip));
   }
 
   @Roles('TRADER', 'BROKER')

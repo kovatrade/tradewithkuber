@@ -661,6 +661,8 @@ export const payeeAccounts = pgTable('payee_accounts', {
   createdById: uuid('created_by_id').notNull(),
   decidedById: uuid('decided_by_id'),
   decidedAt: ts('decided_at'),
+  /** Set when a Super Admin approves the details; disabled details with this set can be turned back on. */
+  approvedAt: ts('approved_at'),
   createdAt: ts('created_at').notNull().defaultNow(),
   updatedAt: ts('updated_at').notNull().defaultNow(),
 });

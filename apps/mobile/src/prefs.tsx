@@ -16,8 +16,10 @@ export interface Prefs {
   numberSize: 'S' | 'M' | 'L' | 'XL';
   boldNumbers: boolean;
   watchlistView: 'simple' | 'detailed';
+  /** Which watchlist the Watchlist tab shows: 0 = Watchlist 1, 1 = Watchlist 2. */
+  watchlistIndex: 0 | 1;
 }
-export const DEFAULT_PREFS: Prefs = { theme: 'system', hideBalances: false, charts: true, sounds: true, numberSize: 'M', boldNumbers: false, watchlistView: 'detailed' };
+export const DEFAULT_PREFS: Prefs = { theme: 'system', hideBalances: false, charts: true, sounds: true, numberSize: 'M', boldNumbers: false, watchlistView: 'detailed', watchlistIndex: 0 };
 export const NUM_SCALE: Record<Prefs['numberSize'], number> = { S: 0.85, M: 1, L: 1.18, XL: 1.36 };
 const KEY = 'td_prefs_v1';
 

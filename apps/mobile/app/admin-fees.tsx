@@ -10,7 +10,7 @@ import { ReceivingAccount } from '@/payment-details';
 import { inr, S, when } from '@/theme';
 import { Badge, Button, Chips, Empty, ErrorState, Field, ListRow, Notice, Row, Screen, Section, Sheet, Skeleton, T, Tabs, toast, useQuery } from '@/ui';
 
-interface Payee { id: string; kind: 'BANK' | 'UPI'; label: string; accountName: string; bankName?: string; accountNumber?: string; ifsc?: string; branch?: string; upiId?: string; status: string; createdById: string; createdAt: string }
+interface Payee { id: string; kind: 'BANK' | 'UPI'; label: string; accountName: string; bankName?: string; accountNumber?: string; ifsc?: string; branch?: string; upiId?: string; status: string; createdById: string; approved?: boolean; createdAt: string }
 interface Fee { id: string; displayName: string; username: string; payee: string; amount: string; purpose: string; utr: string; hasProof?: boolean; status: string; reviewNote?: string; createdAt: string }
 const PSTATUS: Record<string, [string, 'warn' | 'ok' | 'bad' | undefined]> = { PENDING: ['Waiting for approval', 'warn'], ACTIVE: ['Live', 'ok'], REJECTED: ['Rejected', 'bad'], DISABLED: ['Disabled', undefined] };
 
@@ -18,7 +18,7 @@ export default function AdminFees() {
   const { me } = useAuth();
   const sole = useSoleAdmin();
   const [tab, setTab] = useState<'details' | 'payments'>('payments');
-  const payees = useQuery<{ payeeAccounts: Payee[] }>(`{ payeeAccounts { id kind label accountName bankName accountNumber ifsc branch upiId status createdById createdAt } }`);
+  const payees = useQuery<{ payeeAccounts: Payee[] }>(`{ payeeAccounts { id kind label accountName bankName accountNumber ifsc branch upiId status createdById approved createdAt } }`);
   const [st, setSt] = useState<'SUBMITTED' | 'VERIFIED' | 'REJECTED'>('SUBMITTED');
   const fees = useQuery<{ feePayments: Fee[] }>(`query($s:[String!]){ feePayments(status:$s, limit:200){ id displayName username payee amount purpose utr hasProof status reviewNote createdAt } }`, { s: [st] }, 20000);
   const [adding, setAdding] = useState(false);
@@ -41,7 +41,7 @@ export default function AdminFees() {
         </>
       ) : (
         <>
-          <Notice>{`Traders see only Live details. ${sole ? 'You are the only Super Admin, so new details go live as soon as you add them.' : 'New details go live after a different Super Admin approves them.'} To change details, disable them and add new ones.`}</Notice>
+          <Notice>{`Traders see only Live details, and only one bank account and one UPI ID can be Live at a time: approving or enabling one turns off the Live one of the same type. ${sole ? 'You are the only Super Admin, so new details go live as soon as you add them.' : 'New details go live after a different Super Admin approves them.'} To change details, disable them and add new ones.`}</Notice>
           <Button kind="primary" icon="plus" title="Add bank account or UPI" onPress={() => setAdding(true)} />
           {payees.error && !payees.data ? <ErrorState error={payees.error} retry={payees.refetch} /> : !payees.data ? <Skeleton /> : !payees.data.payeeAccounts.length ? <Empty icon="wallet" title="No payment details yet" /> : (
             <Section title="Payment details">
@@ -56,6 +56,7 @@ export default function AdminFees() {
                       {p.status === 'PENDING' && (p.createdById !== me?.id || sole) && <View style={{ flex: 1 }}><Button block size="sm" kind="primary" title="Approve" onPress={() => void act(`mutation($id:ID!){ approvePayeeAccount(id:$id){ id } }`, p.id, 'Approved: traders can see it now')} /></View>}
                       {p.status === 'PENDING' && <View style={{ flex: 1 }}><Button block size="sm" title="Reject" onPress={() => void act(`mutation($id:ID!){ rejectPayeeAccount(id:$id){ id } }`, p.id, 'Rejected')} /></View>}
                       {p.status === 'ACTIVE' && <View style={{ flex: 1 }}><Button block size="sm" kind="sell" title="Disable" onPress={() => void act(`mutation($id:ID!){ disablePayeeAccount(id:$id){ id } }`, p.id, 'Disabled')} /></View>}
+                      {p.status === 'DISABLED' && p.approved && <View style={{ flex: 1 }}><Button block size="sm" kind="primary" title="Enable" onPress={() => void act(`mutation($id:ID!){ enablePayeeAccount(id:$id){ id } }`, p.id, `Enabled: traders now see “${p.label}”`)} /></View>}
                     </Row>
                   </View>
                 );

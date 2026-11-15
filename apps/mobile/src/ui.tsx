@@ -196,8 +196,8 @@ export function SwipeRow({ children, action, actionLabel }: { children: ReactNod
   );
 }
 
-/** Brief green / red wash behind a row when its price moves (animated on the native thread). */
-export function Flash({ value, children, style }: { value?: string; children: ReactNode; style?: ViewStyle }) {
+/** Brief green / red wash when a price moves (animated on the native thread). `over`: drawn on top, for boxes with their own solid background. */
+export function Flash({ value, children, style, over }: { value?: string; children: ReactNode; style?: ViewStyle; over?: boolean }) {
   const t = useTheme();
   const o = useRef(new Animated.Value(0)).current;
   const prev = useRef(value);
@@ -210,6 +210,14 @@ export function Flash({ value, children, style }: { value?: string; children: Re
     }
     prev.current = value;
   }, [value, o]);
+  if (over) {
+    return (
+      <View style={style}>
+        {children}
+        <Animated.View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', backgroundColor: up ? t.pos : t.neg, opacity: o.interpolate({ inputRange: [0, 1], outputRange: [0, 0.45] }) }]} />
+      </View>
+    );
+  }
   return (
     <View style={style}>
       <Animated.View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', backgroundColor: up ? t.posSoft : t.negSoft, opacity: o }]} />
