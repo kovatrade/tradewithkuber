@@ -23,8 +23,27 @@ COPY apps/web/ ./
 # The public URL of this service (e.g. https://tradewithkuber.onrender.com). Render passes service env vars as
 # build args. Leave it empty to use the page's own origin.
 ARG NEXT_PUBLIC_API_URL=
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
-RUN npm run build && npm prune --omit=dev --no-audit --no-fund
+# Render supplies these as build arguments. Next.js needs them during `next build`,
+# not only when the final container starts. These are public Firebase app settings;
+# never add the private FIREBASE_SERVICE_ACCOUNT_JSON credential here.
+ARG NEXT_PUBLIC_FIREBASE_API_KEY
+ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+ARG NEXT_PUBLIC_FIREBASE_APP_ID
+ARG NEXT_PUBLIC_FIREBASE_VAPID_KEY
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY \
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN \
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID \
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID \
+    NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID \
+    NEXT_PUBLIC_FIREBASE_VAPID_KEY=$NEXT_PUBLIC_FIREBASE_VAPID_KEY \
+    NEXT_TELEMETRY_DISABLED=1
+RUN node scripts/check-firebase-build.cjs \
+    && npm run build \
+    && node scripts/check-firebase-build.cjs --verify-bundle \
+    && npm prune --omit=dev --no-audit --no-fund
 
 # ---- Runtime
 FROM node:22.11-bookworm-slim

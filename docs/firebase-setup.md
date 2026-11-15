@@ -120,6 +120,16 @@ NEXT_PUBLIC_FIREBASE_VAPID_KEY=<public-Web-Push-key>
 
 These are public app configuration values. They are different from the private service-account key and Android configuration. Set all six on Render's **web service**, not just the API service. Redeploy/rebuild Next.js after changing them: `NEXT_PUBLIC_` values are embedded at build time. The website's CSP permits the Firebase SDK and the specific FCM registration endpoints. OTP uses Firebase's reCAPTCHA challenge.
 
+### Combined Docker deployment (tradewithkuber.com)
+
+If Render builds the root `Dockerfile`, the API and Next.js website share **one Render Docker service**. In this deployment, put the six public web variables **and** the backend Firebase variables on that same service. There is no separate web service to configure.
+
+Render supplies environment variables as Docker build arguments, but the web build stage must explicitly declare `ARG` and `ENV` for each public Firebase setting before `next build`. The root Dockerfile now does this. Runtime environment variables alone cannot populate an already-built browser bundle. A service worker returning 200 while the browser still reports missing configuration can indicate this build/runtime mismatch.
+
+After deploying this Dockerfile change, build logs must contain both **“Firebase web build configuration: all 6 public settings are available.”** and **“Firebase web browser bundle verified: all 6 public settings are embedded.”** Missing settings stop the Docker build with their names, never their values. The check also prevents publishing a browser bundle that lacks these settings. Backend private keys are not Docker build arguments.
+
+For the first deployment after this fix, use **Manual Deploy → Clear build cache & deploy** in Render, then hard-refresh the website and test notifications. Changing public Firebase values afterwards invalidates the Docker web build layer automatically because the values are declared in its build environment.
+
 Sign in → Notifications → **Enable browser notifications**. The website registers `/firebase-messaging-sw.js` and sends its FCM token to the authenticated API. HTTPS is required outside localhost. On iOS, web push requires a supported installed Home Screen web app; use the native iOS app if that is your distribution channel.
 
 Permission **Allowed** means the browser may display notifications; successful Firebase token registration is a separate step. **Send test notification** now completes registration for the current sign-in before requesting a test. If registration fails, it reports that failure instead of sending a test for an unregistered session.
