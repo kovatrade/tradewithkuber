@@ -1,3 +1,4 @@
+import { readPhone } from '../common/pii';
 import { IsEmail, IsOptional, Length, Matches, MaxLength } from 'class-validator';
 import { RX } from '../common/validation';
 import { Args, Context, Field, ID, InputType, Int, Mutation, ObjectType, Query, Resolver, Subscription } from '@nestjs/graphql';
@@ -283,7 +284,15 @@ export class AuthResolver {
   @Query(() => UserType)
   async me(@CurrentActor() a: Actor) {
     const [u] = await this.dbs.db.select().from(users).where(eq(users.id, a.userId));
-    return UserType.from(u, a);
+    const me = UserType.from(u, a);
+    // A trader can message their own broker on WhatsApp.
+    if (u.role === 'TRADER' && u.brokerId) {
+      const [b] = await this.dbs.db.select({ phoneEnc: users.phoneEnc, legacyPhone: users.legacyPhone, status: users.status }).from(users).where(eq(users.id, u.brokerId));
+      const digits = b && b.status === 'ACTIVE' ? (readPhone(b) ?? '').replace(/\D/g, '') : '';
+      if (/^91[6-9]\d{9}$/.test(digits)) me.brokerWhatsapp = digits;
+      else if (/^[6-9]\d{9}$/.test(digits)) me.brokerWhatsapp = `91${digits}`;
+    }
+    return me;
   }
 
   @AllowWithoutMfa()

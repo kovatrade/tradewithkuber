@@ -145,7 +145,7 @@ export function useLiveQuotes(ids: string[]) {
 /** Briefly tints a row when its price ticks up or down. */
 /** Last update time of a quote, e.g. 18:54:12 (IST). */
 const quoteTime = (ts?: string) => (ts ? new Date(ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—');
-const expiryText = (d?: string) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : '—');
+const expiryText = (d?: string) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' }) : '—');
 
 /** Bid (red) and ask (green) boxes that blink green when the price rises and red when it falls; day low and high below. */
 const BidAskBoxes = memo(function BidAskBoxes({ href, q, label }: { href: string; q?: Quote; label: string }) {
@@ -193,7 +193,8 @@ export function useSummary(userId?: string) {
 }
 
 /** Portfolio header: one big number, supporting metrics in a divided strip. */
-export function PortfolioSummary({ userId, actions, title = 'Available to trade', compact, detail, addScript }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean }) {
+/** tiles: the watchlist card (small 'Available balance' label, bold amount, Positions / Orders and Booked P/L, Deposit and Withdraw). */
+export function PortfolioSummary({ userId, actions, title = 'Available to trade', compact, detail, addScript, tiles }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean; tiles?: boolean }) {
   const { data, loading, error, refetch } = useSummary(userId);
   const [pay, setPay] = useState<'DEPOSIT' | 'WITHDRAWAL' | null>(null);
   const me = useAuth().me;
@@ -201,6 +202,30 @@ export function PortfolioSummary({ userId, actions, title = 'Available to trade'
   const scriptAction = addScript || (!showFees && !userId);
   // A demo trader can't add or withdraw money: show a short notice instead of the payment form.
   const demo = !!me?.isDemo && !userId;
+  if (tiles) {
+    if (loading && !data) return <div className="panel bal-tiles"><div className="skeleton" style={{ height: 76, borderRadius: 12 }} /><div className="skeleton" style={{ height: 48, borderRadius: 12 }} /></div>;
+    if (error && !data) return <ErrorState error={error} retry={refetch} />;
+    const c = data!.accountSummary;
+    return (
+      <section className="panel bal-tiles" aria-label="Account summary">
+        <div className="bal-hero">
+          <div className="bal-k">{title}</div>
+          <div className="bal-amt num"><Private width={8}>₹{inr(c.available)}</Private></div>
+        </div>
+        <div className="bal-pair">
+          <div className="bal-tile"><div className="bal-k">Positions / Orders</div><div className="bal-tv num">{c.openPositions}<span className="t3"> / </span>{c.openOrders}</div></div>
+          <div className="bal-tile"><div className="bal-k">Booked P/L</div><div className={`bal-tv num ${tone(c.realizedPnl)}`}>{inr(c.realizedPnl, { sign: true })}</div></div>
+        </div>
+        {actions && (
+          <div className="bal-pair">
+            <button className="bal-btn main" onClick={() => setPay('DEPOSIT')}><Icon name="download" size={18} />Deposit</button>
+            <button className="bal-btn" onClick={() => setPay('WITHDRAWAL')}><Icon name="upload" size={18} />Withdraw</button>
+          </div>
+        )}
+        {pay && (demo ? <DemoFundsNotice type={pay} onClose={() => setPay(null)} /> : <PaymentDialog type={pay} userId={userId} onClose={() => setPay(null)} onDone={refetch} available={c.available} />)}
+      </section>
+    );
+  }
   if (compact) {
     if (loading && !data) return <div className="panel bal-card"><div className="skeleton" style={{ width: 120, height: 12 }} /><div className="skeleton" style={{ width: 180, height: 26, marginTop: 8 }} /></div>;
     if (error && !data) return <ErrorState error={error} retry={refetch} />;
@@ -387,9 +412,13 @@ function groupByCategory<T extends { instrument: Instrument }>(items: T[]) {
  * mode "list" (dashboard / Watchlist page): the trader's scripts with an "Add script" button.
  * mode "add" (/trader/add-script): full-page search with market filters; add or remove scripts.
  */
-export function Watchlist({ compact, mode = 'list', showAddButton = true }: { compact?: boolean; mode?: 'list' | 'add'; showAddButton?: boolean }) {
-  const { prefs } = usePrefs();
-  const { data, loading, error, refetch } = useQuery<{ watchlist: WEntry[] }>(WL_Q, { l: 0 });
+/** `tabs`: Watchlist 1 on the left, Add script in the middle, Watchlist 2 on the right. `list` picks the list for Add script (?list=). */
+export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, list: listProp }: { compact?: boolean; mode?: 'list' | 'add'; showAddButton?: boolean; tabs?: boolean; list?: 0 | 1 }) {
+  const { prefs, set: setPref } = usePrefs();
+  const list: 0 | 1 = listProp ?? (tabs && prefs.watchlistIndex === 1 ? 1 : 0);
+  const { data, loading, error, refetch } = useQuery<{ watchlist: WEntry[] }>(WL_Q, { l: list });
+  const counts = useQuery<{ watchlistCounts: { listIndex: number; count: number }[] }>(`{ watchlistCounts { listIndex count } }`, undefined, { skip: !tabs });
+  const countOf = (i: number) => (i === list && data ? data.watchlist.length : counts.data?.watchlistCounts.find((c) => c.listIndex === i)?.count ?? 0);
   const { data: countsData } = useQuery<{ instrumentCategoryCounts: { category: string; count: number }[] }>(CAT_COUNTS_Q);
   const entries = data?.watchlist ?? [];
   const entryIds = useMemo(() => entries.map((e) => e.instrument.id), [entries]);
@@ -459,8 +488,8 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
   const add = async (i: Instrument) => {
     setBusy(i.id);
     try {
-      await gql(`mutation($l:Int!,$i:ID!){ addToWatchlist(listIndex:$l, instrumentId:$i) }`, { l: 0, i: i.id });
-      toast(`${fullName(i)} added`);
+      await gql(`mutation($l:Int!,$i:ID!){ addToWatchlist(listIndex:$l, instrumentId:$i) }`, { l: list, i: i.id });
+      toast(`${fullName(i)} added to Watchlist ${list + 1}. Wrong one? Click Remove.`);
       await refetch();
     } catch (x) {
       toast((x as Error).message, true);
@@ -471,7 +500,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
 
   const remove = async (instId: string, sym: string) => {
     try {
-      await gql(`mutation($l:Int!,$i:ID!){ removeFromWatchlist(listIndex:$l, instrumentId:$i) }`, { l: 0, i: instId });
+      await gql(`mutation($l:Int!,$i:ID!){ removeFromWatchlist(listIndex:$l, instrumentId:$i) }`, { l: list, i: instId });
       toast(`${fullName({ symbol: sym })} removed`);
       void refetch();
     } catch (x) {
@@ -492,14 +521,23 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
 
   const totalDisplayed = searching ? (hits?.length ?? 0) : entries.length;
 
-  if (!adding && data && !entries.length && !showAddButton) return null;
-  if (!adding && data && !entries.length) return (
-    <div className="wl-empty"><Link className="btn btn-primary" href="/trader/add-script"><Icon name="plus" size={18} />Add script</Link></div>
+  const addHref = `/trader/add-script${list ? '?list=1' : ''}`;
+  if (!adding && data && !entries.length && !showAddButton && !tabs) return null;
+  if (!adding && data && !entries.length && !tabs) return (
+    <div className="wl-empty"><Link className="btn btn-primary" href={addHref}><Icon name="plus" size={18} />Add script</Link></div>
   );
 
   return (
     <section className="panel wl" aria-label={adding ? 'Add script' : 'Watchlist'}>
-      {!adding && (
+      {!adding && tabs && (
+        <div className="wl-tabs" role="tablist" aria-label="Watchlists">
+          {([0, 1] as const).map((i) => {
+            const tab = <button key={i} role="tab" aria-selected={list === i} className="wl-tab" onClick={() => setPref('watchlistIndex', i)}>Watchlist {i + 1} <span className="num">({countOf(i)})</span></button>;
+            return i === 0 ? <Fragment key={i}>{tab}<Link className={`btn btn-sm btn-primary${entries.length >= 50 ? ' disabled' : ''}`} aria-disabled={entries.length >= 50} href={addHref}><Icon name="plus" size={16} />Add script</Link></Fragment> : tab;
+          })}
+        </div>
+      )}
+      {!adding && !tabs && (
         <div className="wl-head">
           <span className="w6">Watchlist <span className="t3 sm num">{entries.length}/50</span></span>
           {showAddButton && <Link className={`btn btn-sm btn-primary${entries.length >= 50 ? ' disabled' : ''}`} aria-disabled={entries.length >= 50} href="/trader/add-script"><Icon name="plus" size={16} />Add script</Link>}
@@ -521,7 +559,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
           />
         </div>
         {(q || cat) && <button className="btn btn-sm btn-ghost" onClick={() => { setQ(''); setCat(''); setLot(''); }}>Clear</button>}
-        <span className="t3 sm num" style={{ whiteSpace: 'nowrap' }}>{entries.length}/50 added</span>
+        <span className="t3 sm num" style={{ whiteSpace: 'nowrap' }}>Watchlist {list + 1} · {entries.length}/50</span>
         {adding && <button type="button" className="btn btn-sm" disabled={exporting} onClick={() => void exportExcel()} title="Download every tradable script with its current rate as an Excel file"><Icon name="download" size={16} />{exporting ? 'Preparing…' : 'Excel'}</button>}
       </div>
       {!compact && (
@@ -560,7 +598,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
         ) : compact ? (
           <div className="list list-pad">
             {hits.map((i) => (
-              <CompactRow
+              <CompactRow removable
                 key={i.id}
                 e={{ id: i.id, instrument: i }}
                 q={hitQuotes[i.id] ?? i.quote}
@@ -580,7 +618,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
                     <span className="badge">{g.items.length}</span>
                   </div>
                   {g.items.map((it) => (
-                    <CompactRow
+                    <CompactRow removable
                       key={it.instrument.id}
                       e={it}
                       q={hitQuotes[it.instrument.id] ?? it.quote ?? it.instrument.quote}
@@ -640,6 +678,8 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true }: { co
           <div className="script-table-head" role="row"><span role="columnheader">Instrument · LTP · Chg%</span><span role="columnheader" className="neg">Bid</span><span role="columnheader" className="pos">Ask</span></div>
           {entries.map((e) => <ScriptRow key={e.id} e={e} q={live[e.instrument.id] ?? e.quote ?? e.instrument.quote} onRemove={() => void remove(e.instrument.id, e.instrument.symbol)} />)}
         </div>
+      ) : tabs && data ? (
+        <Empty icon="list" title={`Watchlist ${list + 1} is empty`}>Use Add script to put scripts here.</Empty>
       ) : null}
     </section>
   );
@@ -654,8 +694,7 @@ const ScriptRow = memo(function ScriptRow({ e, q, onRemove }: { e: WEntry; q?: Q
   const bidTick = useTick(q?.bid), askTick = useTick(q?.ask);
   return <div className="script-row" role="row">
     <div className="script-info" role="cell">
-      <div className="script-identity"><Link className="script-name" href={href}>{name}</Link>{e.instrument.expiry && <span className="script-expiry">{expiryText(e.instrument.expiry)}</span>}<button className="script-remove" onClick={onRemove} aria-label={`Remove ${name} from watchlist`} title="Remove from watchlist"><Icon name="x" size={14} /></button></div>
-      <span className="script-market">{e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange}</span>
+      <div className="script-identity"><Link className="script-name" href={href}>{name}</Link>{e.instrument.expiry && <span className="script-expiry">{expiryText(e.instrument.expiry)}</span>}<span className="script-market">{e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange}</span><button className="script-remove" onClick={onRemove} aria-label={`Remove ${name} from watchlist`} title="Remove from watchlist"><Icon name="x" size={14} /></button></div>
       <Link className={`script-ltp num ${tone(q?.change)}`} href={href}>{scriptPrice(q?.ltp)}</Link>
       <div className="script-change"><Change value={q?.change} pct={q?.changePct} size="sm" /><time className="script-time" dateTime={q?.ts}>{quoteTime(q?.ts)}</time></div>
     </div>
@@ -671,6 +710,7 @@ const CompactRow = memo(function CompactRow({
   inList = true,
   isBusy,
   onToggle,
+  removable,
 }: {
   e: { id: string; instrument: Instrument };
   q?: Quote;
@@ -678,6 +718,8 @@ const CompactRow = memo(function CompactRow({
   inList?: boolean;
   isBusy?: boolean;
   onToggle?: () => void;
+  /** Add-script search: once added, show Remove so a wrong pick can be undone straight away. */
+  removable?: boolean;
 }) {
   const tick = useTick(q?.ltp);
   const href = `/trader/instrument/${e.instrument.id}`;
@@ -712,6 +754,11 @@ const CompactRow = memo(function CompactRow({
       {!inList && onToggle && (
         <button className="icon-btn wl-add" disabled={isBusy} onClick={onToggle} aria-label={`Add ${name} to watchlist`} title="Add to watchlist">
           <Icon name="plus" size={18} />
+        </button>
+      )}
+      {inList && onToggle && removable && (
+        <button className="btn btn-sm wl-remove" disabled={isBusy} onClick={onToggle} aria-label={`Remove ${name} from watchlist`} title="Remove from watchlist">
+          <Icon name="x" size={14} />Remove
         </button>
       )}
     </div>
@@ -762,11 +809,11 @@ const FullRow = memo(function FullRow({
       <td className="r"><BidAskBoxes href={href} q={q} label={e.instrument.symbol} /></td>
       <td className="r">
         {inList ? (
-          <button className="icon-btn" aria-label={`Remove ${e.instrument.symbol}`} onClick={action} title="Remove from watchlist">
-            <Icon name="x" size={18} />
+          <button className="btn btn-sm wl-remove" disabled={isBusy} aria-label={`Remove ${name} from watchlist`} onClick={action} title="Remove from watchlist">
+            <Icon name="x" size={14} />Remove
           </button>
         ) : (
-          <button className="btn btn-sm" disabled={isBusy} onClick={action} aria-label={`Add ${name} to watchlist`}>
+          <button className="btn btn-sm btn-primary" disabled={isBusy} onClick={action} aria-label={`Add ${name} to watchlist`}>
             <Icon name="plus" size={16} />Add
           </button>
         )}

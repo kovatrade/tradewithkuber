@@ -13,6 +13,7 @@ import { CONSENT_FIELDS, deviceLabel, LOGIN_FIELDS, LOGIN_LABEL, stamp, type Con
 import { useAuth } from './auth';
 import { newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, ReceivingAccountPicker } from './payment-details';
 import { QuickTradeSheet } from './quick-trade';
+import { expiryLabel, fullName } from './names';
 import { Icon } from './icons';
 import { CTL, inr, initials, R, S, shortSymbol, toneOfValue, useTheme, when } from './theme';
 import {
@@ -110,14 +111,17 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
   const sym = shortSymbol(i.symbol);
   const toggle = (
     <Pressable disabled={pending} onPress={() => onToggle(i)} accessibilityRole="button" accessibilityLabel={`${inList ? 'Remove from watchlist' : 'Add to watchlist'}: ${i.symbol}`} accessibilityState={{ disabled: pending, selected: inList, busy: pending }}
-      style={({ pressed }) => ({ width: CTL.tap, height: CTL.tap, borderWidth: 1, borderColor: inList ? t.brand : t.line2, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: inList ? t.brandSoft : pressed ? t.bg3 : t.bg, opacity: pending ? 0.5 : 1 })}>
-      <Icon name={inList ? 'check' : 'plus'} color={inList ? t.brand : t.text2} size={20} />
+      style={({ pressed }) => (inList
+        // Added: one tap removes it again (a wrong pick is undone straight away).
+        ? { height: 36, paddingHorizontal: 12, flexDirection: 'row', gap: 4, borderWidth: 1, borderColor: t.neg, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? t.negSoft : t.bg, opacity: pending ? 0.5 : 1 }
+        : { width: CTL.tap, height: CTL.tap, borderWidth: 1, borderColor: t.line2, borderRadius: R.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: pressed ? t.bg3 : t.bg, opacity: pending ? 0.5 : 1 })}>
+      {inList ? <><Icon name="x" color={t.neg} size={16} strokeWidth={2} /><T v="sm" w="600" c="neg">Remove</T></> : <Icon name="plus" color={t.text2} size={20} />}
     </Pressable>
   );
   if (simple) return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[3], minHeight: 96, paddingVertical: S[4], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <T w="700" numberOfLines={1}>{sym.replace(/-\d{2}[A-Za-z]{3}\d{4}-FUT$/, '')}</T>
+        <T w="700" numberOfLines={1}>{fullName(i).toUpperCase()}{inList ? <T v="xs" c="brand" w="600">  ✓ Added</T> : null}</T>
         <T v="sm" c="text2" numberOfLines={1}>{i.symbol}</T>
         <T v="xs">{i.expiry ? `Exp: ${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })}` : `${i.exchange} · ${i.segment}`}{lotText(i) ? ` · ${lotText(i)}` : ''}</T>
       </View>
@@ -174,7 +178,7 @@ export function SearchView({ addMode, listIndex = 0 }: { addMode?: boolean; list
       const mutation = remove ? 'removeFromWatchlist' : 'addToWatchlist';
       await gql(`mutation($l:Int!,$i:ID!){ ${mutation}(listIndex:$l, instrumentId:$i) }`, { l: listIndex, i: i.id });
       setSelection((s) => ({ ...s, [i.id]: !remove }));
-      tap(); toast(`${shortSymbol(i.symbol)} ${remove ? 'removed from' : 'added to'} Watchlist ${listIndex + 1}`);
+      tap(); toast(remove ? `${fullName(i)} removed from Watchlist ${listIndex + 1}` : `${fullName(i)} added to Watchlist ${listIndex + 1}. Wrong one? Tap Remove.`);
     }
     catch (e) { toast((e as Error).message, true); }
     finally { changing.current.delete(i.id); setPendingIds((ids) => ids.filter((id) => id !== i.id)); }
@@ -235,15 +239,12 @@ const THEME_INFO = {
 /** Header switch: System → Light → Dark. Same setting as Profile → Preferences → Theme. */
 /** Shown until the server sends its own list (Super Admin can edit it: Configuration → ui.guidelinesHi). */
 const DEFAULT_GUIDELINES_HI = [
-  'यह एप्लिकेशन केवल व्यक्तिगत विद्यार्थियों के लिए बाज़ार प्रशिक्षण के उद्देश्य से विचारों के आदान-प्रदान हेतु बनाया गया है।',
-  'सभी स्टॉप-लॉस (SL) और टेक-प्रॉफ़िट (TP) ऑर्डर अंतिम कारोबारी मूल्य (LTP) पर पास होंगे।',
-  'NSE पर ट्रेडिंग सुबह 9:17 बजे, MCX पर सुबह 9:02 बजे और अंतरराष्ट्रीय बाज़ार में सुबह 3:32 बजे शुरू होती है।',
-  'ऑर्डर देने से पहले स्क्रिप्ट, लॉट (Mini / Mega) और भाव ध्यान से जाँच लें।',
-  'अपना पासवर्ड, MPIN या OTP किसी के साथ साझा न करें।',
-  'किसी भी सहायता के लिए Settings में दिए गए सपोर्ट विकल्प का उपयोग करें।',
+  'अपनी पोज़िशन Buy या Sell करते समय, Next Day के लिए CF (Carry Forward) करने से पहले Lot size के हिसाब से मार्जिन ज़रूर चेक करें।',
+  'CF मार्जिन होने पर ही सौदा Next Day तक बना रहेगा।',
+  'अन्यथा रात 11:30 बजे सौदा Auto Cut हो जाएगा।',
 ];
 
-/** Header button "नियम": opens the guidelines in Hindi. */
+/** Positions header button "नियम": opens the MCX guideline in Hindi (only on the Positions screen). */
 export function GuideButton() {
   const t = useTheme();
   const { settings } = useAuth();
@@ -251,19 +252,19 @@ export function GuideButton() {
   const list = settings?.guidelinesHi?.length ? settings.guidelinesHi : DEFAULT_GUIDELINES_HI;
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel="नियम और दिशानिर्देश" hitSlop={6}
+      <Pressable onPress={() => setOpen(true)} accessibilityRole="button" accessibilityLabel="नियम: MCX गाइडलाइन" hitSlop={6}
         style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 12, marginRight: S[2], borderRadius: R.pill, borderWidth: 1, borderColor: t.brand, backgroundColor: pressed ? t.brandSoft : t.bg })}>
         <Icon name="book" size={16} color={t.brand} />
         <T v="sm" c="brand" w="700">नियम</T>
       </Pressable>
-      <Sheet visible={open} title="नियम और दिशानिर्देश" sub="कृपया ट्रेड करने से पहले ध्यान से पढ़ें" onClose={() => setOpen(false)}>
+      <Sheet visible={open} title="MCX गाइडलाइन" sub="Gold Mini, Mega Lot आदि · कृपया ध्यान से पढ़ें" onClose={() => setOpen(false)}>
         {list.map((r, i) => (
           <Row key={i} style={{ alignItems: 'flex-start' }}>
             <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: t.brandSoft, alignItems: 'center', justifyContent: 'center' }}><T v="xs" c="brand" w="700">{i + 1}</T></View>
             <T style={{ flex: 1, lineHeight: 22 }}>{r}</T>
           </Row>
         ))}
-        <Button block kind="primary" title="ठीक है" onPress={() => setOpen(false)} />
+        <Button block kind="primary" title="I Understand & Accept" onPress={() => setOpen(false)} />
       </Sheet>
     </>
   );
@@ -508,25 +509,28 @@ interface WEntry { id: string; instrument: Inst; quote?: Quote }
 const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: { e: WEntry; qq?: Quote; detailed: boolean; onRemove: (e: WEntry) => void; onOpen: (id: string, side?: 'BUY' | 'SELL') => void }) {
   const t = useTheme();
   const sym = shortSymbol(e.instrument.symbol);
+  const name = fullName(e.instrument).toUpperCase();
   const up = toneOfValue(qq?.change) !== 'neg';
-  const meta = [e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.exchange, e.instrument.expiry ? new Date(e.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' }) : ''].filter(Boolean).join(' · ');
-  // Two lines: symbol · exchange · expiry, then price · change · time. Bid/ask (with low/high inside) on the right.
+  const market = e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange;
+  // Two lines: NAME, expiry, exchange badge; then price · change · time. Bid/ask on the right, low/high under them.
   const row = detailed ? (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
-      <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${sym}, ${qq?.ltp ?? ''}`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-          <T w="700" numberOfLines={1} style={{ flexShrink: 0, maxWidth: '100%', fontSize: 13, lineHeight: 17 }}>{sym.toUpperCase()}</T>
-          <T v="xs" numberOfLines={1} style={{ flexShrink: 1, minWidth: 0, fontSize: 9 }}>{meta}{qq?.ts ? ` · ${expiryTime(undefined, qq.ts)}` : ''}</T>
+      <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${name}${e.instrument.expiry ? `, expiry ${expiryLabel(e.instrument.expiry)}` : ''}, ${market}, ${qq?.ltp ?? ''}`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 6, rowGap: 2, minWidth: 0 }}>
+          <T w="700" numberOfLines={1} style={{ flexShrink: 1, maxWidth: '100%', fontSize: 14, lineHeight: 18 }}>{name}</T>
+          {!!e.instrument.expiry && <T v="xs" c="text2" w="500" numberOfLines={1} style={{ fontSize: 10 }}>{expiryLabel(e.instrument.expiry)}</T>}
+          {!!market && <View style={{ backgroundColor: t.bg3, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}><T v="xs" c="text2" w="700" style={{ fontSize: 9, lineHeight: 12 }}>{market}</T></View>}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
           <T v="num" c={up ? 'pos' : 'neg'} numberOfLines={1} style={{ fontSize: 15, flexShrink: 0 }}>{scriptPrice(qq?.ltp)}</T>
           <T v="xs" n c={up ? 'pos' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, flexShrink: 1 }}>{qq?.change ? `${Number(qq.change) < 0 ? '\u25bc' : '\u25b2'} ${inr(qq.change, true)} (${inr(qq.changePct, true)}%)` : '\u2014'}</T>
+          {!!qq?.ts && <T v="xs" c="text3" numberOfLines={1} style={{ fontSize: 9, flexShrink: 0 }}>{expiryTime(undefined, qq.ts)}</T>}
         </View>
       </Pressable>
       <BidAsk compact slim id={e.instrument.id} qq={qq} onPick={(sd) => onOpen(e.instrument.id, sd)} />
     </View>
   ) : (
-    <ListRow onPress={() => onOpen(e.instrument.id)} label={`${sym}, ₹${qq?.ltp ?? ''}`} title={sym} sub={`${e.instrument.exchange} · ${e.instrument.segment}`}
+    <ListRow onPress={() => onOpen(e.instrument.id)} label={`${name}, ₹${qq?.ltp ?? ''}`} title={name} sub={[expiryLabel(e.instrument.expiry), market].filter(Boolean).join(' · ')}
       right={<View style={{ alignItems: 'flex-end', gap: 2 }}><T v="num">₹{scriptPrice(qq?.ltp)}</T><Change value={qq?.change} pct={qq?.changePct} /></View>} />
   );
   return (
@@ -1080,6 +1084,19 @@ function Marquee({ text }: { text: string }) {
 }
 
 /** Helpline button for headers (when a support link is configured). */
+/** Traders: green WhatsApp button that opens a chat with their own broker (shown only when the broker has a mobile number). */
+export function BrokerWhatsAppButton() {
+  const { me } = useAuth();
+  if (me?.role !== 'TRADER' || !me.brokerWhatsapp) return null;
+  const text = encodeURIComponent(`Hi, this is ${me.displayName} (${me.username}).`);
+  return (
+    <Pressable onPress={() => void Linking.openURL(`https://wa.me/${me.brokerWhatsapp}?text=${text}`)} accessibilityRole="link" accessibilityLabel="WhatsApp your broker" hitSlop={6}
+      style={({ pressed }) => ({ width: 38, height: 38, borderRadius: R.pill, backgroundColor: '#25D366', alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
+      <Icon name="whatsapp" size={22} color="#fff" strokeWidth={1.9} />
+    </Pressable>
+  );
+}
+
 export function HelplineButton() {
   const { settings } = useAuth();
   if (!settings?.helplineUrl) return null;

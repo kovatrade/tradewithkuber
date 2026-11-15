@@ -98,7 +98,7 @@ export function fullName(inst?: { symbol?: string; name?: string } | null): stri
   if (COMMODITY_NAMES[b]) return COMMODITY_NAMES[b];
   if (inst.name) {
     let n = inst.name.replace(/\s*\((MCX|NSE|BSE)\)\s*/gi, '').trim();
-    n = n.replace(/\s*—\s*[A-Za-z0-9\s]+FUT$/gi, '').trim();
+    n = n.replace(/\s*—\s*.*$/, '').trim(); // "ABB India — Nov 26 FUT 10" → "ABB India" (expiry is shown on its own)
     n = n.replace(/\s+(NOV|DEC|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT)\s+FUT$/gi, '').trim();
     if (n && n !== sym && !/^[A-Z0-9_\-]+$/.test(n)) return n;
   }

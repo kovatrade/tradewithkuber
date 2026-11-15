@@ -337,7 +337,7 @@ export class AppSettings {
   @Field() appName: string;
   @Field(() => [String]) tickerMessages: string[];
   @Field(() => [String]) termsRules: string[];
-  @Field(() => [String], { description: 'Guidelines in Hindi (the mobile app\'s "नियम" button).' }) guidelinesHi: string[];
+  @Field(() => [String], { description: 'MCX guideline in Hindi (the "नियम" button on the mobile Positions screen).' }) guidelinesHi: string[];
   @Field() helplineUrl: string;
   @Field() demoEnabled: boolean;
   @Field() tradingMode: string;

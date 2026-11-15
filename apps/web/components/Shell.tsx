@@ -122,6 +122,11 @@ export function Shell({ roles, children }: { roles: Role[]; children: ReactNode 
         <div className="top-actions">
           <button className="icon-btn mobile-menu-toggle" aria-label="Open navigation" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Icon name="list" /></button>
           <ThemeMenu />
+          {me.role === 'TRADER' && me.brokerWhatsapp && (
+            <a href={`https://wa.me/${me.brokerWhatsapp}?text=${encodeURIComponent(`Hi, this is ${me.displayName} (${me.username}).`)}`} target="_blank" rel="noopener noreferrer" className="icon-btn wa-btn" aria-label="WhatsApp your broker (opens in a new tab)" title="WhatsApp your broker">
+              <Icon name="whatsapp" />
+            </a>
+          )}
           {settings?.helplineUrl && (
             <a href={settings.helplineUrl} target="_blank" rel="noopener noreferrer" className="icon-btn" aria-label="Helpline (opens in a new tab)" title="Helpline">
               <Icon name="chat" />

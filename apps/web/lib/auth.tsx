@@ -12,6 +12,8 @@ export interface Me {
   role: Role;
   mode: 'SIMULATED' | 'LIVE';
   isDemo: boolean;
+  /** Traders: broker's WhatsApp digits, e.g. 919876543210. */
+  brokerWhatsapp?: string | null;
   mfaEnabled: boolean;
   termsAccepted: boolean;
 }
@@ -29,7 +31,7 @@ export interface Settings {
   apiVersion: string;
 }
 
-const ME = `{ me { id username displayName role mode isDemo mfaEnabled termsAccepted } }`;
+const ME = `{ me { id username displayName role mode isDemo mfaEnabled termsAccepted brokerWhatsapp } }`;
 
 interface Ctx {
   me: Me | null;

@@ -42,6 +42,7 @@ export class UserType {
   @Field({ nullable: true, description: 'Brokers: earning per mega lot in rupees (per side).' }) commissionPerMegaLot?: string;
   @Field({ nullable: true, description: 'Brokers: true when the platform default per-lot amounts apply.' }) commissionIsDefault?: boolean;
   @Field({ nullable: true, description: "Traders: their broker's name." }) brokerName?: string;
+  @Field({ nullable: true, description: "Only on `me` for a trader: the assigned broker's mobile number as WhatsApp digits (e.g. 919876543210), when the broker is active and has a number." }) brokerWhatsapp?: string;
   @Field({ nullable: true, description: 'Who asked for this account (Super Admins only).' }) createdByName?: string;
   @Field({ nullable: true, description: 'Traders: opening amount asked for at creation (rupees, e.g. "50000.00"); credited when the account is approved. Shown to Super Admins, the trader\'s broker and the trader.' }) openingAmount?: string;
   @Field({ nullable: true }) resetDisabledAt?: Date;

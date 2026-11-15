@@ -11,9 +11,11 @@ export interface Prefs {
   boldNumbers: boolean;
   /** Watchlist rows: simple (price + change) or detailed (bid/ask boxes with day low/high). */
   watchlistView: 'simple' | 'detailed';
+  /** Which watchlist the trader home shows: 0 = Watchlist 1, 1 = Watchlist 2. */
+  watchlistIndex: 0 | 1;
 }
 
-export const DEFAULT_PREFS: Prefs = { theme: 'system', hideBalances: false, charts: true, sounds: true, numberSize: 'M', boldNumbers: false, watchlistView: 'detailed' };
+export const DEFAULT_PREFS: Prefs = { theme: 'system', hideBalances: false, charts: true, sounds: true, numberSize: 'M', boldNumbers: false, watchlistView: 'detailed', watchlistIndex: 0 };
 const KEY = 'td.prefs.v1';
 
 function load(): Prefs {

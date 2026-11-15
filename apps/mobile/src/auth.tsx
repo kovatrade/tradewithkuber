@@ -7,7 +7,7 @@ import { forgetQuickDevice, quickDevice, RELOCK_AFTER_MS, type QuickOwner } from
 import { requestSplash } from './splash';
 
 export type Role = 'SUPER_ADMIN' | 'BROKER' | 'TRADER';
-export interface Me { id: string; username: string; displayName: string; role: Role; isDemo: boolean; mfaEnabled: boolean; termsAccepted: boolean }
+export interface Me { id: string; username: string; displayName: string; role: Role; isDemo: boolean; mfaEnabled: boolean; termsAccepted: boolean; /** Traders: broker's WhatsApp digits, e.g. 919876543210. */ brokerWhatsapp?: string | null }
 export interface Settings { appName: string; tickerMessages: string[]; termsRules: string[]; guidelinesHi?: string[]; helplineUrl: string; demoEnabled: boolean; signupEnabled: boolean; maxWatchlists: number; minDeposit?: string; apiVersion: string }
 
 export const DEVICE_NAME = `${Device.manufacturer ?? ''} ${Device.modelName ?? 'Mobile'}`.trim();
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const reload = useCallback(async () => {
     try {
-      const d = await gql<{ me: Me }>(`{ me { id username displayName role isDemo mfaEnabled termsAccepted } }`);
+      const d = await gql<{ me: Me }>(`{ me { id username displayName role isDemo mfaEnabled termsAccepted brokerWhatsapp } }`);
       setMe(d.me);
       return d.me;
     } catch {
