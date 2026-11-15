@@ -204,6 +204,7 @@ export default function Login() {
   };
 
   const title = { conflict: 'Already signed in', signin: `Welcome to ${settings?.appName ?? 'The K'}`, mfa: 'Two-step verification', phone: 'Try a demo account', otp: 'Verify your number', forgot: 'Reset your password', reset: otp.provider === 'firebase' ? 'SMS verification' : 'Authenticator verification', signup: 'Create an account', signupDetails: 'Your details', signupDone: 'Request received' }[step];
+  const smsComingSoon = otp.provider === 'dev' && ['phone', 'otp', 'signup', 'signupDetails'].includes(step);
   const sub = {
     conflict: conflict && conflict.limit > 1 ? `Your account can be signed in on ${conflict.limit} devices at once, and it already is.` : 'Your account is signed in on another device. You can sign that device out and continue here.',
     signin: 'Sign in with the username from your broker or administrator.',
@@ -232,7 +233,7 @@ export default function Login() {
         <span className="t2" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }}>+91</span>
         <input id="ph" className="input num" style={{ paddingLeft: 48 }} inputMode="tel" autoComplete="tel-national" maxLength={10} value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))} required autoFocus aria-invalid={!!err} />
       </div>
-      <span className="hint">We’ll text a 6-digit code to verify it’s you.</span>
+      {otp.provider !== 'dev' && <span className="hint">We’ll text a 6-digit code to verify it’s you.</span>}
     </div>
   );
 
@@ -254,7 +255,7 @@ export default function Login() {
               </button>
             )}
             <h1 className="auth-title">{title}</h1>
-            <p className="t2" style={{ marginTop: 6 }}>{sub}</p>
+            <p className="t2" style={{ marginTop: 6 }} role={smsComingSoon ? 'status' : undefined}>{smsComingSoon ? 'SMS OTP verification will be available soon. Existing users can sign in with their username and password.' : sub}</p>
           </div>
 
           {(step === 'signin' || (step === 'phone' && settings?.demoEnabled !== false)) && settings?.demoEnabled !== false && (

@@ -36,7 +36,7 @@ export default function Signup() {
         <ScrollView contentContainerStyle={{ padding: S[6], paddingTop: S[2], gap: S[5] }} keyboardShouldPersistTaps="handled">
           <View style={{ gap: S[2] }}>
             <T v="h1">{done ? 'Request received' : sent ? 'Your details' : 'Create an account'}</T>
-            <T c="text2">{done ? 'An administrator will review your account. You can sign in once it’s approved.' : sent ? `Enter the code sent to ${sent.sentTo} and choose your sign-in details.` : 'Start with your mobile number. We’ll text a code to verify it.'}</T>
+            <T c="text2">{done ? 'An administrator will review your account. You can sign in once it’s approved.' : otp.provider === 'dev' ? 'SMS OTP verification will be available soon. Existing users can sign in with their username and password.' : sent ? `Enter the code sent to ${sent.sentTo} and choose your sign-in details.` : 'Start with your mobile number. We’ll text a code to verify it.'}</T>
           </View>
           {done ? (
             <>

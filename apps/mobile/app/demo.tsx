@@ -45,7 +45,7 @@ export default function Demo() {
           {!conflict && <>
           <View style={{ gap: S[2] }}>
             <T v="h1">{sent ? 'Verify your number' : 'Get a demo account'}</T>
-            <T c="text2">{sent ? `Enter the 6-digit code sent to ${sent.sentTo}.` : 'Enter your mobile number. We’ll text you a one-time code.'}</T>
+            <T c="text2">{otp.provider === 'dev' ? 'SMS OTP verification will be available soon. Existing users can sign in with their username and password.' : sent ? `Enter the 6-digit code sent to ${sent.sentTo}.` : 'Enter your mobile number. We’ll text you a one-time code.'}</T>
           </View>
           {!sent ? (
             <>
