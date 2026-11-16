@@ -239,7 +239,7 @@ export class UsersService {
     const u = await this.get(actor, userId, ip);
     const cash = await this.ledger.cashAccount(this.dbs.db, userId, u.mode);
     const bps = await this.config.get('trading.intradayMarginBps');
-    const [balance, marginUsed, totals, pos] = await Promise.all([
+    const [balance, marginUsed, totals, pos, credits] = await Promise.all([
       this.ledger.balance(this.dbs.db, cash),
       this.dbs.db.transaction((tx) => this.orders.marginUsed(tx, userId, bps)),
       this.dbs.db
@@ -249,6 +249,9 @@ export class UsersService {
         .where(and(eq(ledgerPostings.accountId, cash), afterWipeFor(actor, ledgerPostings.createdAt, userId)))
         .groupBy(journalEntries.kind),
       this.dbs.db.select().from(positions).where(eq(positions.userId, userId)),
+      this.dbs.db.select({ amount: sql<string>`COALESCE(SUM(${ledgerPostings.amountMinor}), 0)::text` })
+        .from(ledgerPostings).innerJoin(journalEntries, eq(journalEntries.id, ledgerPostings.journalId))
+        .where(and(eq(ledgerPostings.accountId, cash), sql`${ledgerPostings.amountMinor} > 0`, inArray(journalEntries.kind, ['OPENING_BALANCE', 'DEPOSIT']))),
     ]);
     const t = (k: string) => BigInt(totals.find((x) => x.kind === k)?.s ?? '0');
     let unrealized = 0n;
@@ -268,6 +271,7 @@ export class UsersService {
     return {
       userId,
       mode: u.mode,
+      creditBalanceMinor: BigInt(credits[0]?.amount ?? '0'),
       balanceMinor: balance,
       marginUsedMinor: marginUsed,
       availableMinor: balance - marginUsed,

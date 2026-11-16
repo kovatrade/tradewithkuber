@@ -1,3 +1,4 @@
+import { quoteMove } from './quote-flash';
 /**
  * Native component kit. Every screen composes these; no screen styles its own buttons, inputs or rows.
  */
@@ -17,7 +18,7 @@ import { NUM_SCALE, usePrefs } from './prefs';
 
 /* ============================================================== text */
 type TV = 'h1' | 'h2' | 'h3' | 'body' | 'sm' | 'xs' | 'num' | 'numLg' | 'hero';
-export function T({ v = 'body', c, w, style, children, n, ...p }: { v?: TV; c?: 'text' | 'text2' | 'text3' | 'pos' | 'neg' | 'brand' | 'warn'; w?: '400' | '500' | '600' | '700'; style?: TextStyle; children: ReactNode; /** small figures (change, low/high…) that follow the Number size setting too */ n?: boolean; adjustsFontSizeToFit?: boolean; minimumFontScale?: number; numberOfLines?: number; selectable?: boolean; accessibilityRole?: 'header' | 'text' | 'alert' }) {
+export function T({ v = 'body', c, w, style, children, n, ...p }: { v?: TV; c?: 'text' | 'text2' | 'text3' | 'pos' | 'neg' | 'brand' | 'warn'; w?: '400' | '500' | '600' | '700' | '800'; style?: TextStyle; children: ReactNode; /** small figures (change, low/high…) that follow the Number size setting too */ n?: boolean; adjustsFontSizeToFit?: boolean; minimumFontScale?: number; numberOfLines?: number; selectable?: boolean; accessibilityRole?: 'header' | 'text' | 'alert' }) {
   const t = useTheme();
   const { prefs } = usePrefs();
   const k = NUM_SCALE[prefs.numberSize];
@@ -48,7 +49,7 @@ const ControlCtx = createContext<ReactElement<RefreshControlProps> | undefined>(
 export const useRefreshControl = () => useContext(ControlCtx);
 
 /** Screen = safe area + app header + pull-to-refresh (always on). With scroll={false}, a child list scrolls instead. */
-export function Screen({ children, onRefresh, title, back, right, header, scroll = true, footer, pad = true }: { children: ReactNode; onRefresh?: () => Promise<unknown>; title?: string; back?: boolean; right?: ReactNode; header?: ReactNode; scroll?: boolean; footer?: ReactNode; pad?: boolean }) {
+export function Screen({ children, onRefresh, title, back, right, header, scroll = true, footer, pad = true, instrumentTitle = false }: { instrumentTitle?: boolean; children: ReactNode; onRefresh?: () => Promise<unknown>; title?: string; back?: boolean; right?: ReactNode; header?: ReactNode; scroll?: boolean; footer?: ReactNode; pad?: boolean }) {
   const t = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const fns = useRef(new Set<Refresher>());
@@ -65,7 +66,7 @@ export function Screen({ children, onRefresh, title, back, right, header, scroll
     <RegisterCtx.Provider value={register}>
       <ControlCtx.Provider value={control}>
         <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={['top']}>
-          {header ?? <Header title={title} back={back} right={right} />}
+          {header ?? <Header title={title} back={back} right={right} instrumentTitle={instrumentTitle} />}
           <LiveBanner />
           {scroll ? (
             <ScrollView keyboardShouldPersistTaps="handled" contentInsetAdjustmentBehavior="automatic" refreshControl={control}>
@@ -79,7 +80,7 @@ export function Screen({ children, onRefresh, title, back, right, header, scroll
   );
 }
 
-function Header({ title, back, right }: { title?: string; back?: boolean; right?: ReactNode }) {
+function Header({ title, back, right, instrumentTitle }: { instrumentTitle?: boolean; title?: string; back?: boolean; right?: ReactNode }) {
   const t = useTheme();
   return (
     <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: S[2], gap: S[2], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
@@ -88,7 +89,7 @@ function Header({ title, back, right }: { title?: string; back?: boolean; right?
       ) : (
         <View style={{ paddingLeft: S[2] }}><Logo size={28} brand={t.brand} /></View>
       )}
-      <T v="h3" style={{ flex: 1 }} numberOfLines={1} accessibilityRole="header">{title ?? 'The K'}</T>
+      <T v="h3" w={instrumentTitle ? '800' : undefined} style={{ flex: 1 }} numberOfLines={1} accessibilityRole="header">{title ?? 'The K'}</T>
       {right}
     </View>
   );
@@ -197,30 +198,33 @@ export function SwipeRow({ children, action, actionLabel }: { children: ReactNod
 }
 
 /** Brief green / red wash when a price moves (animated on the native thread). `over`: drawn on top, for boxes with their own solid background. */
-export function Flash({ value, children, style, over }: { value?: string; children: ReactNode; style?: ViewStyle; over?: boolean }) {
+export function Flash({ value, high, low, children, style, over }: { high?: string; low?: string; value?: string; children: ReactNode; style?: ViewStyle; over?: boolean }) {
   const t = useTheme();
   const o = useRef(new Animated.Value(0)).current;
-  const prev = useRef(value);
+  const prev = useRef({ value, high, low });
   const [up, setUp] = useState(true);
+  const [extreme, setExtreme] = useState(false);
   useEffect(() => {
-    if (value && prev.current && value !== prev.current) {
-      setUp(Number(value) > Number(prev.current));
+    const move = quoteMove(prev.current, { value, high, low });
+    if (move) {
+      setUp(move.up); setExtreme(move.extreme);
+      o.stopAnimation();
       o.setValue(1);
       Animated.timing(o, { toValue: 0, duration: 700, easing: Easing.out(Easing.quad), useNativeDriver: true }).start();
     }
-    prev.current = value;
-  }, [value, o]);
+    prev.current = { value, high, low };
+  }, [value, high, low, o]);
   if (over) {
     return (
       <View style={style}>
         {children}
-        <Animated.View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', backgroundColor: up ? t.pos : t.neg, opacity: o.interpolate({ inputRange: [0, 1], outputRange: [0, 0.45] }) }]} />
+        <Animated.View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', backgroundColor: extreme ? o.interpolate({ inputRange: [0, 0.65, 1], outputRange: [up ? t.pos : t.neg, up ? t.pos : t.neg, up ? t.posDark : t.negDark] }) : up ? t.pos : t.neg, opacity: o.interpolate({ inputRange: [0, 1], outputRange: [0, 0.45] }) }]} />
       </View>
     );
   }
   return (
     <View style={style}>
-      <Animated.View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', backgroundColor: up ? t.posSoft : t.negSoft, opacity: o }]} />
+      <Animated.View style={[StyleSheet.absoluteFill, { pointerEvents: 'none', backgroundColor: extreme ? o.interpolate({ inputRange: [0, 0.65, 1], outputRange: [up ? t.posSoft : t.negSoft, up ? t.pos : t.neg, up ? t.posDark : t.negDark] }) : up ? t.posSoft : t.negSoft, opacity: o }]} />
       {children}
     </View>
   );
@@ -459,7 +463,7 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | '
 }
 
 /* ============================================================== sheets */
-export function Sheet({ visible, title, sub, onClose, children, dismissable = true }: { visible: boolean; title: string; sub?: string; onClose: () => void; children: ReactNode; dismissable?: boolean }) {
+export function Sheet({ visible, title, sub, onClose, children, dismissable = true, instrumentTitle = false }: { instrumentTitle?: boolean; visible: boolean; title: string; sub?: string; onClose: () => void; children: ReactNode; dismissable?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
@@ -525,7 +529,7 @@ export function Sheet({ visible, title, sub, onClose, children, dismissable = tr
           <View {...pan.panHandlers} style={{ paddingTop: S[3], gap: S[3] }}>
             <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: t.line2 }} />
             <Spread>
-              <View style={{ flex: 1 }}><T v="h2">{title}</T>{sub ? <T v="sm" c="text2" style={{ marginTop: 2 }}>{sub}</T> : null}</View>
+              <View style={{ flex: 1 }}><T v="h2" w={instrumentTitle ? '800' : undefined}>{title}</T>{sub ? <T v="sm" c="text2" style={{ marginTop: 2 }}>{sub}</T> : null}</View>
               {dismissable && <IconButton icon="x" label="Close" onPress={close} />}
             </Spread>
           </View>

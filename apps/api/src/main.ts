@@ -48,7 +48,7 @@ async function bootstrap() {
   app.enableCors({
     origin: (origin, cb) => cb(null, !origin || origins.includes(origin)),
     credentials: true,
-    allowedHeaders: ['x-upload', 'content-type', 'authorization', 'x-step-up', 'x-client', 'x-request-id', 'apollo-require-preflight'],
+    allowedHeaders: ['x-device-id', 'x-upload', 'content-type', 'authorization', 'x-step-up', 'x-client', 'x-request-id', 'apollo-require-preflight'],
     exposedHeaders: ['x-request-id'],
     methods: ['GET', 'POST', 'OPTIONS'],
     maxAge: 600,

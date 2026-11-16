@@ -53,7 +53,7 @@ export default function AlgoHome() {
                     return (
                       <tr key={s.id} className="clickable" onClick={() => { window.location.href = `/trader/algo/${s.id}`; }}>
                         <td><Link href={`/trader/algo/${s.id}`} className="w6" onClick={(e) => e.stopPropagation()}>{s.name}</Link><div className="t3 sm">v{s.version}{s.stopReason && s.status === 'STOPPED' ? ` · ${s.stopReason}` : ''}</div></td>
-                        <td>{s.instrument ? shortSymbol(s.instrument.symbol) : '—'}</td>
+                        <td className="instrument-name">{s.instrument ? shortSymbol(s.instrument.symbol) : '—'}</td>
                         <td>{INTERVALS.find((i) => i.v === s.interval)?.label}</td>
                         <td><span className={`badge ${cls}`}>{s.status === 'RUNNING' && <span className="live-dot" aria-hidden />}{label}</span></td>
                         <td className="r num">{s.position === 0 ? 'Flat' : `${s.position > 0 ? '+' : ''}${s.position}${s.entryPrice ? ` @ ₹${inr(s.entryPrice)}` : ''}`}</td>

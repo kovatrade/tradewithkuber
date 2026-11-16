@@ -31,6 +31,8 @@ export const CONFIG_REGISTRY = {
   },
   'trading.intradayMarginBps': { schema: z.number().int().min(1).max(10000), default: 20, description: 'Intraday margin as basis points of order value.' },
   'trading.carryForwardMarginBps': { schema: z.number().int().min(1).max(10000), default: 167, description: 'Carry-forward margin in basis points of order value.' },
+  'trading.carryForwardMarginPerMiniLot': { schema: z.number().min(0).max(10000000).multipleOf(0.01).nullable(), default: null, description: 'Mini lot carry-forward margin in rupees for ONE lot. Multiplied by the number of lots. null uses the percentage margin.' },
+  'trading.carryForwardMarginPerMegaLot': { schema: z.number().min(0).max(100000000).multipleOf(0.01).nullable(), default: null, description: 'Mega lot carry-forward margin in rupees for ONE lot. Multiplied by the number of lots. null uses the percentage margin.' },
   'trading.maxQtyPerOrder': { schema: z.number().int().min(1).max(100000), default: 50, description: 'Max quantity in a single order ("punch qty").' },
   'trading.maxQtyPerInstrument': { schema: z.number().int().min(1).max(1000000), default: 150, description: 'Max absolute open position per instrument.' },
   'trading.watchlistExchanges': { schema: z.array(z.string().regex(/^[A-Z_]{2,20}$/)).min(1).max(20), default: ['MCX'], description: 'Exchanges whose scripts traders can add to a watchlist. Every script is still listed in Add script; others show "This script is not applicable for now".' },

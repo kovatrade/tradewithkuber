@@ -91,7 +91,7 @@ function TemplateCard({ name, blurb, rules, pressed }: { name: string; blurb: st
   const t = useTheme();
   return (
     <View style={{ padding: S[4], gap: 6, borderWidth: 1, borderColor: pressed ? t.brand : t.line, borderRadius: R.lg, backgroundColor: pressed ? t.bg2 : t.bg }}>
-      <Spread><T w="600">{name}</T><Icon name="chevronRight" size={18} color={t.text3} /></Spread>
+      <Spread><T w="800">{name}</T><Icon name="chevronRight" size={18} color={t.text3} /></Spread>
       <T v="sm" c="text2">{blurb}</T>
       <T v="xs">{describe(rules, 1, 'NIFTY')}</T>
     </View>
@@ -218,7 +218,7 @@ function InstrumentBox({ inst, pressed }: { inst: Inst | null; pressed: boolean 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[3], minHeight: 52, padding: S[3], borderWidth: 1, borderColor: t.line2, borderRadius: R.md, backgroundColor: pressed ? t.bg2 : t.bg }}>
       {inst ? <Mark text={shortSymbol(inst.symbol)} /> : <Icon name="search" size={18} color={t.text3} />}
-      <View style={{ flex: 1 }}>{inst ? <><T w="600">{shortSymbol(inst.symbol)}</T><T v="xs">{inst.name}</T></> : <T c="text3">Search, e.g. NIFTY</T>}</View>
+      <View style={{ flex: 1 }}>{inst ? <><T w="800">{shortSymbol(inst.symbol)}</T><T v="xs">{inst.name}</T></> : <T c="text3">Search, e.g. NIFTY</T>}</View>
       <Icon name="chevronRight" size={18} color={t.text3} />
     </View>
   );

@@ -183,6 +183,7 @@ export class OrderPreview {
 
 @ObjectType()
 export class AccountSummary {
+  @Field({ description: 'All posted opening funds and deposits, unaffected by trading or withdrawals.' }) creditBalance: string;
   @Field(() => ID) userId: string;
   @Field() mode: string;
   @Field() balance: string;

@@ -246,6 +246,13 @@
       "when": 1794497000006,
       "tag": "0034_course_enquiries",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794839997039,
+      "tag": "0035_device_account_logins",
+      "breakpoints": true
     }
   ]
 }

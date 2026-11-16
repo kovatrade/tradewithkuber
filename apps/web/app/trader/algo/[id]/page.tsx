@@ -273,7 +273,7 @@ function InstrumentPicker({ value, onChange }: { value: Inst | null; onChange: (
           {hits.length === 0 ? <li className="t2 sm" style={{ padding: '12px 16px' }}>No match.</li> : hits.map((h) => (
             <li key={h.id} role="option" aria-selected={value?.id === h.id} onMouseDown={(e) => { e.preventDefault(); onChange(h); setOpen(false); setQ(''); }}>
               <span className="mark" aria-hidden>{shortSymbol(h.symbol).slice(0, 2)}</span>
-              <span className="grow"><span className="w6">{shortSymbol(h.symbol)}</span><span className="t3" style={{ display: 'block' }}>{h.name}</span></span>
+              <span className="grow"><span className="w6 instrument-name">{shortSymbol(h.symbol)}</span><span className="t3" style={{ display: 'block' }}>{h.name}</span></span>
               <span className="badge">{h.exchange}</span>
             </li>
           ))}

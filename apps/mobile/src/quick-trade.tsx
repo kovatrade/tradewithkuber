@@ -13,7 +13,7 @@ import { gql, newKey } from './api';
 import { tradeFeedback } from './prefs';
 import { useLiveQuotes, type Quote } from './screens';
 import { inr, ohlcTone, R, S, shortSymbol, toneOfValue, useTheme } from './theme';
-import { Badge, Button, Chips, DateField, Empty, ErrorState, Field, Flash, LotStepper, Notice, Row, SearchBox, Sheet, Skeleton, Spread, T, Tabs, tap, toast, useQuery, VList } from './ui';
+import { Badge, Button, Chips, DateField, Empty, ErrorState, Field, Flash, Lines, LotStepper, Notice, Row, SearchBox, Sheet, Skeleton, Spread, T, Tabs, tap, toast, useQuery, VList } from './ui';
 import { Icon } from './icons';
 
 type Side = 'BUY' | 'SELL';
@@ -29,7 +29,7 @@ const clock = (d?: string | Date) => (d ? new Date(d).toLocaleTimeString('en-IN'
 const val = (v?: string | number | null) => (v === undefined || v === null || v === '' ? '—' : String(v));
 
 /* ============================================================== quick trade sheet */
-export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose }: { instrumentId: string; initialSide?: Side; initialQty?: number; onClose: () => void }) {
+export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAdvanced = false, onClose }: { allowAdvanced?: boolean; instrumentId: string; initialSide?: Side; initialQty?: number; onClose: () => void }) {
   const t = useTheme();
   const inst = useQuery<{ instrument: Inst }>(`query($id:ID!){ instrument(id:$id){ id symbol name exchange segment expiry lotSize tickSize lotClass lotLabel category } }`, { id: instrumentId });
   const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange isOpen message } } }`);
@@ -41,18 +41,25 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose
   const [type, setType] = useState<OType>('MARKET');
   const [qty, setQty] = useState(String(initialQty ?? 1));
   const [price, setPrice] = useState('');
+  useEffect(() => { if (!allowAdvanced) { setType('MARKET'); setPrice(''); } }, [allowAdvanced]);
   const [busy, setBusy] = useState<Side | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [key, setKey] = useState(newKey);
   useEffect(() => { setKey(newKey()); }, [type, qty, price]);
   const n = Number(qty);
+  const [previewSide, setPreviewSide] = useState<Side>(initialSide ?? 'BUY');
+  const estimate = useQuery<{ orderPreview: { price: string; value: string; brokerage: string; intradayMargin: string; carryForwardMargin: string } }>(
+    `query($id:ID!,$s:OrderSide!,$n:Int!,$l:String,$t:String){orderPreview(instrumentId:$id,side:$s,quantity:$n,limitPrice:$l,triggerPrice:$t){price value brokerage intradayMargin carryForwardMargin}}`,
+    { id: instrumentId, s: previewSide, n: Number.isSafeInteger(n) && n > 0 ? n : 1, l: type === 'LIMIT' ? price || undefined : undefined, t: type === 'STOP_LOSS' ? price || undefined : undefined }, 3000, !i || !Number.isSafeInteger(n) || n <= 0 || (type !== 'MARKET' && !price));
+  const preview = estimate.data?.orderPreview;
+
   const session = i && r ? r.sessions.find((s) => s.exchange === i.exchange) : undefined;
   const qtyErr = !qty ? 'Enter lots' : !Number.isInteger(n) || n <= 0 ? 'Whole lots only' : r && n > r.maxQtyPerOrder ? `Max ${r.maxQtyPerOrder} lots per order` : null;
   const priceErr = type === 'MARKET' ? null : !/^\d+(\.\d{1,2})?$/.test(price) ? 'Enter a price' : null;
 
   const place = async (side: Side) => {
     if (!i || qtyErr || priceErr) return;
-    setBusy(side); setErr(null); tap();
+    setPreviewSide(side); setBusy(side); setErr(null); tap();
     try {
       const d = await gql<{ placeOrder: { status: string; fillPrice?: string; rejectReason?: string } }>(
         `mutation($i:PlaceOrderInput!){ placeOrder(input:$i){ status fillPrice rejectReason } }`,
@@ -71,7 +78,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose
     const v = side === 'BUY' ? q?.ask : q?.bid;
     return (
       <Pressable onPress={() => void place(side)} disabled={!!busy || !i} accessibilityRole="button" accessibilityLabel={`${side === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ alignItems: 'center', gap: 2 }}>
-        <Flash over value={v} style={{ borderRadius: R.md, overflow: 'hidden' }}>
+        <Flash over high={q?.high} low={q?.low} value={v} style={{ borderRadius: R.md, overflow: 'hidden' }}>
           <View style={{ minWidth: 92, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: side === 'BUY' ? t.posSoft : t.negSoft, alignItems: 'center' }}>
             <T v="num" c={side === 'BUY' ? 'pos' : 'neg'}>{inr(v)}</T>
           </View>
@@ -80,10 +87,10 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose
       </Pressable>
     );
   };
-  const go = (path: string) => { onClose(); router.push(path as never); };
+  const go = (path: string) => { onClose(); router.push(`${path}&from=${allowAdvanced ? 'positions' : 'watchlist'}` as never); };
 
   return (
-    <Sheet visible title={i ? titleOf(i) : '…'} sub={i ? `${shortSymbol(i.symbol)} · ${i.category === 'FOREX' ? 'Forex' : i.exchange}${i.lotLabel ? ` · 1 lot = ${i.lotLabel}` : ''}` : undefined} onClose={onClose}>
+    <Sheet instrumentTitle visible title={i ? titleOf(i) : '…'} sub={i ? `${shortSymbol(i.symbol)} · ${i.category === 'FOREX' ? 'Forex' : i.exchange}${i.lotLabel ? ` · 1 lot = ${i.lotLabel}` : ''}` : undefined} onClose={onClose}>
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
       <Spread style={{ alignItems: 'center' }}>
         <View style={{ gap: 2 }}>
@@ -93,7 +100,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose
         <Row gap={S[2]}>{box('SELL')}{box('BUY')}</Row>
       </Spread>
 
-      <Chips fill value={type} onChange={(v) => { setType(v); setPrice(''); }} items={[{ k: 'MARKET', label: 'Market' }, { k: 'LIMIT', label: 'Limit' }, { k: 'STOP_LOSS', label: 'SL' }]} />
+      <Chips fill value={type} onChange={(v) => { setType(v); setPrice(''); }} items={allowAdvanced ? [{ k: 'MARKET', label: 'Market' }, { k: 'LIMIT', label: 'Limit' }, { k: 'STOP_LOSS', label: 'SL' }] : [{ k: 'MARKET', label: 'Market' }]} />
       <Row style={{ alignItems: 'flex-start' }}>
         <View style={{ flex: 1, gap: 4 }}>
           <T v="sm" c="text2" w="500">Lots</T>
@@ -106,6 +113,14 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, onClose
           </View>
         )}
       </Row>
+      <Lines lines={[
+        ['Market price', q ? `₹${inr(q.ltp)}` : '—'],
+        ['Order value', preview ? `₹${inr(preview.value)}` : '—'],
+        ['BRK', preview ? `₹${inr(preview.brokerage)}` : '—'],
+        ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'],
+        ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'],
+      ]} />
+      {estimate.error && <Notice tone="err">{estimate.error}</Notice>}
       {session && !session.isOpen && session.message ? <Notice tone="warn">{session.message}</Notice> : null}
       {err ? <Notice tone="err">{err}</Notice> : null}
       <Row>
@@ -177,7 +192,7 @@ const TradeRow = memo(function TradeRow({ o, onPress }: { o: Trade; onPress: (o:
   const px = o.fillPrice ?? o.limitPrice ?? o.triggerPrice;
   return (
     <Pressable onPress={() => onPress(o)} accessibilityRole="button" accessibilityLabel={`${o.side} ${o.quantity} ${o.instrument?.symbol ?? ''}`} style={({ pressed }) => ({ paddingVertical: S[3], gap: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line, backgroundColor: pressed ? t.bg2 : 'transparent' })}>
-      <Spread><T w="700" numberOfLines={1} style={{ flex: 1 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T><T v="num" c={o.side === 'BUY' ? 'pos' : 'neg'}>{inr(px)}</T></Spread>
+      <Spread><T w="800" numberOfLines={1} style={{ flex: 1 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T><T v="num" c={o.side === 'BUY' ? 'pos' : 'neg'}>{inr(px)}</T></Spread>
       <Spread>
         <Row gap={6}><Badge text={o.side} tone={o.side === 'BUY' ? 'ok' : 'bad'} /><T v="sm" c="text2">{o.quantity} lot{o.quantity > 1 ? 's' : ''}</T>{o.type !== 'MARKET' ? <T v="xs">{TYPE_LABEL[o.type]}</T> : null}</Row>
         <T v="xs">{stamp(o.filledAt ?? o.createdAt)}</T>
@@ -210,7 +225,7 @@ const TradeLine = memo(function TradeLine({ o, onPress }: { o: Trade; onPress: (
   return (
     <Pressable onPress={() => onPress(o)} accessibilityRole="button" accessibilityLabel={`${o.side} ${o.quantity} ${o.instrument?.symbol ?? ''}`} style={({ pressed }) => ({ paddingVertical: 10, gap: 3, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line, backgroundColor: pressed ? t.bg2 : 'transparent' })}>
       <Spread>
-        <T w="600" numberOfLines={1} style={{ flex: 1, fontSize: 15 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T>
+        <T w="800" numberOfLines={1} style={{ flex: 1, fontSize: 15 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T>
         <T v="num" c={sideTone} style={{ fontSize: 15 }}>{inr(px)}</T>
       </Spread>
       <Spread>
@@ -289,7 +304,7 @@ export function TradeList() {
         </Sheet>
       )}
       {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} />}
-      {repeat && <QuickTradeSheet instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
+      {repeat && <QuickTradeSheet allowAdvanced instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
     </>
   );
 }
@@ -316,7 +331,7 @@ export function TradeBook({ header }: { header?: React.ReactNode }) {
     <>
       <VList data={list} keyOf={(o) => o.id} header={top} empty={empty} render={(o) => <TradeRow o={o} onPress={setOpen} />} />
       {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} />}
-      {repeat && <QuickTradeSheet instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
+      {repeat && <QuickTradeSheet allowAdvanced instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
     </>
   );
 }

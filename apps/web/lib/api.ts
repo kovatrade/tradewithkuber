@@ -1,4 +1,5 @@
 'use client';
+import { loginDeviceId } from './login-device';
 import { createClient, type Client } from 'graphql-ws';
 
 /**
@@ -58,6 +59,7 @@ async function raw<T>(query: string, variables: Record<string, unknown> | undefi
     headers: {
       'content-type': 'application/json',
       'x-client': 'web',
+      ...(loginDeviceId() ? { 'x-device-id': loginDeviceId()! } : {}),
       ...(/\b(submitFeePayment|createUser|requestPayment)\b/.test(query) ? { 'x-upload': 'fee-proof' } : {}), // payment screenshot upload
       ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
       ...(stepUp ? { 'x-step-up': stepUp } : {}),

@@ -5,7 +5,7 @@ import { PortfolioSummary, Watchlist } from '@/components/trading';
 export default function WatchlistPage() {
   return (
     <div className="home stack" style={{ gap: 20 }}>
-      <PortfolioSummary tiles actions title="Available balance" />
+      <PortfolioSummary tiles actions title="Credit balance" />
       <Watchlist tabs />
     </div>
   );

@@ -141,7 +141,9 @@ export class AuthResolver {
   phoneOtpProvider() { return env().SMS_PROVIDER; }
 
   private meta(c: GqlContext, deviceName?: string) {
-    return { ip: c.ip, userAgent: c.userAgent || 'unknown', deviceName };
+    const id = c.req?.headers?.['x-device-id'];
+    const deviceId = typeof id === 'string' && /^[a-f0-9-]{36}$/i.test(id) ? id : undefined;
+    return { ip: c.ip, userAgent: c.userAgent || 'unknown', deviceName, deviceId };
   }
 
   private isMobile(c: GqlContext) {

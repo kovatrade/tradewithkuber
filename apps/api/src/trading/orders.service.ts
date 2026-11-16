@@ -1,3 +1,4 @@
+import { carryForwardMargin } from './margin';
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
@@ -25,6 +26,8 @@ import { afterWipeFor } from '../wipe/visibility';
 export const istDay = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
 export interface PlaceOrderInput {
+  /** Internal only: close this position under the same cash-account lock as a normal fill. */
+  closingPositionId?: string;
   instrumentId: string;
   side: Side;
   type: OrderType;
@@ -77,10 +80,10 @@ export class OrdersService implements OnModuleInit {
   // ------------------------------------------------------------------ helpers
 
   async marginUsed(tx: Tx, userId: string, bps: number): Promise<bigint> {
-    const cfBps = await this.config.get('trading.carryForwardMarginBps');
+    const [cfBps, miniCf, megaCf] = await Promise.all([this.config.get('trading.carryForwardMarginBps'), this.config.get('trading.carryForwardMarginPerMiniLot'), this.config.get('trading.carryForwardMarginPerMegaLot')]);
     const today = istDay();
     const pos = await tx
-      .select({ q: positions.netQty, p: positions.avgPriceMinor, cf: positions.cfDate })
+      .select({ q: positions.netQty, p: positions.avgPriceMinor, cf: positions.cfDate, instrumentId: positions.instrumentId })
       .from(positions)
       .where(and(eq(positions.userId, userId), eq(positions.mode, 'SIMULATED')));
     const open = await tx
@@ -89,7 +92,7 @@ export class OrdersService implements OnModuleInit {
       .where(and(eq(orders.userId, userId), eq(orders.status, 'OPEN')));
     let used = 0n;
     // A position carried forward today holds the carry-forward margin instead of the intraday one.
-    for (const r of pos) used += applyBps(BigInt(abs(r.q)) * r.p, r.cf === today ? cfBps : bps);
+    for (const r of pos) { const value = BigInt(abs(r.q)) * r.p; used += r.cf === today ? carryForwardMargin(value, r.q, this.market.instrument(r.instrumentId)?.lotClass, cfBps, miniCf, megaCf) : applyBps(value, bps); }
     for (const r of open) used += applyBps(BigInt(r.q) * (r.p ?? 0n), bps);
     return used;
   }
@@ -129,7 +132,7 @@ export class OrdersService implements OnModuleInit {
       priceMinor: price,
       valueMinor: value,
       intradayMarginMinor: applyBps(value, await this.config.get('trading.intradayMarginBps')),
-      carryForwardMarginMinor: applyBps(value, await this.config.get('trading.carryForwardMarginBps')),
+      carryForwardMarginMinor: carryForwardMargin(value, quantity, this.market.instrument(instrumentId)?.lotClass, await this.config.get('trading.carryForwardMarginBps'), await this.config.get('trading.carryForwardMarginPerMiniLot'), await this.config.get('trading.carryForwardMarginPerMegaLot')),
       brokerageMinor: brokerageMinor(await feeRule(this.config), price, quantity, this.market.instrument(instrumentId)?.lotClass),
     };
   }
@@ -143,6 +146,7 @@ export class OrdersService implements OnModuleInit {
    * stamped with the strategy. Every other check below applies exactly as for a manual order.
    */
   async place(actor: Actor, input: PlaceOrderInput, ip: string, automation?: { strategyId?: string; reason?: 'risk' | 'eod' }): Promise<OrderRow> {
+    input = { ...input };
     if (actor.role !== 'TRADER') throw new AppError('FORBIDDEN', 'Only traders can place orders on their own account.');
     if (!automation) await this.consent.assertConsented(actor); // rules accepted for this signed-in session
     if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) throw badInput('Quantity must be a positive whole number.');
@@ -169,7 +173,7 @@ export class OrdersService implements OnModuleInit {
     const result = await this.dbs.serializable(async (tx) => {
       const [dup] = await tx.select().from(orders).where(and(eq(orders.userId, actor.userId), eq(orders.idempotencyKey, input.idempotencyKey)));
       if (dup) {
-        if (dup.instrumentId !== inst.id || dup.side !== input.side || dup.type !== input.type || dup.quantity !== input.quantity) throw conflict('Idempotency key reused with different order details.');
+        if (dup.instrumentId !== inst.id || dup.type !== input.type || (!input.closingPositionId && (dup.side !== input.side || dup.quantity !== input.quantity))) throw conflict('Idempotency key reused with different order details.');
         return { order: dup, replay: true };
       }
 
@@ -187,14 +191,19 @@ export class OrdersService implements OnModuleInit {
         .from(positions)
         .where(and(eq(positions.userId, u.id), eq(positions.instrumentId, inst.id), eq(positions.mode, 'SIMULATED')));
       const net = pos?.netQty ?? 0;
+      if (input.closingPositionId) {
+        if (!pos || pos.id !== input.closingPositionId || net === 0) throw conflict('This position is already closed.');
+        input.side = net > 0 ? 'SELL' : 'BUY';
+        input.quantity = abs(net);
+      }
       const signed = input.side === 'BUY' ? input.quantity : -input.quantity;
       const after = net + signed;
       const exposureIncrease = Math.max(0, abs(after) - abs(net));
       const refPrice = input.limitPriceMinor ?? input.triggerPriceMinor ?? this.venue.marketFillPrice(input.side, q);
 
       let reject: string | null = null;
-      if (input.quantity < cfgMin) reject = `Minimum quantity is ${cfgMin}.`;
-      else if (input.quantity > cfgMax) reject = `Maximum ${cfgMax} per order.`;
+      if (!input.closingPositionId && input.quantity < cfgMin) reject = `Minimum quantity is ${cfgMin}.`;
+      else if (!input.closingPositionId && input.quantity > cfgMax) reject = `Maximum ${cfgMax} per order.`;
       else if (abs(after) > cfgMaxPos) reject = `Position limit is ${cfgMaxPos} for this instrument.`;
       else if (closed && automation?.reason !== 'eod') reject = closed; // the end-of-day cut runs at (and just after) the close
       else if (input.side === 'SELL' && net <= 0)
@@ -436,7 +445,7 @@ export class OrdersService implements OnModuleInit {
       await tx.select({ id: users.id }).from(users).where(eq(users.id, p.userId)).for('update'); // one margin check at a time per trader
       const [intraBps, cfBps] = await Promise.all([this.config.get('trading.intradayMarginBps'), this.config.get('trading.carryForwardMarginBps')]);
       const value = p.avgPriceMinor * BigInt(abs(p.netQty));
-      const cfMargin = applyBps(value, cfBps);
+      const cfMargin = carryForwardMargin(value, p.netQty, this.market.instrument(p.instrumentId)?.lotClass, cfBps, await this.config.get('trading.carryForwardMarginPerMiniLot'), await this.config.get('trading.carryForwardMarginPerMegaLot'));
       const extra = cfMargin - applyBps(value, intraBps);
       const cash = await this.ledger.cashAccount(tx, p.userId, 'SIMULATED');
       const free = (await this.ledger.balance(tx, cash)) - (await this.marginUsed(tx, p.userId, intraBps));
@@ -449,6 +458,29 @@ export class OrdersService implements OnModuleInit {
       await this.audit.record(tx, { actor, action: 'position.carry_forward', entityType: 'position', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { symbol: inst?.symbol, qty: p.netQty, cfMargin: cfMargin.toString(), day: today } });
       return { position: u, marginMinor: cfMargin };
     });
+  }
+
+  /** One immediate, idempotent close using the normal execution and brokerage ledger path. */
+  async exitPosition(actor: Actor, positionId: string, key: string, ip: string) {
+    if (actor.role !== 'TRADER') throw new AppError('FORBIDDEN', 'Only traders can exit their own positions.');
+    if (!/^[A-Za-z0-9_-]{8,60}$/.test(key)) throw badInput('Invalid idempotency key.');
+    const [p] = await this.dbs.db.select().from(positions).where(and(eq(positions.id, positionId), eq(positions.userId, actor.userId)));
+    if (!p) throw notFound('Position');
+    const idempotencyKey = `exit-${p.id}-${key}`;
+    const [existing] = await this.dbs.db.select().from(orders).where(and(eq(orders.userId, actor.userId), eq(orders.idempotencyKey, idempotencyKey)));
+    if (existing) return existing;
+    if (!p.netQty) throw conflict('This position is already closed.');
+    try {
+      return await this.place(actor, { closingPositionId: p.id, instrumentId: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', type: 'MARKET', quantity: abs(p.netQty), idempotencyKey }, ip);
+    } catch (error) {
+      // PostgreSQL may report a unique-key collision rather than a serialization failure
+      // when identical close requests start together. Return the committed winner.
+      if (((error as any)?.cause?.code ?? (error as any)?.code) === '23505') {
+        const [replayed] = await this.dbs.db.select().from(orders).where(and(eq(orders.userId, actor.userId), eq(orders.idempotencyKey, idempotencyKey)));
+        if (replayed) return replayed;
+      }
+      throw error;
+    }
   }
 
   /** Exit every open position of the signed-in trader at market (one click "Square off all"). */

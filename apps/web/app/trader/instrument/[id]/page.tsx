@@ -63,7 +63,7 @@ function StockPage() {
           <div className="row" style={{ flexWrap: 'nowrap' }}>
             <Mark text={fullName(i)} />
             <div>
-              <h1 style={{ fontSize: 22 }}>{fullName(i)}</h1>
+              <h1 style={{ fontSize: 22, fontWeight: 800 }}>{fullName(i)}</h1>
               <div className="t3">{shortSymbol(i.symbol)} · {i.exchange} {i.segment}{i.expiry ? ` · ${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</div>
             </div>
             <div className="row hide-sm" style={{ marginLeft: 'auto', gap: 8, flexWrap: 'nowrap' }}>
@@ -206,7 +206,7 @@ function StockPage() {
         ))}
       </div>
       <aside className="rail" id="order">
-        <OrderPanel instrument={i} q={q} initialSide={sp.get('side') === 'SELL' ? 'SELL' : 'BUY'} initialQty={sp.get('qty') ?? '1'} />
+        <OrderPanel allowAdvanced={sp.get('from') === 'positions'} instrument={i} q={q} initialSide={sp.get('side') === 'SELL' ? 'SELL' : 'BUY'} initialQty={sp.get('qty') ?? '1'} />
       </aside>
     </div>
   );
@@ -224,7 +224,7 @@ function roundToTick(v: number, tick: number) {
   return (Math.max(t, Math.round((v * 100) / t) * t) / 100).toFixed(2);
 }
 
-function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument: Instrument; q?: { bid: string; ask: string; ltp: string }; initialSide: Side; initialQty: string }) {
+function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }: { allowAdvanced: boolean; instrument: Instrument; q?: { bid: string; ask: string; ltp: string }; initialSide: Side; initialQty: string }) {
   const demo = useAuth().me?.isDemo === true;
   const toast = useToast();
   const { prefs } = usePrefs();
@@ -235,6 +235,7 @@ function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument:
   const [type, setType] = useState<OType>('MARKET');
   const [qty, setQty] = useState(initialQty);
   const [price, setPrice] = useState('');
+  useEffect(() => { if (!allowAdvanced) { setType('MARKET'); setPrice(''); } }, [allowAdvanced]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState(false);
   const [closedModal, setClosedModal] = useState(false);
@@ -337,7 +338,7 @@ function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument:
             {session.isOpen ? `${i.exchange} open · ${session.open}–${session.close} IST` : session.message}
           </div>
         )}
-        <div className="order-types"><Chips label="Order type" value={type} onChange={(t) => { setType(t); setPrice(''); }} items={(['MARKET', 'LIMIT', 'STOP_LOSS'] as OType[]).map((t) => ({ v: t, label: t === 'STOP_LOSS' ? 'SL' : TYPE_LABEL[t], title: TYPE_LABEL[t] }))} /></div>
+        <div className="order-types"><Chips label="Order type" value={type} onChange={(t) => { setType(t); setPrice(''); }} items={((allowAdvanced ? ['MARKET', 'LIMIT', 'STOP_LOSS'] : ['MARKET']) as OType[]).map((t) => ({ v: t, label: t === 'STOP_LOSS' ? 'SL' : TYPE_LABEL[t], title: TYPE_LABEL[t] }))} /></div>
         <div className="field">
           <label htmlFor="qty">Quantity (lots)</label>
           <div className="lot-step">
@@ -382,10 +383,11 @@ function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument:
         </div>
       </div>
       <div className="order-foot">
+        <div className="kv"><span className="k">Market price</span><span className="num">{q ? `₹${inr(q.ltp)}` : '—'}</span></div>
         <div className="kv"><span className="k">Order value</span><span className="num">{preview ? `₹${inr(preview.value)}` : '—'}</span></div>
+        <div className="kv"><span className="k">BRK</span><span className="num">{preview ? `₹${inr(preview.brokerage)}` : '—'}</span></div>
         <div className="kv"><span className="k">Intraday margin</span><span className="num w6">{preview ? `₹${inr(preview.intradayMargin)}` : '—'}</span></div>
         <div className="kv"><span className="k">C/F margin</span><span className="num">{preview ? `₹${inr(preview.carryForwardMargin)}` : '—'}</span></div>
-        <div className="kv"><span className="k">Available</span><span className="num"><Private>{available ? `₹${inr(available)}` : '—'}</Private></span></div>
         {short && <div className="notice warn"><Icon name="info" size={16} />Not enough available balance for this order.</div>}
         {closed && <div className="notice warn"><Icon name="info" size={16} />{session!.message} Orders placed now will be rejected.</div>}
         <button className={`btn btn-lg btn-block ${side === 'BUY' ? 'btn-buy' : 'btn-sell'}`} disabled={!valid || !preview} onClick={handleTradeClick}>
@@ -402,6 +404,7 @@ function OrderPanel({ instrument: i, q, initialSide, initialQty }: { instrument:
             ['Quantity', n],
             [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`],
             ['Order value', `₹${inr(preview.value)}`],
+            ['BRK', `₹${inr(preview.brokerage)}`],
             ['Margin required', `₹${inr(preview.intradayMargin)}`],
             ['Carry-forward margin', `₹${inr(preview.carryForwardMargin)}`],
           ]}

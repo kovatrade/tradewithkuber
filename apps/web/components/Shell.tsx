@@ -278,7 +278,7 @@ function GlobalSearch() {
           {hits.length === 0 ? <li className="t2 sm" style={{ padding: '12px 16px' }}>No instruments match “{q}”.</li> : hits.map((h, i) => (
             <li key={h.id} role="option" aria-selected={i === idx} onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); go(h); }}>
               <span className="mark" aria-hidden>{fullName(h).slice(0, 2).toUpperCase()}</span>
-              <span className="grow"><span className="w6">{fullName(h)}</span><span className="t3" style={{ display: 'block' }}>{shortSymbol(h.symbol)} · {h.exchange} {h.segment}</span></span>
+              <span className="grow"><span className="w6 instrument-name">{fullName(h)}</span><span className="t3" style={{ display: 'block' }}>{shortSymbol(h.symbol)} · {h.exchange} {h.segment}</span></span>
               <span className="badge">{h.exchange} {h.segment}</span>
             </li>
           ))}

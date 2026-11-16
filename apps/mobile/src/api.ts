@@ -1,9 +1,12 @@
+import { loginDeviceId } from './login-device';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { isDevice } from 'expo-device';
+import { resolveApiUrl } from './api-url';
 import { createClient, type Client } from 'graphql-ws';
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+export const API_URL = resolveApiUrl(process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000', __DEV__, Platform.OS, isDevice);
 if (!__DEV__ && !API_URL.startsWith('https://')) {
   throw new Error('Production builds must use an https:// API URL.');
 }
@@ -91,11 +94,13 @@ async function raw(query: string, variables?: Record<string, unknown>, stepUp?: 
 }
 
 async function rawFetch(query: string, variables?: Record<string, unknown>, stepUp?: string) {
+  const deviceId = await loginDeviceId().catch(() => undefined);
   const res = await fetch(`${API_URL}/graphql`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       'x-client': 'mobile',
+      ...(deviceId ? { 'x-device-id': deviceId } : {}),
       ...(/\b(submitFeePayment|createUser|requestPayment)\b/.test(query) ? { 'x-upload': 'fee-proof' } : {}), // payment screenshot upload
       ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
       ...(stepUp ? { 'x-step-up': stepUp } : {}),

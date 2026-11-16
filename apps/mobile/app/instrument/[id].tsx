@@ -19,7 +19,7 @@ export default function StockScreen() {
   const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const { id, side: s0, qty: q0, view } = useLocalSearchParams<{ id: string; side?: string; qty?: string; view?: string }>();
+  const { id, side: s0, qty: q0, view, from } = useLocalSearchParams<{ id: string; side?: string; qty?: string; view?: string; from?: string }>();
   const inst = useQuery<{ instrument: I }>(`query($id:ID!){ instrument(id:$id){ id symbol name exchange segment expiry lotSize tickSize lotClass lotLabel category } }`, { id });
   const q = useLiveQuotes([id])[id];
   const { prefs } = usePrefs();
@@ -64,7 +64,7 @@ export default function StockScreen() {
   );
 
   return (
-    <Screen back title={i ? shortSymbol(i.symbol) : ''} footer={footer}>
+    <Screen instrumentTitle back title={i ? shortSymbol(i.symbol) : ''} footer={footer}>
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
       <Row>
         <Mark text={i ? shortSymbol(i.symbol) : ''} />
@@ -185,7 +185,7 @@ export default function StockScreen() {
           ]} />
         </Section>
       )}
-      {i && order && <OrderSheet i={i} q={q} side={order} setSide={setOrder} initialQty={q0 ?? '1'} onClose={() => setOrder(null)} />}
+      {i && order && <OrderSheet allowAdvanced={from === 'positions'} i={i} q={q} side={order} setSide={setOrder} initialQty={q0 ?? '1'} onClose={() => setOrder(null)} />}
     </Screen>
   );
 }
@@ -206,7 +206,7 @@ function QtyChip({ text, onPress, tone }: { text: string; onPress?: () => void; 
   );
 }
 
-function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { bid: string; ask: string; ltp: string }; side: Side; setSide: (s: Side) => void; initialQty: string; onClose: () => void }) {
+function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }: { allowAdvanced: boolean; i: I; q?: { bid: string; ask: string; ltp: string }; side: Side; setSide: (s: Side) => void; initialQty: string; onClose: () => void }) {
   const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const priv = usePrivate();
@@ -216,6 +216,7 @@ function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { 
   const [type, setType] = useState<OType>('MARKET');
   const [qty, setQty] = useState(initialQty);
   const [price, setPrice] = useState('');
+  useEffect(() => { if (!allowAdvanced) { setType('MARKET'); setPrice(''); } }, [allowAdvanced]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [review, setReview] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -279,7 +280,7 @@ function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { 
           {session && (
             <Row gap={6}><View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: session.isOpen ? t.pos : t.neg }} /><T v="xs" c="text2">{session.isOpen ? `${i.exchange} open · ${session.open}–${session.close} IST` : session.message}</T></Row>
           )}
-          <Chips fill value={type} onChange={(k) => { setType(k); setPrice(''); }} items={[{ k: 'MARKET', label: 'Market' }, { k: 'LIMIT', label: 'Limit' }, { k: 'STOP_LOSS', label: 'SL' }]} />
+          <Chips fill value={type} onChange={(k) => { setType(k); setPrice(''); }} items={allowAdvanced ? [{ k: 'MARKET', label: 'Market' }, { k: 'LIMIT', label: 'Limit' }, { k: 'STOP_LOSS', label: 'SL' }] : [{ k: 'MARKET', label: 'Market' }]} />
           <Row style={{ alignItems: 'flex-start' }}>
             <View style={{ flex: 1.2, gap: 6 }}>
               <T v="sm" c="text2" w="500">Quantity (lots)</T>
@@ -310,7 +311,7 @@ function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { 
           )}
           {isTrig(type) && <T v="xs">{TYPE_LABEL[type]}: when the LTP {firesOnFall(type, side) ? 'falls to' : 'rises to'} your trigger, the order is filled at the LTP.</T>}
           <Divider />
-          <Lines lines={[['Order value', preview ? `₹${inr(preview.value)}` : '—'], ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'], ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'], ['Available', avail ? priv(`₹${inr(avail)}`) : '—']]} />
+          <Lines lines={[ ['Market price', q ? `₹${inr(q.ltp)}` : '—'], ['Order value', preview ? `₹${inr(preview.value)}` : '—'], ['BRK', preview ? `₹${inr(preview.brokerage)}` : '—'], ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'], ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'] ]} />
           {short && <Notice tone="warn">Not enough available balance for this order.</Notice>}
           {session && !session.isOpen && <Notice tone="warn">{session.message} Orders placed now will be rejected.</Notice>}
           {err && <Notice tone="err">{err}</Notice>}
@@ -337,8 +338,8 @@ function OrderSheet({ i, q, side, setSide, initialQty, onClose }: { i: I; q?: { 
         </>
       ) : preview && (
         <>
-          <Row gap={S[2]}><Badge text={side === 'BUY' ? 'Buy' : 'Sell'} tone={side === 'BUY' ? 'ok' : 'bad'} /><T w="600">{shortSymbol(i.symbol)}</T></Row>
-          <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['Margin required', `₹${inr(preview.intradayMargin)}`], ['Carry-forward margin', `₹${inr(preview.carryForwardMargin)}`]]} />
+          <Row gap={S[2]}><Badge text={side === 'BUY' ? 'Buy' : 'Sell'} tone={side === 'BUY' ? 'ok' : 'bad'} /><T w="800">{shortSymbol(i.symbol)}</T></Row>
+          <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['BRK', `₹${inr(preview.brokerage)}`], ['Intraday margin', `₹${inr(preview.intradayMargin)}`], ['C/F margin', `₹${inr(preview.carryForwardMargin)}`]]} />
           {type === 'MARKET' && <Notice>{demo ? 'Market orders execute at the best simulated price, which can differ slightly from the estimate.' : 'Market orders execute at the best available price, which can differ slightly from the estimate.'}</Notice>}
           {isTrig(type) && <Notice>When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.</Notice>}
           {err && <Notice tone="err">{err}</Notice>}

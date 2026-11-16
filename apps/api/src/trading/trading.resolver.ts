@@ -123,6 +123,11 @@ export class TradingResolver {
   }
 
   @Mutation(() => Order)
+  async exitPosition(@CurrentActor() a: Actor, @Args('positionId', { type: () => ID }) id: string, @Args('idempotencyKey') key: string, @Ctx() c: GqlContext) {
+    return toOrder(await this.orderSvc.exitPosition(a, id, key, c.ip));
+  }
+
+  @Mutation(() => Order)
   async cancelOrder(@CurrentActor() a: Actor, @Args('orderId', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return toOrder(await this.orderSvc.cancel(a, id, c.ip));
   }
@@ -227,6 +232,7 @@ export class TradingResolver {
       mode: s.mode,
       balance: m(s.balanceMinor)!,
       marginUsed: m(s.marginUsedMinor)!,
+      creditBalance: m(s.creditBalanceMinor)!,
       available: m(s.availableMinor)!,
       deposits: m(s.depositsMinor)!,
       withdrawals: m(s.withdrawalsMinor)!,

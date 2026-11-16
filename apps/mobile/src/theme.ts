@@ -8,7 +8,7 @@ const light = {
   bg: '#ffffff', bg2: '#f7f8fa', bg3: '#eff1f4', line: '#ebedf0', line2: '#dcdfe5',
   text: '#262a35', text2: '#697080', text3: '#9a9fac',
   brand: '#08a77b', brandPressed: '#06956d', brandInk: '#ffffff', brandSoft: '#e7f6f0',
-  pos: '#08a77b', posSoft: '#e7f6f0', neg: '#e14f3b', negSoft: '#fdecea',
+  posDark: '#056647', negDark: '#98251a', pos: '#08a77b', posSoft: '#e7f6f0', neg: '#e14f3b', negSoft: '#fdecea',
   warn: '#b97300', warnSoft: '#fff4de', info: '#3a66d1', infoSoft: '#eaf0fd',
   overlay: 'rgba(15,18,24,0.45)',
 };
@@ -16,7 +16,7 @@ const dark: typeof light = {
   bg: '#121418', bg2: '#181b20', bg3: '#20242b', line: '#262a32', line2: '#343944',
   text: '#e9ebef', text2: '#a3a9b6', text3: '#767c89',
   brand: '#22b98b', brandPressed: '#2cc897', brandInk: '#06140f', brandSoft: '#0f2a21',
-  pos: '#2ec293', posSoft: '#0f2a21', neg: '#ff6b57', negSoft: '#3a1a16',
+  posDark: '#08734f', negDark: '#a92d20', pos: '#2ec293', posSoft: '#0f2a21', neg: '#ff6b57', negSoft: '#3a1a16',
   warn: '#f0b545', warnSoft: '#33270e', info: '#7c9df0', infoSoft: '#18223a',
   overlay: 'rgba(0,0,0,0.6)',
 };

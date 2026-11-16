@@ -75,7 +75,8 @@ export function usePushNotifications(me: Me | null, locked: boolean) {
         await gql('mutation($token:String!,$platform:String!,$installationId:String!){ registerPushToken(token:$token, platform:$platform, installationId:$installationId) }', { token: value, platform: Platform.OS, installationId: await installationId() });
       };
       const setup = async () => {
-        if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('activity', { name: 'Account and trading updates', importance: Notifications.AndroidImportance.HIGH, sound: 'default', vibrationPattern: [0, 250, 150, 250], lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE });
+        // Omitting sound selects Android's system notification tone. A string here names a bundled custom sound.
+        if (Platform.OS === 'android') await Notifications.setNotificationChannelAsync('activity', { name: 'Account and trading updates', importance: Notifications.AndroidImportance.HIGH, vibrationPattern: [0, 250, 150, 250], lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE });
         await Notifications.requestPermissionsAsync();
         await register();
       };

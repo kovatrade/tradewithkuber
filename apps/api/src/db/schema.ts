@@ -107,6 +107,17 @@ export const sessions = pgTable(
   (t) => [index('sessions_user_idx').on(t.userId, t.revokedAt), index('sessions_family_idx').on(t.familyId)],
 );
 
+/** Survives logout/session expiry so different accounts on one installation can be reported. */
+export const deviceAccountLogins = pgTable('device_account_logins', {
+  deviceHash: char('device_hash', { length: 64 }).notNull(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  firstLoginAt: ts('first_login_at').notNull().defaultNow(),
+  lastLoginAt: ts('last_login_at').notNull().defaultNow(),
+  deviceName: varchar('device_name', { length: 120 }),
+  userAgent: varchar('user_agent', { length: 400 }),
+  ip: varchar('ip', { length: 64 }),
+}, t => [uniqueIndex('device_account_logins_pair').on(t.deviceHash, t.userId)]);
+
 export const otpChallenges = pgTable(
   'otp_challenges',
   {

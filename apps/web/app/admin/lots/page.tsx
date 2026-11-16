@@ -63,7 +63,7 @@ export default function Lots() {
               <tbody>{rows.map((i) => (
                 <tr key={i.id}>
                   <td className="hide-sm"><input type="checkbox" aria-label={`Select ${i.symbol}`} checked={sel.has(i.id)} onChange={() => { const n = new Set(sel); if (n.has(i.id)) n.delete(i.id); else n.add(i.id); setSel(n); }} /></td>
-                  <td className="lead"><span className="w6" style={{ display: 'block' }}>{i.symbol}</span><span className="t3 sm">{i.name}</span></td>
+                  <td className="lead"><span className="w6 instrument-name" style={{ display: 'block' }}>{i.symbol}</span><span className="t3 sm instrument-name">{i.name}</span></td>
                   <td data-label="Market" className="t2">{CAT[i.category] ?? i.exchange}{i.expiry ? <span className="sub" style={{ display: 'block' }}>{new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span> : null}</td>
                   <td data-label="One lot is"><LabelEdit i={i} onSaved={() => void list.refetch()} /></td>
                   <td data-label="Lot type" className="r">

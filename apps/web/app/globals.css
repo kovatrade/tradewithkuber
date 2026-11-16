@@ -1113,3 +1113,10 @@ tr.clickable { cursor: pointer; }
 .btn.wl-remove { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 45%, transparent); white-space: nowrap; }
 .btn.wl-remove:hover { background: var(--neg-soft); }
 .is-blocked { opacity: .45; }
+
+/* New session highs/lows: dark pulse, then the normal directional colour. */
+.tick-dark-up, .ba-box a.tick-dark-up, .script-price.tick-dark-up { animation: quote-dark-up .7s ease-out; }
+.tick-dark-down, .ba-box a.tick-dark-down, .script-price.tick-dark-down { animation: quote-dark-down .7s ease-out; }
+@keyframes quote-dark-up { 0% { background: #056647; color: #fff; } 40%, 75% { background: var(--pos); color: #fff; } }
+@keyframes quote-dark-down { 0% { background: #98251a; color: #fff; } 40%, 75% { background: var(--neg); color: #fff; } }
+.instrument-name, .script-name, .mb-chip-sym, .mb-sym { font-weight: 800; }

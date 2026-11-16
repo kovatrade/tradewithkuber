@@ -4,6 +4,7 @@ import type { Actor } from '../common/context';
 export function notificationDestination(role: Actor['role'], kind: string): string | undefined {
   if (kind.startsWith('account.reset_')) return role === 'SUPER_ADMIN' ? '/admin/reset' : role === 'BROKER' ? '/broker/requests' : '/account';
   if (kind === 'account.reenabled') return role === 'SUPER_ADMIN' ? '/admin/users' : role === 'BROKER' ? '/broker/traders' : '/account';
+  if (kind === 'security.shared_device') return '/notifications';
   if (kind.startsWith('security.')) return '/account';
   if (role === 'SUPER_ADMIN') {
     if (kind.startsWith('payment.')) return '/admin/payments';

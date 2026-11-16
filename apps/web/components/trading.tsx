@@ -1,4 +1,5 @@
 'use client';
+import { quoteMove } from '@/lib/quote-flash';
 import { useSoleAdmin } from '@/lib/sole-admin';
 import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
@@ -149,8 +150,8 @@ const expiryText = (d?: string) => (d ? new Date(d).toLocaleDateString('en-IN', 
 
 /** Bid (red) and ask (green) boxes that blink green when the price rises and red when it falls; day low and high below. */
 const BidAskBoxes = memo(function BidAskBoxes({ href, q, label }: { href: string; q?: Quote; label: string }) {
-  const tb = useTick(q?.bid);
-  const ta = useTick(q?.ask);
+  const tb = useTick(q?.bid, q?.high, q?.low);
+  const ta = useTick(q?.ask, q?.high, q?.low);
   return (
     <div className="ba-boxes">
       <span className="ba-box b"><Link className={tb} href={`${href}?side=SELL`} aria-label={`Sell ${label} at ${q?.bid ?? ''}`}>{inr(q?.bid)}</Link><small>L {inr(q?.low)}</small></span>
@@ -166,34 +167,31 @@ function ChgPct({ q }: { q?: Quote }) {
   return <span className={`chg sm ${t}`}>{inr(q.changePct, { sign: true })}%</span>;
 }
 
-function useTick(v?: string) {
-  const prev = useRef(v);
+function useTick(v?: string, high?: string, low?: string) {
+  const prev = useRef({ value: v, high, low });
   const [cls, setCls] = useState('');
   useEffect(() => {
-    if (v && prev.current && v !== prev.current) {
-      const nextCls = Number(v) > Number(prev.current) ? 'tick-up' : 'tick-down';
-      prev.current = v;
-      setCls(nextCls);
-      const h = setTimeout(() => {
-        setCls((c) => (c ? '' : c));
-      }, 700);
-      return () => clearTimeout(h);
-    }
-    prev.current = v;
-  }, [v]);
+    const move = quoteMove(prev.current, { value: v, high, low });
+    prev.current = { value: v, high, low };
+    if (!move) return;
+    setCls('');
+    const frame = requestAnimationFrame(() => setCls(`tick-${move.extreme ? 'dark-' : ''}${move.up ? 'up' : 'down'}`));
+    const timer = setTimeout(() => setCls(''), 700);
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+  }, [v, high, low]);
   return cls;
 }
 
 /* ======================================================================= account summary */
-export interface Summary { balance: string; available: string; marginUsed: string; realizedPnl: string; unrealizedPnl: string; fees: string; deposits: string; withdrawals: string; openPositions: number; openOrders: number }
-export const SUMMARY_Q = `query($u:ID){ accountSummary(userId:$u){ balance available marginUsed realizedPnl unrealizedPnl fees deposits withdrawals openPositions openOrders } }`;
+export interface Summary { creditBalance: string; balance: string; available: string; marginUsed: string; realizedPnl: string; unrealizedPnl: string; fees: string; deposits: string; withdrawals: string; openPositions: number; openOrders: number }
+export const SUMMARY_Q = `query($u:ID){ accountSummary(userId:$u){ creditBalance balance available marginUsed realizedPnl unrealizedPnl fees deposits withdrawals openPositions openOrders } }`;
 
 export function useSummary(userId?: string) {
   return useQuery<{ accountSummary: Summary }>(SUMMARY_Q, { u: userId }, { pollMs: 5000 });
 }
 
 /** Portfolio header: one big number, supporting metrics in a divided strip. */
-/** tiles: the watchlist card (small 'Available balance' label, bold amount, Positions / Orders and Booked P/L, Deposit and Withdraw). */
+/** tiles: the watchlist card (small 'Credit balance' label, bold amount, Positions / Orders and Booked P/L, Deposit and Withdraw). */
 export function PortfolioSummary({ userId, actions, title = 'Available to trade', compact, detail, addScript, tiles }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean; tiles?: boolean }) {
   const { data, loading, error, refetch } = useSummary(userId);
   const [pay, setPay] = useState<'DEPOSIT' | 'WITHDRAWAL' | null>(null);
@@ -209,12 +207,11 @@ export function PortfolioSummary({ userId, actions, title = 'Available to trade'
     return (
       <section className="panel bal-tiles" aria-label="Account summary">
         <div className="bal-hero">
-          <div className="bal-k">{title}</div>
-          <div className="bal-amt num"><Private width={8}>₹{inr(c.available)}</Private></div>
+          <div className="bal-k">Credit balance</div>
+          <div className="bal-amt num"><Private width={8}>₹{inr(c.creditBalance)}</Private></div>
         </div>
         <div className="bal-pair">
           <div className="bal-tile"><div className="bal-k">Positions / Orders</div><div className="bal-tv num">{c.openPositions}<span className="t3"> / </span>{c.openOrders}</div></div>
-          <div className="bal-tile"><div className="bal-k">Booked P/L</div><div className={`bal-tv num ${tone(c.realizedPnl)}`}>{inr(c.realizedPnl, { sign: true })}</div></div>
         </div>
         {actions && (
           <div className="bal-pair">
@@ -695,7 +692,7 @@ const scriptPrice = (value?: string) => inr(value).replace(/\.00$/, '');
 const ScriptRow = memo(function ScriptRow({ e, q, onRemove }: { e: WEntry; q?: Quote; onRemove: () => void }) {
   const href = `/trader/instrument/${e.instrument.id}`;
   const name = fullName(e.instrument);
-  const bidTick = useTick(q?.bid), askTick = useTick(q?.ask);
+  const bidTick = useTick(q?.bid, q?.high, q?.low), askTick = useTick(q?.ask, q?.high, q?.low);
   return <div className="script-row" role="row">
     <div className="script-info" role="cell">
       <div className="script-identity"><Link className="script-name" href={href}>{name}</Link>{e.instrument.expiry && <span className="script-expiry">{expiryText(e.instrument.expiry)}</span>}<span className="script-market">{e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange}</span><button className="script-remove" onClick={onRemove} aria-label={`Remove ${name} from watchlist`} title="Remove from watchlist"><Icon name="x" size={14} /></button></div>
@@ -728,7 +725,7 @@ const CompactRow = memo(function CompactRow({
   /** Listed, but its exchange can't be added for now. */
   blocked?: boolean;
 }) {
-  const tick = useTick(q?.ltp);
+  const tick = useTick(q?.ltp, q?.high, q?.low);
   const href = `/trader/instrument/${e.instrument.id}`;
   const name = fullName(e.instrument);
   return (
@@ -745,7 +742,7 @@ const CompactRow = memo(function CompactRow({
         </Link>
       ) : (
         <Link href={href} className="grow" style={{ minWidth: 0 }}>
-          <div className="w6">{name}</div>
+          <div className="w6 instrument-name">{name}</div>
           <div className="t3">{shortSymbol(e.instrument.symbol)} · {e.instrument.category === 'FOREX' ? 'Forex' : e.instrument.exchange} · {e.instrument.segment}</div>
         </Link>
       )}
@@ -789,7 +786,7 @@ const FullRow = memo(function FullRow({
   onRemove?: () => void;
   blocked?: boolean;
 }) {
-  const tick = useTick(q?.ltp);
+  const tick = useTick(q?.ltp, q?.high, q?.low);
   const href = `/trader/instrument/${e.instrument.id}`;
   const action = onToggle ?? onRemove;
   const name = fullName(e.instrument);
@@ -865,7 +862,7 @@ export function Movers() {
             return (
               <Link key={i.id} href={`/trader/instrument/${i.id}`} className="tile">
                 <Mark text={name} />
-                <div className="w6" style={{ marginTop: 'auto' }}>{name}</div>
+                <div className="w6 instrument-name" style={{ marginTop: 'auto' }}>{name}</div>
                 <div className="t3 xs">{shortSymbol(i.symbol)}</div>
                 <div>
                   <div className="num w6">{curSign(i)}{inr(q.ltp)}</div>
@@ -899,7 +896,7 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
       {data!.orders.map((o) => (
         <div key={o.id} className="list-row" style={{ alignItems: 'flex-start' }}>
           <div className="grow">
-            <div className="w6">{o.instrument ? fullName(o.instrument) : '—'}</div>
+            <div className="w6 instrument-name">{o.instrument ? fullName(o.instrument) : '—'}</div>
             <div className="t3 xs">{o.instrument ? shortSymbol(o.instrument.symbol) : ''}</div>
             <div className="t3"><span className={o.side === 'BUY' ? 'pos' : 'neg'} style={{ fontWeight: 600 }}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span> · {o.quantity} qty · {ORDER_TYPE[o.type] ?? o.type}{o.triggerPrice ? ` @ ₹${inr(o.triggerPrice)}` : ''} · {when(o.createdAt)}</div>
             {o.rejectReason && <div className="xs neg">{o.rejectReason}</div>}
@@ -919,7 +916,7 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
           {data!.orders.map((o) => (
             <tr key={o.id}>
               <td>
-                <span className="w6">{o.instrument ? fullName(o.instrument) : '—'}</span>
+                <span className="w6 instrument-name">{o.instrument ? fullName(o.instrument) : '—'}</span>
                 <span className="sub" style={{ display: 'block' }}>{o.instrument ? shortSymbol(o.instrument.symbol) : ''} · <span className={o.side === 'BUY' ? 'pos' : 'neg'} style={{ fontWeight: 600 }}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span></span>
               </td>
               <td className="t2">{ORDER_TYPE[o.type] ?? o.type}{o.triggerPrice && <span className="sub num" style={{ display: 'block' }}>Trigger ₹{inr(o.triggerPrice)}{o.triggeredAt ? ' · triggered' : ''}</span>}</td>
@@ -948,6 +945,22 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
 /* ======================================================================= positions */
 interface Position { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; instrument?: { symbol: string; name?: string } }
 export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade?: boolean }) {
+  const toast = useToast();
+  const [exitBusy, setExitBusy] = useState<string | null>(null);
+  const exitPending = useRef(false);
+  const exitKeys = useRef(new Map<string, string>());
+  const exit = async (p: Position) => {
+    if (exitPending.current) return;
+    exitPending.current = true; setExitBusy(p.id);
+    const key = exitKeys.current.get(p.id) ?? newKey(); exitKeys.current.set(p.id, key);
+    try {
+      const d = await gql<{ exitPosition: { status: string; rejectReason?: string } }>(`mutation($p:ID!,$k:String!){exitPosition(positionId:$p,idempotencyKey:$k){status rejectReason}}`, { p: p.id, k: key });
+      exitKeys.current.delete(p.id);
+      if (d.exitPosition.status !== 'FILLED') { toast(d.exitPosition.rejectReason ?? 'Position was not exited.'); return; }
+      toast('Position exited.');
+    } catch (e) { toast((e as Error).message); }
+    finally { exitPending.current = false; setExitBusy(null); void refetch(); }
+  };
   const { data, loading, error, refetch } = useQuery<{ positions: Position[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp instrument{ symbol name } } }`, { u: userId }, { pollMs: 3000 });
   if (loading && !data) return <SkeletonRows />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
@@ -963,13 +976,13 @@ export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade
         {data!.positions.map((p) => (
           <div key={p.id} className="list-row">
             <div className="grow">
-              <div className="w6">{p.instrument ? fullName(p.instrument) : '—'}</div>
+              <Link className="instrument-name" href={`/trader/instrument/${p.instrumentId}?from=positions`}>{p.instrument ? fullName(p.instrument) : '—'}</Link>
               <div className="t3 xs">{p.instrument ? shortSymbol(p.instrument.symbol) : ''}</div>
               <div className="t3 num">{p.netQty} qty · avg ₹{inr(p.avgPrice)} · LTP ₹{inr(p.ltp)}</div>
             </div>
             <div className="quote-cell" style={{ gap: 4 }}>
               <span className={`num w6 ${tone(p.unrealizedPnl)}`}>{inr(p.unrealizedPnl, { sign: true })}</span>
-              {canTrade && p.netQty !== 0 && <Link className="btn btn-sm" href={`/trader/instrument/${p.instrumentId}?side=${p.netQty > 0 ? 'SELL' : 'BUY'}&qty=${Math.abs(p.netQty)}`}>Exit</Link>}
+              {canTrade && p.netQty !== 0 && <button className="btn btn-sm" disabled={!!exitBusy} onClick={() => void exit(p)}>{exitBusy === p.id ? 'Exiting...' : 'Exit'}</button>}
             </div>
           </div>
         ))}
@@ -981,14 +994,14 @@ export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade
             {data!.positions.map((p) => (
               <tr key={p.id}>
                 <td>
-                  <span className="w6">{p.instrument ? fullName(p.instrument) : '—'}</span>
+                  <Link className="instrument-name" href={`/trader/instrument/${p.instrumentId}?from=positions`}>{p.instrument ? fullName(p.instrument) : '—'}</Link>
                   <span className="sub" style={{ display: 'block' }}>{p.instrument ? shortSymbol(p.instrument.symbol) : ''} · {p.netQty > 0 ? 'Long' : p.netQty < 0 ? 'Short' : 'Closed'}</span>
                 </td>
                 <td className={`r num w6 ${p.netQty > 0 ? 'pos' : p.netQty < 0 ? 'neg' : 'flat'}`}>{p.netQty}</td>
                 <td className="r"><div className="quote-cell"><span className="num">₹{inr(p.avgPrice)}</span><span className="sub num">LTP ₹{inr(p.ltp)}</span></div></td>
                 <td className={`r num w6 ${tone(p.unrealizedPnl)}`}>{inr(p.unrealizedPnl, { sign: true })}</td>
                 <td className={`r num hide-sm ${tone(p.realizedPnl)}`}>{inr(p.realizedPnl, { sign: true })}</td>
-                {canTrade && <td className="r">{p.netQty !== 0 && <Link className="btn btn-sm" href={`/trader/instrument/${p.instrumentId}?side=${p.netQty > 0 ? 'SELL' : 'BUY'}&qty=${Math.abs(p.netQty)}`}>Exit</Link>}</td>}
+                {canTrade && <td className="r">{p.netQty !== 0 && <button className="btn btn-sm" disabled={!!exitBusy} onClick={() => void exit(p)}>{exitBusy === p.id ? 'Exiting...' : 'Exit'}</button>}</td>}
               </tr>
             ))}
           </tbody>

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { recordDeviceLogin } from './shared-device';
 import { JwtService } from '@nestjs/jwt';
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { authenticator } from 'otplib';
@@ -24,6 +25,7 @@ import { emailColumns, emailIndex, normalizeEmail, normalizePhone, phoneColumns,
 authenticator.options = { window: 1, step: 30 };
 
 export interface ClientMeta {
+  deviceId?: string;
   ip: string;
   userAgent: string;
   deviceName?: string;
@@ -135,6 +137,7 @@ export class AuthService {
         `A new device signed in to your account (${meta.deviceName ?? meta.userAgent.slice(0, 60)}, IP ${meta.ip}). If this wasn't you, revoke it in Security settings and change your password.`,
       );
     }
+    await recordDeviceLogin(tx, u, meta, s.id, this.notifications, this.audit);
     return { ...this.signAccess(u, s.id, mfaVerified), refreshToken, sessionId: s.id };
   }
 

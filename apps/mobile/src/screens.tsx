@@ -7,7 +7,7 @@ import { Animated, Easing, Linking, Pressable, ScrollView, StyleSheet, useWindow
 import Svg, { Path } from 'react-native-svg';
 import { API_URL, gql, newKey, subscribe } from './api';
 import { useActive } from './active';
-import { NUM_SCALE, usePrefs, usePrivate } from './prefs';
+import { NUM_SCALE, tradeFeedback, usePrefs, usePrivate } from './prefs';
 import { useSplashActive } from './splash';
 import { CONSENT_FIELDS, deviceLabel, LOGIN_FIELDS, LOGIN_LABEL, stamp, type ConsentRecord, type LoginEvent } from './activity';
 import { useAuth } from './auth';
@@ -61,7 +61,7 @@ function BidAsk({ id, qq, onPick, compact, slim }: { id: string; qq?: Quote; onP
         const v = sd === 'BUY' ? qq?.ask : qq?.bid;
         return (
           <Pressable key={sd} onPress={() => { tap(); if (onPick) onPick(sd); else router.push(`/instrument/${id}?side=${sd}`); }} accessibilityRole="button" accessibilityLabel={`${sd === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ width: columnWidth, alignItems: 'stretch', gap: slim ? 2 : compact ? 3 : 5 }}>
-            <Flash over value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
+            <Flash over high={qq?.high} low={qq?.low} value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
               <View style={{ width: columnWidth, minHeight: slim ? 34 : CTL.tap, paddingVertical: slim ? 5 : compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
                 <T v="num" c={sd === 'BUY' ? 'text' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{ fontSize: compact ? 13 : 14, ...(sd === 'BUY' ? { color: '#fff' } : {}) }}>{scriptPrice(v)}</T>
               </View>
@@ -122,7 +122,7 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
   if (simple) return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[3], minHeight: 96, paddingVertical: S[4], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <T w="700" numberOfLines={1}>{fullName(i).toUpperCase()}{inList ? <T v="xs" c="brand" w="600">  ✓ Added</T> : null}</T>
+        <T w="800" numberOfLines={1}>{fullName(i).toUpperCase()}{inList ? <T v="xs" c="brand" w="800">  ✓ Added</T> : null}</T>
         <T v="xs">{i.expiry ? `Exp: ${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })}` : `${i.exchange} · ${i.segment}`}{lotText(i) ? ` · ${lotText(i)}` : ''}</T>
       </View>
       {toggle}
@@ -131,7 +131,7 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: S[3], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <Pressable onPress={() => router.push(`/instrument/${i.id}`)} accessibilityRole="button" accessibilityLabel={`${sym}, ${qq?.ltp ?? ''}, open chart`} style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <T w="700" numberOfLines={1}>{sym}</T>
+        <T w="800" numberOfLines={1}>{sym}</T>
         <Row gap={6} style={{ flexWrap: 'wrap' }}><T v="num" c={toneOfValue(qq?.change) === 'neg' ? 'neg' : 'pos'}>{inr(qq?.ltp)}</T><Change value={qq?.change} pct={qq?.changePct} pctOnly /></Row>
         <Row gap={6}>{lotText(i) ? <Badge text={lotText(i)} tone={i.lotClass === 'MEGA' ? 'info' : undefined} /> : null}<T v="xs" numberOfLines={1} style={{ flexShrink: 1 }}>{expiryTime(i.expiry, qq?.ts)}</T></Row>
       </Pressable>
@@ -319,11 +319,11 @@ export function ThemeButton() {
 }
 
 /* ====================================================================== summary */
-interface Summary { balance: string; available: string; marginUsed: string; realizedPnl: string; unrealizedPnl: string; openPositions: number; openOrders: number; deposits: string; withdrawals: string; fees: string }
-export const SUMMARY = `query($u:ID){ accountSummary(userId:$u){ balance available marginUsed realizedPnl unrealizedPnl openPositions openOrders deposits withdrawals fees } }`;
+interface Summary { creditBalance: string; balance: string; available: string; marginUsed: string; realizedPnl: string; unrealizedPnl: string; openPositions: number; openOrders: number; deposits: string; withdrawals: string; fees: string }
+export const SUMMARY = `query($u:ID){ accountSummary(userId:$u){ creditBalance balance available marginUsed realizedPnl unrealizedPnl openPositions openOrders deposits withdrawals fees } }`;
 export const useSummary = (userId?: string) => useQuery<{ accountSummary: Summary }>(SUMMARY, { u: userId }, 5000);
 
-/** tiles: the watchlist card (small 'Available balance' label, bold amount, then Positions / Orders and Booked P/L tiles). */
+/** tiles: the watchlist card (small 'Credit balance' label, bold amount, then Positions / Orders tiles). */
 export function SummaryBlock({ userId, actions, title = 'Available to trade', compact, detail, addScript, tiles }: { userId?: string; actions?: boolean; title?: string; compact?: boolean; detail?: boolean; addScript?: boolean; tiles?: boolean }) {
   const t = useTheme();
   const { data, error, loading, refetch } = useSummary(userId);
@@ -340,7 +340,6 @@ export function SummaryBlock({ userId, actions, title = 'Available to trade', co
   if (loading && !s) return <Skeleton rows={2} />;
   if (error && !s) return <ErrorState error={error} retry={refetch} />;
   if (tiles) {
-    const booked = toneOfValue(s?.realizedPnl);
     const label = { fontSize: 11, letterSpacing: 0.8, textTransform: 'uppercase' as const };
     const box = { borderWidth: StyleSheet.hairlineWidth, borderColor: t.line2, borderRadius: R.lg, padding: S[3], backgroundColor: t.bg };
     const tile = (title: string, a11y: string, value: ReactNode) => (
@@ -353,14 +352,12 @@ export function SummaryBlock({ userId, actions, title = 'Available to trade', co
     return (
       <View style={{ gap: S[2], borderWidth: StyleSheet.hairlineWidth, borderColor: t.line2, borderRadius: R.xl, padding: S[3], backgroundColor: t.bg2 }}>
         <View style={[box, { backgroundColor: t.brandSoft, gap: 4, paddingTop: S[3] }]}>
-          <T c="text2" w="600" style={label}>{title}</T>
-          <T style={{ fontSize: 26, lineHeight: 34, fontWeight: '800', fontVariant: ['tabular-nums'] }} adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={1} accessibilityRole="text">{priv(`₹${inr(s?.available)}`, 8)}</T>
+          <T c="text2" w="600" style={label}>Credit balance</T>
+          <T style={{ fontSize: 26, lineHeight: 34, fontWeight: '800', fontVariant: ['tabular-nums'] }} adjustsFontSizeToFit minimumFontScale={0.6} numberOfLines={1} accessibilityRole="text">{priv(`₹${inr(s?.creditBalance)}`, 8)}</T>
         </View>
         <Row gap={S[2]}>
           {tile('Positions / Orders', `Positions ${s?.openPositions ?? 0}, open orders ${s?.openOrders ?? 0}`,
             <T style={big} numberOfLines={1}>{s?.openPositions ?? 0}<T style={{ ...big, fontWeight: '400' }} c="text3"> / </T>{s?.openOrders ?? 0}</T>)}
-          {tile('Booked P/L', `Booked profit and loss ${inr(s?.realizedPnl, true)}`,
-            <T style={big} c={booked === 'flat' ? 'text' : (booked as 'pos')} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{inr(s?.realizedPnl, true)}</T>)}
         </Row>
         {actions && (
           <Row gap={S[2]}>
@@ -377,7 +374,7 @@ export function SummaryBlock({ userId, actions, title = 'Available to trade', co
             })}
           </Row>
         )}
-        {pay && <PaymentSheet type={pay} userId={userId} available={s?.available} onClose={() => { setPay(null); void refetch(); }} />}
+        {pay && <PaymentSheet type={pay} userId={userId} available={s?.creditBalance} onClose={() => { setPay(null); void refetch(); }} />}
       </View>
     );
   }
@@ -511,7 +508,7 @@ export function Movers() {
             <Pressable key={i.id} onPress={() => router.push(`/instrument/${i.id}`)} accessibilityRole="button" accessibilityLabel={`${shortSymbol(i.symbol)} ${q[i.id].ltp}`}
               style={({ pressed }) => ({ width: 148, padding: S[3], gap: S[2], borderWidth: 1, borderColor: t.line, borderRadius: R.lg, backgroundColor: pressed ? t.bg2 : t.bg })}>
               <Mark text={shortSymbol(i.symbol)} />
-              <T w="600" numberOfLines={1}>{shortSymbol(i.symbol)}</T>
+              <T w="800" numberOfLines={1}>{shortSymbol(i.symbol)}</T>
               <View><T v="num">₹{inr(q[i.id].ltp)}</T><Change value={q[i.id].change} pct={q[i.id].changePct} pctOnly /></View>
             </Pressable>
           ))}
@@ -536,7 +533,7 @@ const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${name}${e.instrument.expiry ? `, expiry ${expiryLabel(e.instrument.expiry)}` : ''}, ${market}, ${qq?.ltp ?? ''}`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flex: 1, minWidth: 0, gap: 3 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 6, rowGap: 2, minWidth: 0 }}>
-          <T w="700" numberOfLines={1} style={{ flexShrink: 1, maxWidth: '100%', fontSize: 14, lineHeight: 18 }}>{name}</T>
+          <T w="800" numberOfLines={1} style={{ flexShrink: 1, maxWidth: '100%', fontSize: 14, lineHeight: 18 }}>{name}</T>
           {!!e.instrument.expiry && <T v="xs" c="text2" w="500" numberOfLines={1} style={{ fontSize: 10 }}>{expiryLabel(e.instrument.expiry)}</T>}
           {!!market && <View style={{ backgroundColor: t.bg3, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}><T v="xs" c="text2" w="700" style={{ fontSize: 9, lineHeight: 12 }}>{market}</T></View>}
         </View>
@@ -601,7 +598,7 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
   const top = (
     <>
       {header}
-      {!limit && <SummaryBlock tiles actions title="Available balance" />}
+      {!limit && <SummaryBlock tiles actions title="Credit balance" />}
       {!limit && (
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: S[2], marginTop: S[2], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
           {listTab(0)}
@@ -716,7 +713,9 @@ export function PositionsSummary() {
 }
 
 export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?: boolean }) {
-  const [quick, setQuick] = useState<{ id: string; side: 'BUY' | 'SELL'; qty: number } | null>(null);
+  const [exitBusy, setExitBusy] = useState<string | null>(null);
+  const exitPending = useRef(false);
+  const exitKeys = useRef(new Map<string, string>());
   const { data, error, loading, refetch } = useQuery<{ positions: Pos[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp carriedForward instrument{ symbol name expiry exchange } } }`, { u: userId }, 3000);
   const t = useTheme();
   const [cf, setCf] = useState<Pos | null>(null);
@@ -727,7 +726,18 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
   if (loading && !data) return <Skeleton />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
   if (!data!.positions.length) return <Empty icon="briefcase" title="No positions" action={canTrade ? <Button size="sm" kind="primary" title="Find instruments" onPress={() => router.push('/search')} /> : undefined}>A position opens when a buy or sell order executes.</Empty>;
-  const exit = (p: Pos) => setQuick({ id: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', qty: Math.abs(p.netQty) });
+  const exit = async (p: Pos) => {
+    if (exitPending.current) return;
+    exitPending.current = true; setExitBusy(p.id);
+    const key = exitKeys.current.get(p.id) ?? newKey(); exitKeys.current.set(p.id, key);
+    try {
+      const d = await gql<{ exitPosition: { status: string; rejectReason?: string } }>(`mutation($p:ID!,$k:String!){exitPosition(positionId:$p,idempotencyKey:$k){status rejectReason}}`, { p: p.id, k: key });
+      exitKeys.current.delete(p.id);
+      if (d.exitPosition.status !== 'FILLED') { toast(d.exitPosition.rejectReason ?? 'Position was not exited.', true); return; }
+      tradeFeedback('fill'); toast('Position exited.');
+    } catch (e) { toast((e as Error).message, true); }
+    finally { exitPending.current = false; setExitBusy(null); void refetch(); }
+  };
   const setCarry = async (p: Pos, enabled: boolean) => {
     setCfBusy(p.id);
     try {
@@ -777,10 +787,10 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
         const on = !!p.carriedForward;
         return (
           <View key={p.id} style={{ borderWidth: 1, borderColor: open && on ? t.brand : t.line2, borderRadius: R.lg, padding: S[3], gap: 6, backgroundColor: t.bg }}>
-            <Pressable onPress={() => router.push(`/instrument/${p.instrumentId}`)} accessibilityRole="button" accessibilityLabel={`${name} chart`} style={{ gap: 6 }}>
+            <Pressable onPress={() => router.push(`/instrument/${p.instrumentId}?from=positions`)} accessibilityRole="button" accessibilityLabel={`${name} chart`} style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 6, rowGap: 2 }}>
-                  <T w="700" numberOfLines={1} style={{ fontSize: 14, flexShrink: 1 }}>{name}</T>
+                  <T w="800" numberOfLines={1} style={{ fontSize: 14, flexShrink: 1 }}>{name}</T>
                   {!!exp && <T v="xs" c="text2" w="600" style={{ fontSize: 10 }}>{exp}</T>}
                   {open
                     ? <View style={{ backgroundColor: p.netQty > 0 ? t.posSoft : t.negSoft, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c={p.netQty > 0 ? 'pos' : 'neg'} style={{ fontSize: 9 }}>{p.netQty > 0 ? 'BUY' : 'SELL'}</T></View>
@@ -810,9 +820,9 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
                     <Icon name={on ? 'check' : 'x'} size={14} color={on ? t.brand : t.neg} strokeWidth={2.6} />
                   </View>
                 </Pressable>
-                <Pressable onPress={() => exit(p)} accessibilityRole="button" accessibilityLabel="Exit this position" hitSlop={4}
+                <Pressable disabled={!!exitBusy} onPress={() => void exit(p)} accessibilityRole="button" accessibilityLabel="Exit this position" hitSlop={4}
                   style={({ pressed }) => ({ height: 30, paddingHorizontal: 10, borderRadius: R.pill, borderWidth: 1, borderColor: t.neg, backgroundColor: pressed ? t.negSoft : t.bg, alignItems: 'center', justifyContent: 'center' })}>
-                  <T v="xs" w="700" c="neg">Exit</T>
+                  <T v="xs" w="700" c="neg">{exitBusy === p.id ? 'Exiting...' : 'Exit'}</T>
                 </Pressable>
               </View>
             )}
@@ -823,7 +833,7 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
         <View style={{ gap: 6 }}>
           {openPos.map((p) => (
             <Spread key={p.id}>
-              <T w="600" numberOfLines={1} style={{ flex: 1 }}>{p.instrument ? fullName(p.instrument).toUpperCase() : '—'} <T v="xs" c={p.netQty > 0 ? 'pos' : 'neg'} w="700">{p.netQty > 0 ? 'BUY' : 'SELL'} {Math.abs(p.netQty)}</T></T>
+              <T w="800" numberOfLines={1} style={{ flex: 1 }}>{p.instrument ? fullName(p.instrument).toUpperCase() : '—'} <T v="xs" c={p.netQty > 0 ? 'pos' : 'neg'} w="700">{p.netQty > 0 ? 'BUY' : 'SELL'} {Math.abs(p.netQty)}</T></T>
               <T v="num" c={toneOfValue(p.unrealizedPnl) === 'flat' ? 'text2' : (toneOfValue(p.unrealizedPnl) as 'pos')}>{inr(p.unrealizedPnl, true)}</T>
             </Spread>
           ))}
@@ -841,7 +851,6 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
           <Button block kind="primary" title="Turn ON" busy={!!cf && cfBusy === cf.id} onPress={() => cf && void setCarry(cf, true)} />
         </Row>
       </Sheet>
-      {quick && <QuickTradeSheet instrumentId={quick.id} initialSide={quick.side} initialQty={quick.qty} onClose={() => { setQuick(null); void refetch(); }} />}
     </View>
   );
 }
