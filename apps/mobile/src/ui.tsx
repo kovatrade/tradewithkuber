@@ -102,7 +102,7 @@ function LiveBanner() {
   if (s !== 'reconnecting') return null;
   return (
     <View accessibilityRole="alert" style={{ flexDirection: 'row', gap: S[2], alignItems: 'center', backgroundColor: t.warnSoft, paddingHorizontal: S[4], paddingVertical: S[2] }}>
-      <Icon name="wifiOff" size={16} color={t.warn} /><T v="sm" c="warn">Live prices reconnecting… showing the last prices received.</T>
+      <Icon name="wifiOff" size={16} color={t.warn} /><T v="sm" c="warn">Connection interrupted. Showing last received prices.</T>
     </View>
   );
 }
@@ -252,9 +252,9 @@ export function Field({ label, error, hint, prefix, ...p }: TextInputProps & { l
   return (
     <View style={{ gap: 6 }}>
       <T v="sm" c="text2" w="500">{label}</T>
-      <View style={{ flexDirection: 'row', alignItems: 'center', height: CTL.h + 4, borderWidth: 1, borderRadius: R.md, borderColor: error ? t.neg : focus ? t.brand : t.line2, backgroundColor: p.editable === false ? t.bg2 : t.bg, paddingHorizontal: S[3], gap: S[2] }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', height: p.multiline ? Math.max(100, (p.numberOfLines ?? 4) * 24) : CTL.h + 4, borderWidth: 1, borderRadius: R.md, borderColor: error ? t.neg : focus ? t.brand : t.line2, backgroundColor: p.editable === false ? t.bg2 : t.bg, paddingHorizontal: S[3], gap: S[2] }}>
         {prefix && <T c="text2">{prefix}</T>}
-        <TextInput accessibilityLabel={label} placeholderTextColor={t.text3} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} style={{ flex: 1, fontSize: FS.lg, color: t.text, height: '100%' }} {...p} />
+        <TextInput accessibilityLabel={label} placeholderTextColor={t.text3} onFocus={() => setFocus(true)} onBlur={() => setFocus(false)} style={{ flex: 1, fontSize: FS.lg, color: t.text, height: '100%', textAlignVertical: p.multiline ? 'top' : 'center', paddingVertical: p.multiline ? 12 : undefined }} {...p} />
       </View>
       {error ? <T v="sm" c="neg" accessibilityRole="alert">{error}</T> : hint ? <T v="xs">{hint}</T> : null}
     </View>

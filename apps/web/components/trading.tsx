@@ -29,13 +29,13 @@ export interface MarketDepth {
 export interface Quote {
   instrumentId: string;
   ltp: string;
-  bid: string;
-  ask: string;
-  high: string;
-  low: string;
-  change: string;
-  changePct: string;
-  ts: string;
+  bid?: string;
+  ask?: string;
+  high?: string;
+  low?: string;
+  change?: string;
+  changePct?: string;
+  ts?: string;
   source: string;
   open?: string;
   close?: string;

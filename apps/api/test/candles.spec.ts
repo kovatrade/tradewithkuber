@@ -35,13 +35,13 @@ describe('transient candle history', () => {
       incoming({ segmentCode: 1, securityId: '1', ltp: 0, open: 98, close: 99, high: 104, low: 94, timestamp });
       expect(service.quote(row.id)).toMatchObject({ltpMinor:10100n,prevCloseMinor:9500n,highMinor:10400n,lowMinor:9400n});
       await jest.advanceTimersByTimeAsync(61_000);
-      service.onModuleDestroy();
+      await service.onModuleDestroy();
       expect(query).not.toHaveBeenCalled();
       expect(select).toHaveBeenCalledTimes(1); // instrument metadata only
       expect(await service.candles(row.id, '1m', 50)).toEqual([]);
       expect(jest.getTimerCount()).toBe(0);
     } finally {
-      service.onModuleDestroy();
+      await service.onModuleDestroy();
       if (original === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = original;
     }
   });

@@ -274,9 +274,9 @@ export function CandleChart({ instrumentId, quote, tickSize }: { instrumentId: s
 
   // Live: update the forming candle (or start a new one) from each quote.
   useEffect(() => {
-    if (state !== 'ready' || loadedIv !== interval || !quote?.ltp) return;
+    if (state !== 'ready' || loadedIv !== interval || !quote?.ltp || !quote.ts || !Number.isFinite(Date.parse(quote.ts))) return;
     const price = Number(String(quote.ltp).replace(/,/g, ''));
-    const ms = Date.parse(quote.ts) || Date.now();
+    const ms = Date.parse(quote.ts);
     const time = bucketSec(ms, STEP_MS[interval]) as UTCTimestamp;
     const list = bars.current;
     const prev = list[list.length - 1];

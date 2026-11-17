@@ -36,11 +36,9 @@ export function sessionStatus(exchange: string, sessions: Sessions, holidays: st
     // Overnight: the part after midnight belongs to the previous trading day's session.
     isOpen = (tradingDay(p.day, p.date, holidays) && p.hhmm >= h.open) || (tradingDay(p.prevDay, p.prevDate, holidays) && p.hhmm <= h.close);
   }
-  let message: string | null = null;
-  if (!isOpen) {
-    if (!tradingDay(p.day, p.date, holidays) && !(h.open > h.close && tradingDay(p.prevDay, p.prevDate, holidays) && p.hhmm <= h.close))
-      message = `Market closed today (${p.day === 0 || p.day === 6 ? 'weekend' : 'holiday'}). ${exchange} trades ${h.open}–${h.close} IST on trading days.`;
-    else message = `Market closed. ${exchange} trades ${h.open}–${h.close} IST.`;
-  }
+  const message = isOpen ? null : ['MCX', 'COMEX'].includes(exchange)
+    ? 'Market is closed as per commodity timing rules.'
+    : `Market is closed as per ${exchange} timing rules.`;
+
   return { exchange, open: h.open, close: h.close, isOpen, message };
 }

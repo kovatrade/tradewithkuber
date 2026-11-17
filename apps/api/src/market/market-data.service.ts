@@ -1,3 +1,4 @@
+import { QuoteSnapshotService } from './quote-snapshot.service';
 import { DhanCatalogService } from './dhan-catalog.service';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
@@ -21,6 +22,11 @@ export interface Quote {
   prevCloseMinor: bigint;
   openMinor?: bigint;
   volume?: number;
+  lastTradeAt?: Date;
+  avgPriceMinor?: bigint;
+  lowerCircuitMinor?: bigint;
+  upperCircuitMinor?: bigint;
+  depth?: { bidQty: number; askQty: number; bidPrice: bigint; askPrice: bigint }[];
   ts: Date;
   source: 'SIMULATED' | 'DHAN';
 }
@@ -41,6 +47,12 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
   private quotes = new Map<string, Quote>();
   private meta = new Map<string, InstrumentRow>();
   private timer?: NodeJS.Timeout;
+  private snapshotTimer?: NodeJS.Timeout;
+  private refreshTimer?: NodeJS.Timeout;
+  private refreshPending?: Promise<void>;
+  private savePending?: Promise<void>;
+  private version = 0;
+  private savedVersion = 0;
   private listeners: Array<(q: Quote[]) => void> = [];
   private readonly history = new CandleStore();
   constructor(
@@ -48,15 +60,23 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     private readonly dhanFeed: DhanFeedService,
     private readonly dhanGlobalFeed: DhanGlobalFeedService,
     @Optional() private readonly catalog?:DhanCatalogService,
+    @Optional() private readonly snapshots?: QuoteSnapshotService,
   ) {}
 
   async onModuleInit() {
-    this.catalog?.onChange(async()=>{await this.reload();if(env().MARKET_FEED==='dhan')await this.startDhanFeed();});
+    this.catalog?.onChange(async()=>{await this.reload();if(env().MARKET_FEED==='dhan'){await this.startDhanFeed();void this.refreshSnapshots();}});
     await this.reload();
+    if (env().MARKET_FEED === 'dhan' && this.snapshots) {
+      for (const q of await this.snapshots.load()) if (this.meta.has(q.instrumentId)) this.quotes.set(q.instrumentId, q);
+    }
     if (process.env.NODE_ENV !== 'test') {
       const feedMode = env().MARKET_FEED;
       if (feedMode === 'dhan') {
         await this.startDhanFeed();
+        this.snapshots?.onCredentialsChange(() => { void this.refreshSnapshots(); });
+        void this.refreshSnapshots();
+        this.refreshTimer = setInterval(() => { void this.refreshSnapshots(); }, 60000);
+        this.snapshotTimer = setInterval(() => { void this.saveSnapshots(); }, 15000);
         if(env().DHAN_CATALOG_SYNC==='on')this.catalog?.startSync();
       }
       this.timer = setInterval(() => this.tick(), 1000);
@@ -98,20 +118,20 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
       }
       if (tick.high && tick.high > 0) q.highMinor = BigInt(Math.round(tick.high * 100));
       if (tick.low && tick.low > 0) q.lowMinor = BigInt(Math.round(tick.low * 100));
-      if (tick.volume !== undefined) {
-        q.volume = tick.volume;
-      }
+      if (tick.volume !== undefined) q.volume = tick.volume;
+      if (tick.avgPrice && tick.avgPrice > 0) q.avgPriceMinor = BigInt(Math.round(tick.avgPrice * 100));
+      if (tick.depth) q.depth = tick.depth.map(d => ({ bidQty: d.bidQty, askQty: d.askQty, bidPrice: BigInt(Math.round(d.bidPrice * 100)), askPrice: BigInt(Math.round(d.askPrice * 100)) }));
 
       // Previous-close/OHLC packets must not overwrite the latest traded price.
       if (!Number.isFinite(tick.ltp) || tick.ltp <= 0) {
-        void pubsub.publish(TOPIC.quotes, { quotes: [q] });
+        if (q.source === 'DHAN') { this.version++; void pubsub.publish(TOPIC.quotes, { quotes: [q] }); }
         return;
       }
       const ltpMinor = BigInt(Math.round(tick.ltp * 100));
 
       q.ltpMinor = ltpMinor;
-      q.bidMinor = tick.bid && tick.bid > 0 ? BigInt(Math.round(tick.bid * 100)) : ltpMinor;
-      q.askMinor = tick.ask && tick.ask > 0 ? BigInt(Math.round(tick.ask * 100)) : ltpMinor;
+      if (tick.bid && tick.bid > 0) q.bidMinor = BigInt(Math.round(tick.bid * 100));
+      if (tick.ask && tick.ask > 0) q.askMinor = BigInt(Math.round(tick.ask * 100));
 
       if (tick.high && tick.high > 0) {
         q.highMinor = BigInt(Math.round(tick.high * 100));
@@ -125,6 +145,7 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
         q.lowMinor = ltpMinor;
       }
 
+      if (tick.lastTradeAt && tick.lastTradeAt.getUTCFullYear() >= 2000) q.lastTradeAt = tick.lastTradeAt;
       q.ts = tick.timestamp;
       q.source = 'DHAN';
 
@@ -144,9 +165,54 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     }
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
+    if (this.snapshotTimer) clearInterval(this.snapshotTimer);
+    if (this.refreshTimer) clearInterval(this.refreshTimer);
+    await this.refreshPending;
+    await this.savePending;
+    await this.saveSnapshots();
     this.history.clear();
+  }
+
+  private async refreshSnapshots() {
+    if (!this.snapshots || this.refreshPending) return this.refreshPending;
+    this.refreshPending = (async () => {
+      if (this.catalog && !await this.catalog.usable()) return;
+      const start = Date.now();
+      const received = await this.snapshots!.refresh([...this.meta.values()]);
+      const changed: Quote[] = [];
+      for (const incoming of received) {
+        const current = this.quotes.get(incoming.instrumentId);
+        if (!this.meta.has(incoming.instrumentId)) continue;
+        if (current?.source === 'DHAN' && (current.ts.getTime() >= start - 20000 || (current.lastTradeAt && (!incoming.lastTradeAt || current.lastTradeAt > incoming.lastTradeAt)))) {
+          // A REST response must not replace a newer stream price or timestamp.
+          if (current.prevCloseMinor <= 0n && incoming.prevCloseMinor > 0n) { current.prevCloseMinor = incoming.prevCloseMinor; changed.push(current); }
+          continue;
+        }
+        const sessionDay = (d: Date) => new Date(d.getTime() + 19800000).toISOString().slice(0, 10);
+        if (current?.source === 'DHAN' && current.lastTradeAt && incoming.lastTradeAt && sessionDay(current.lastTradeAt) === sessionDay(incoming.lastTradeAt)) {
+          // Closed books sometimes omit OHLC/depth fields. Retain that session's last valid values.
+          if (incoming.prevCloseMinor <= 0n) incoming.prevCloseMinor = current.prevCloseMinor;
+          for (const key of ['bidMinor', 'askMinor', 'highMinor', 'lowMinor', 'openMinor', 'avgPriceMinor', 'lowerCircuitMinor', 'upperCircuitMinor'] as const) {
+            if (!(incoming[key] && incoming[key]! > 0n)) incoming[key] = current[key] as bigint;
+          }
+          if (!incoming.depth?.some(d => d.bidPrice > 0n || d.askPrice > 0n)) incoming.depth = current.depth;
+          incoming.volume ??= current.volume;
+        }
+        this.quotes.set(incoming.instrumentId, incoming); changed.push(incoming);
+      }
+      if (changed.length) this.emit(changed);
+    })().catch(error => this.log.warn(`Could not refresh quote snapshots: ${(error as Error).message}`)).finally(() => { this.refreshPending = undefined; });
+    return this.refreshPending;
+  }
+
+  private async saveSnapshots() {
+    if (!this.snapshots || this.version === this.savedVersion || this.savePending) return;
+    const version = this.version;
+    this.savePending = this.snapshots.save([...this.quotes.values()]).then(() => { this.savedVersion = version; })
+      .catch(() => { this.log.warn('Could not save last-known quotes; the next save will retry.'); }).finally(() => { this.savePending = undefined; });
+    await this.savePending;
   }
 
   feedStatus() {
@@ -155,11 +221,15 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
 
   /** Clear transient market data after a platform reset. */
   async clearAll() {
+    await this.refreshPending;
+    await this.savePending;
     this.history.clear();
     this.quotes.clear();
     this.meta.clear();
     this.dhanFeed.setSubscriptions([]);
     this.dhanGlobalFeed.setSubscriptions([]);
+    await this.snapshots?.clear();
+    this.savedVersion = this.version;
   }
 
   /** Load instrument metadata; candle history exists only in this process. */
@@ -180,10 +250,13 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
         askMinor: r.refPriceMinor + spread,
         highMinor: r.refPriceMinor,
         lowMinor: r.refPriceMinor,
-        prevCloseMinor: (r.refPriceMinor * 97n) / 100n,
+        prevCloseMinor: env().MARKET_FEED === 'dhan' ? 0n : (r.refPriceMinor * 97n) / 100n,
         ts: new Date(),
         source: 'SIMULATED',
       });
+    }
+    if (env().MARKET_FEED === 'dhan') {
+      for (const q of this.quotes.values()) if (q.source !== 'DHAN') Object.assign(q, { ltpMinor: 0n, bidMinor: 0n, askMinor: 0n, highMinor: 0n, lowMinor: 0n, prevCloseMinor: 0n });
     }
     if (env().MARKET_FEED === 'simulated') {
       for (const r of rows) {
@@ -233,6 +306,7 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
   }
 
   private emit(changed: Quote[]) {
+    if (changed.some(q => q.source === 'DHAN')) this.version++;
     for (const q of changed) {
       this.history.record(q.instrumentId, Number(q.ltpMinor), q.ts.getTime());
     }

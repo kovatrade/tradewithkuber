@@ -224,7 +224,7 @@ function roundToTick(v: number, tick: number) {
   return (Math.max(t, Math.round((v * 100) / t) * t) / 100).toFixed(2);
 }
 
-function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }: { allowAdvanced: boolean; instrument: Instrument; q?: { bid: string; ask: string; ltp: string }; initialSide: Side; initialQty: string }) {
+function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }: { allowAdvanced: boolean; instrument: Instrument; q?: { bid?: string; ask?: string; ltp: string }; initialSide: Side; initialQty: string }) {
   const demo = useAuth().me?.isDemo === true;
   const toast = useToast();
   const { prefs } = usePrefs();
@@ -238,7 +238,6 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
   useEffect(() => { if (!allowAdvanced) { setType('MARKET'); setPrice(''); } }, [allowAdvanced]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState(false);
-  const [closedModal, setClosedModal] = useState(false);
   const [sellModal, setSellModal] = useState<string | null>(null);
   const [idem, setIdem] = useState(newKey);
   const place = useMutation(`mutation($i:PlaceOrderInput!){ placeOrder(input:$i){ id status fillPrice rejectReason } }`);
@@ -281,7 +280,7 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
 
   const handleTradeClick = () => {
     if (closed) {
-      setClosedModal(true);
+      toast(session?.message ?? 'Market is closed as per timing rules.');
       return;
     }
     if (side === 'SELL' && held <= 0) {
@@ -388,9 +387,9 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
         <div className="kv"><span className="k">BRK</span><span className="num">{preview ? `₹${inr(preview.brokerage)}` : '—'}</span></div>
         <div className="kv"><span className="k">Intraday margin</span><span className="num w6">{preview ? `₹${inr(preview.intradayMargin)}` : '—'}</span></div>
         <div className="kv"><span className="k">C/F margin</span><span className="num">{preview ? `₹${inr(preview.carryForwardMargin)}` : '—'}</span></div>
-        {short && <div className="notice warn"><Icon name="info" size={16} />Not enough available balance for this order.</div>}
-        {closed && <div className="notice warn"><Icon name="info" size={16} />{session!.message} Orders placed now will be rejected.</div>}
-        <button className={`btn btn-lg btn-block ${side === 'BUY' ? 'btn-buy' : 'btn-sell'}`} disabled={!valid || !preview} onClick={handleTradeClick}>
+        {!closed && short && <div className="notice warn"><Icon name="info" size={16} />Not enough available balance for this order.</div>}
+
+        <button className={`btn btn-lg btn-block ${side === 'BUY' ? 'btn-buy' : 'btn-sell'}`} disabled={!!closed || !valid || !preview} onClick={handleTradeClick}>
           {side === 'BUY' ? 'Buy' : 'Sell'}{valid && preview ? ` ${n} @ ${type === 'MARKET' ? inr(side === 'BUY' ? q?.ask : q?.bid) : inr(price)}` : ''}
         </button>
         {demo && <p className="t3" style={{ textAlign: 'center' }}>Simulated order. Never sent to an exchange.</p>}
@@ -417,23 +416,7 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
           onConfirm={() => void submit()}
         />
       )}
-      {closedModal && (
-        <Dialog title="Market Closed" sub={session?.exchange ? `${session.exchange} Market Status` : 'Trading Unavailable'} onClose={() => setClosedModal(false)}>
-          <div className="stack" style={{ gap: 16 }}>
-            <div className="notice warn" style={{ margin: 0 }}>
-              <Icon name="info" size={18} />
-              <span>{session?.message || 'The market is currently closed for trading. Orders cannot be placed outside market hours.'}</span>
-            </div>
-            {session && (
-              <div className="card" style={{ padding: 12, background: 'var(--bg-subtle, rgba(255,255,255,0.03))', borderRadius: 8 }}>
-                <div className="t2 sm" style={{ marginBottom: 4 }}>Standard Market Timings (IST)</div>
-                <div className="num" style={{ fontSize: 15, fontWeight: 600 }}>{session.open} – {session.close} IST</div>
-              </div>
-            )}
-            <button className="btn btn-primary btn-block" onClick={() => setClosedModal(false)}>Understood</button>
-          </div>
-        </Dialog>
-      )}
+
       {sellModal && (
         <Dialog title="Cannot Sell Without Holdings" sub="Short selling is disabled" onClose={() => setSellModal(null)}>
           <div className="stack" style={{ gap: 16 }}>

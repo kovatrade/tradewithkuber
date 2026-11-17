@@ -41,7 +41,7 @@ export default function StockScreen() {
   const closeVal = xq.close;
   const highVal = q?.high;
   const lowVal = q?.low;
-  const rules = useQuery<{ tradingRules: { minQty: number; maxQtyPerOrder: number; maxQtyPerInstrument: number; sessions: { exchange: string; open: string; close: string; isOpen: boolean; message?: string }[] } }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument sessions { exchange open close isOpen message } } }`);
+  const rules = useQuery<{ tradingRules: { minQty: number; maxQtyPerOrder: number; maxQtyPerInstrument: number; sessions: { exchange: string; open: string; close: string; isOpen: boolean; message?: string }[] } }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument sessions { exchange open close isOpen message } } }`, undefined, 15000);
   const rl = rules.data?.tradingRules;
   const margin = useQuery<{ orderPreview: { intradayMargin: string } }>(`query($i:ID!){ orderPreview(instrumentId:$i, side:BUY, quantity:1){ intradayMargin } }`, { i: id }, 15000);
   const allowTrade = i && rl ? (rl.sessions.find((x) => x.exchange === i.exchange)?.isOpen ?? true) : undefined;
@@ -50,7 +50,7 @@ export default function StockScreen() {
   const onTradePress = (s: Side) => {
     if (allowTrade === false) {
       const sess = rl?.sessions.find((x: any) => x.exchange === i?.exchange);
-      Alert.alert('Market Closed', sess ? `${i?.exchange} market is currently closed. Trading hours are ${sess.open}–${sess.close} IST.` : 'Market is currently closed for trading.');
+      Alert.alert('Market Closed', sess?.message ?? 'Market is closed as per timing rules.');
       return;
     }
     setOrder(s);
@@ -206,12 +206,12 @@ function QtyChip({ text, onPress, tone }: { text: string; onPress?: () => void; 
   );
 }
 
-function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }: { allowAdvanced: boolean; i: I; q?: { bid: string; ask: string; ltp: string }; side: Side; setSide: (s: Side) => void; initialQty: string; onClose: () => void }) {
+function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }: { allowAdvanced: boolean; i: I; q?: { bid?: string; ask?: string; ltp: string }; side: Side; setSide: (s: Side) => void; initialQty: string; onClose: () => void }) {
   const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const priv = usePrivate();
   const sum = useSummary();
-  const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange open close isOpen message } } }`);
+  const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange open close isOpen message } } }`, undefined, 15000);
   const pos = useQuery<{ positions: { instrumentId: string; netQty: number }[] }>(`{ positions { instrumentId netQty } }`);
   const [type, setType] = useState<OType>('MARKET');
   const [qty, setQty] = useState(initialQty);
@@ -277,7 +277,7 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
               <Button key={s} block size="sm" kind={side === s ? (s === 'BUY' ? 'buy' : 'sell') : 'ghost'} title={s === 'BUY' ? 'Buy' : 'Sell'} onPress={() => setSide(s)} />
             ))}
           </View>
-          {session && (
+          {session?.isOpen && (
             <Row gap={6}><View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: session.isOpen ? t.pos : t.neg }} /><T v="xs" c="text2">{session.isOpen ? `${i.exchange} open · ${session.open}–${session.close} IST` : session.message}</T></Row>
           )}
           <Chips fill value={type} onChange={(k) => { setType(k); setPrice(''); }} items={allowAdvanced ? [{ k: 'MARKET', label: 'Market' }, { k: 'LIMIT', label: 'Limit' }, { k: 'STOP_LOSS', label: 'SL' }] : [{ k: 'MARKET', label: 'Market' }]} />
@@ -312,12 +312,10 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
           {isTrig(type) && <T v="xs">{TYPE_LABEL[type]}: when the LTP {firesOnFall(type, side) ? 'falls to' : 'rises to'} your trigger, the order is filled at the LTP.</T>}
           <Divider />
           <Lines lines={[ ['Market price', q ? `₹${inr(q.ltp)}` : '—'], ['Order value', preview ? `₹${inr(preview.value)}` : '—'], ['BRK', preview ? `₹${inr(preview.brokerage)}` : '—'], ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'], ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'] ]} />
-          {short && <Notice tone="warn">Not enough available balance for this order.</Notice>}
-          {session && !session.isOpen && <Notice tone="warn">{session.message} Orders placed now will be rejected.</Notice>}
-          {err && <Notice tone="err">{err}</Notice>}
-          <Button size="lg" kind={side === 'BUY' ? 'buy' : 'sell'} title={valid && preview ? `${side === 'BUY' ? 'Buy' : 'Sell'} ${n} @ ${type === 'MARKET' ? inr(side === 'BUY' ? q?.ask : q?.bid) : inr(price)}` : `Review ${side === 'BUY' ? 'buy' : 'sell'}`} disabled={!valid || !preview} onPress={() => {
+          {session && !session.isOpen ? <Notice tone="warn">{session.message}</Notice> : err ? <Notice tone="err">{err}</Notice> : short ? <Notice tone="warn">Not enough available balance for this order.</Notice> : null}
+          <Button size="lg" kind={side === 'BUY' ? 'buy' : 'sell'} title={valid && preview ? `${side === 'BUY' ? 'Buy' : 'Sell'} ${n} @ ${type === 'MARKET' ? inr(side === 'BUY' ? q?.ask : q?.bid) : inr(price)}` : `Review ${side === 'BUY' ? 'buy' : 'sell'}`} disabled={session?.isOpen === false || !valid || !preview} onPress={() => {
             if (session && !session.isOpen) {
-              Alert.alert('Market Closed', session.message || `Trading is closed for ${i.exchange}. Market hours are ${session.open}–${session.close} IST.`, [{ text: 'OK' }]);
+              Alert.alert('Market Closed', session.message || 'Market is closed as per timing rules.', [{ text: 'OK' }]);
               return;
             }
             if (side === 'SELL' && held <= 0) {
@@ -342,10 +340,10 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
           <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['BRK', `₹${inr(preview.brokerage)}`], ['Intraday margin', `₹${inr(preview.intradayMargin)}`], ['C/F margin', `₹${inr(preview.carryForwardMargin)}`]]} />
           {type === 'MARKET' && <Notice>{demo ? 'Market orders execute at the best simulated price, which can differ slightly from the estimate.' : 'Market orders execute at the best available price, which can differ slightly from the estimate.'}</Notice>}
           {isTrig(type) && <Notice>When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.</Notice>}
-          {err && <Notice tone="err">{err}</Notice>}
+          {session?.isOpen === false ? <Notice tone="warn">{session.message}</Notice> : err && <Notice tone="err">{err}</Notice>}
           <Row>
             <Button block size="lg" title="Edit" onPress={() => setReview(false)} />
-            <Button block size="lg" kind={side === 'BUY' ? 'buy' : 'sell'} title={`Confirm ${side === 'BUY' ? 'buy' : 'sell'}`} busy={busy} onPress={place} />
+            <Button block size="lg" kind={side === 'BUY' ? 'buy' : 'sell'} title={`Confirm ${side === 'BUY' ? 'buy' : 'sell'}`} busy={busy} disabled={session?.isOpen === false} onPress={place} />
           </Row>
         </>
       )}

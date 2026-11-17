@@ -2,7 +2,7 @@
  * Super Admin tools on mobile: accounts (create, approve, suspend/reactivate, assign broker, reset password,
  * sign out), security (audit chain check, reconciliation, sign-in and consent logs), and the broker's
  * commissions report. Sensitive actions ask for step-up verification through the API, like on the web.
- * Configuration changes and log archives stay on the web portal.
+ * Administration tools also have native destinations in Settings.
  */
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -323,7 +323,7 @@ function Checks() {
     <View style={{ gap: S[5] }}>
       <Section title="Audit trail">
         <T v="sm" c="text2">Every audit event is chained to the one before it with SHA-256. Checking re-computes the whole chain.</T>
-        {chain && <Notice tone={chain.ok ? 'ok' : 'err'}>{chain.ok ? `Intact: ${chain.checked.toLocaleString('en-IN')} events checked.` : `Broken at event #${chain.brokenAtSeq}. Investigate on the web portal.`}</Notice>}
+        {chain && <Notice tone={chain.ok ? 'ok' : 'err'}>{chain.ok ? `Intact: ${chain.checked.toLocaleString('en-IN')} events checked.` : `Broken at event #${chain.brokenAtSeq}. Open the audit trail to investigate.`}</Notice>}
         <Button title="Check the audit chain" icon="shield" busy={busy === 'chain'} onPress={async () => {
           setBusy('chain');
           try { const d = await gql<{ verifyAuditChain: { ok: boolean; checked: number; brokenAtSeq?: string } }>(`{ verifyAuditChain { ok checked brokenAtSeq } }`); setChain(d.verifyAuditChain); } catch (e) { toast((e as Error).message, true); }
@@ -341,7 +341,7 @@ function Checks() {
           <ListRow key={r.id} left={<IconMark icon={r.ok ? 'check' : 'alert'} tone={r.ok ? 'pos' : 'neg'} />} title={r.ok ? 'Passed' : 'Problems found'} sub={when(r.createdAt)} right={<Badge text={r.ok ? 'OK' : 'Check'} tone={r.ok ? 'ok' : 'bad'} />} />
         ))}
       </Section>
-      <T v="xs" style={{ textAlign: 'center' }}>Configuration changes and log archives are on the web portal.</T>
+      <Button title="Configuration" onPress={() => router.push('/admin-tools/config')} /><Button title="Archives & retention" onPress={() => router.push('/admin-tools/archives')} /><Button title="Audit details" onPress={() => router.push('/admin-tools/audit')} /><Button title="Reconciliation results" onPress={() => router.push('/admin-tools/reconciliation')} />
     </View>
   );
 }

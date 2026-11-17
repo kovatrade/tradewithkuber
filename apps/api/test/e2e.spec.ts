@@ -719,8 +719,8 @@ describe('market hours (IST)', () => {
     expect(sessionStatus('NSE', S, [], at('2026-10-26T09:17:00+05:30')).isOpen).toBe(true);
     expect(sessionStatus('NSE', S, [], at('2026-10-26T15:31:00+05:30')).isOpen).toBe(false);
     const sat = sessionStatus('NSE', S, [], at('2026-10-31T11:00:00+05:30'));
-    expect(sat).toMatchObject({ isOpen: false, message: expect.stringMatching(/weekend/) });
-    expect(sessionStatus('NSE', S, ['2026-11-09'], at('2026-11-09T11:00:00+05:30')).message).toMatch(/holiday/);
+    expect(sat).toMatchObject({ isOpen: false, message: 'Market is closed as per NSE timing rules.' });
+    expect(sessionStatus('NSE', S, ['2026-11-09'], at('2026-11-09T11:00:00+05:30')).message).toBe('Market is closed as per NSE timing rules.');
   });
   it('handles a session that runs past midnight', () => {
     expect(sessionStatus('INTL', S, [], at('2026-10-27T01:00:00+05:30')).isOpen).toBe(true); // Tue 01:00 = Monday's session

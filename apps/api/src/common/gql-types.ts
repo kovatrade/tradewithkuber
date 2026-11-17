@@ -62,13 +62,13 @@ export class Quote {
   @Field(() => ID) instrumentId: string;
   @Field() symbol: string;
   @Field() ltp: string;
-  @Field() bid: string;
-  @Field() ask: string;
-  @Field() high: string;
-  @Field() low: string;
-  @Field() change: string;
-  @Field() changePct: string;
-  @Field() ts: Date;
+  @Field({ nullable: true }) bid?: string;
+  @Field({ nullable: true }) ask?: string;
+  @Field({ nullable: true }) high?: string;
+  @Field({ nullable: true }) low?: string;
+  @Field({ nullable: true }) change?: string;
+  @Field({ nullable: true }) changePct?: string;
+  @Field(() => Date, { nullable: true }) ts?: Date;
   @Field({ description: 'Where this price came from. "SIMULATED" prices are not live market data.' }) source: string;
   @Field({ nullable: true }) open?: string;
   @Field({ nullable: true }) close?: string;
@@ -391,7 +391,7 @@ export class MarketPulseItem {
   @Field() name: string;
   @Field() exchange: string;
   @Field() ltp: string;
-  @Field() change: string;
-  @Field() changePct: string;
+  @Field({ nullable: true }) change?: string;
+  @Field({ nullable: true }) changePct?: string;
   @Field({ description: '"SIMULATED" prices are not live market data.' }) source: string;
 }

@@ -32,7 +32,7 @@ const val = (v?: string | number | null) => (v === undefined || v === null || v 
 export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAdvanced = false, onClose }: { allowAdvanced?: boolean; instrumentId: string; initialSide?: Side; initialQty?: number; onClose: () => void }) {
   const t = useTheme();
   const inst = useQuery<{ instrument: Inst }>(`query($id:ID!){ instrument(id:$id){ id symbol name exchange segment expiry lotSize tickSize lotClass lotLabel category } }`, { id: instrumentId });
-  const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange isOpen message } } }`);
+  const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange isOpen message } } }`, undefined, 15000);
   const extra = useQuery<{ quotes: Extra[] }>(`query($i:[ID!]!){ quotes(instrumentIds:$i){ open close volume avgPrice } }`, { i: [instrumentId] }, 5000);
   const q = useLiveQuotes([instrumentId])[instrumentId];
   const x = extra.data?.quotes[0];
@@ -46,19 +46,21 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
   const [err, setErr] = useState<string | null>(null);
   const [key, setKey] = useState(newKey);
   useEffect(() => { setKey(newKey()); }, [type, qty, price]);
+  const session = i && r ? r.sessions.find((s) => s.exchange === i.exchange) : undefined;
+  const closed = session?.isOpen === false;
   const n = Number(qty);
   const [previewSide, setPreviewSide] = useState<Side>(initialSide ?? 'BUY');
   const estimate = useQuery<{ orderPreview: { price: string; value: string; brokerage: string; intradayMargin: string; carryForwardMargin: string } }>(
     `query($id:ID!,$s:OrderSide!,$n:Int!,$l:String,$t:String){orderPreview(instrumentId:$id,side:$s,quantity:$n,limitPrice:$l,triggerPrice:$t){price value brokerage intradayMargin carryForwardMargin}}`,
-    { id: instrumentId, s: previewSide, n: Number.isSafeInteger(n) && n > 0 ? n : 1, l: type === 'LIMIT' ? price || undefined : undefined, t: type === 'STOP_LOSS' ? price || undefined : undefined }, 3000, !i || !Number.isSafeInteger(n) || n <= 0 || (type !== 'MARKET' && !price));
+    { id: instrumentId, s: previewSide, n: Number.isSafeInteger(n) && n > 0 ? n : 1, l: type === 'LIMIT' ? price || undefined : undefined, t: type === 'STOP_LOSS' ? price || undefined : undefined }, closed ? 30000 : 3000, !i || !Number.isSafeInteger(n) || n <= 0 || (type !== 'MARKET' && !price));
   const preview = estimate.data?.orderPreview;
 
-  const session = i && r ? r.sessions.find((s) => s.exchange === i.exchange) : undefined;
+
   const qtyErr = !qty ? 'Enter lots' : !Number.isInteger(n) || n <= 0 ? 'Whole lots only' : r && n > r.maxQtyPerOrder ? `Max ${r.maxQtyPerOrder} lots per order` : null;
   const priceErr = type === 'MARKET' ? null : !/^\d+(\.\d{1,2})?$/.test(price) ? 'Enter a price' : null;
 
   const place = async (side: Side) => {
-    if (!i || qtyErr || priceErr) return;
+    if (!i || qtyErr || priceErr || closed) return;
     setPreviewSide(side); setBusy(side); setErr(null); tap();
     try {
       const d = await gql<{ placeOrder: { status: string; fillPrice?: string; rejectReason?: string } }>(
@@ -94,8 +96,8 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
       <Spread style={{ alignItems: 'center' }}>
         <View style={{ gap: 2 }}>
-          <T v="numLg" c={toneOfValue(q?.change) === 'neg' ? 'neg' : 'pos'}>{inr(q?.ltp)}</T>
-          <T v="sm" c={toneOfValue(q?.change) === 'neg' ? 'neg' : 'pos'}>{inr(q?.change, true)} ({inr(q?.changePct, true)}%)</T>
+          <T v="numLg" c={toneOfValue(q?.change) === 'flat' ? 'text2' : toneOfValue(q?.change) === 'neg' ? 'neg' : 'pos'}>{inr(q?.ltp)}</T>
+          <T v="sm" c={toneOfValue(q?.change) === 'flat' ? 'text2' : toneOfValue(q?.change) === 'neg' ? 'neg' : 'pos'}>{inr(q?.change, true)} ({inr(q?.changePct, true)}%)</T>
         </View>
         <Row gap={S[2]}>{box('SELL')}{box('BUY')}</Row>
       </Spread>
@@ -120,12 +122,10 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
         ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'],
         ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'],
       ]} />
-      {estimate.error && <Notice tone="err">{estimate.error}</Notice>}
-      {session && !session.isOpen && session.message ? <Notice tone="warn">{session.message}</Notice> : null}
-      {err ? <Notice tone="err">{err}</Notice> : null}
+      {(closed || err || estimate.error) && <Notice tone={closed ? 'warn' : 'err'}>{closed ? session?.message ?? 'Market is closed as per timing rules.' : err ?? estimate.error}</Notice>}
       <Row>
-        <View style={{ flex: 1 }}><Button block size="lg" kind="sell" title="SELL" busy={busy === 'SELL'} disabled={!i || !q || !!qtyErr || !!priceErr || !!busy} onPress={() => void place('SELL')} /></View>
-        <View style={{ flex: 1 }}><Button block size="lg" kind="buy" title="BUY" busy={busy === 'BUY'} disabled={!i || !q || !!qtyErr || !!priceErr || !!busy} onPress={() => void place('BUY')} /></View>
+        <View style={{ flex: 1 }}><Button block size="lg" kind="sell" title="SELL" busy={busy === 'SELL'} disabled={closed || !i || !q || !!qtyErr || !!priceErr || !!busy} onPress={() => void place('SELL')} /></View>
+        <View style={{ flex: 1 }}><Button block size="lg" kind="buy" title="BUY" busy={busy === 'BUY'} disabled={closed || !i || !q || !!qtyErr || !!priceErr || !!busy} onPress={() => void place('BUY')} /></View>
       </Row>
 
       <Row gap={S[2]}>

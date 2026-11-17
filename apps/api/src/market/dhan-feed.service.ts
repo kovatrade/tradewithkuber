@@ -13,6 +13,8 @@ export interface DhanTick {
   close?: number;
   prevClose?: number;
   volume?: number;
+  avgPrice?: number;
+  depth?: { bidQty: number; askQty: number; bidPrice: number; askPrice: number }[];
   bid?: number;
   ask?: number;
   timestamp: Date;
@@ -256,6 +258,8 @@ export class DhanFeedService implements OnModuleDestroy {
           low,
           close,
           volume,
+          avgPrice: buf.readFloatLE(18),
+          depth: responseCode === 8 ? Array.from({ length: 5 }, (_, n) => { const p = 62 + n * 20; return { bidQty: buf.readUInt32LE(p), askQty: buf.readUInt32LE(p + 4), bidPrice: buf.readFloatLE(p + 12), askPrice: buf.readFloatLE(p + 16) }; }) : undefined,
           bid: responseCode === 8 ? buf.readFloatLE(74) : undefined,
           ask: responseCode === 8 ? buf.readFloatLE(78) : undefined,
           timestamp: new Date(),

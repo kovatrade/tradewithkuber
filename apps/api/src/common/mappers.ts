@@ -22,9 +22,12 @@ export function toInstrument(r: InstrumentRow, q?: QuoteData | null): Instrument
 }
 
 export function toQuote(q: QuoteData): Quote {
-  const ch = q.ltpMinor - q.prevCloseMinor;
-  const pct = q.prevCloseMinor > 0n ? (ch * 10000n) / q.prevCloseMinor : 0n;
-  const openMinor = q.openMinor && q.openMinor > 0n ? q.openMinor : q.prevCloseMinor;
+  const ch = q.prevCloseMinor > 0n ? q.ltpMinor - q.prevCloseMinor : undefined;
+  const numerator = (ch ?? 0n) * 10000n;
+  const absolute = numerator < 0n ? -numerator : numerator;
+  const rounded = q.prevCloseMinor > 0n ? (absolute + q.prevCloseMinor / 2n) / q.prevCloseMinor : undefined;
+  const pct = rounded === undefined ? undefined : numerator < 0n ? -rounded : rounded;
+  const openMinor = q.openMinor && q.openMinor > 0n ? q.openMinor : q.source === 'SIMULATED' ? q.prevCloseMinor : 0n;
 
   // VWAP / Average Price: (H + L + C) / 3
   const avgPriceMinor = (q.highMinor + q.lowMinor + q.ltpMinor) / 3n;
@@ -40,7 +43,7 @@ export function toQuote(q: QuoteData): Quote {
   let totalBidQty = 0;
   let totalAskQty = 0;
 
-  for (let idx = 0; idx < 5; idx++) {
+  for (let idx = 0; idx < (q.source === 'DHAN' ? 0 : 5); idx++) {
     const bPrice = q.bidMinor - step * BigInt(idx);
     const aPrice = q.askMinor + step * BigInt(idx);
     const seed = Number((q.ltpMinor + BigInt(idx * 23)) % 19n);
@@ -56,28 +59,35 @@ export function toQuote(q: QuoteData): Quote {
     });
   }
 
+  if (q.source === 'DHAN') {
+    for (const row of q.depth ?? []) {
+      totalBidQty += row.bidQty; totalAskQty += row.askQty;
+      levels.push({ bidQty: row.bidQty, askQty: row.askQty, bidPrice: formatMoney(row.bidPrice), askPrice: formatMoney(row.askPrice) });
+    }
+  }
+
   return {
     instrumentId: q.instrumentId,
     symbol: q.symbol,
     ltp: formatMoney(q.ltpMinor),
-    bid: formatMoney(q.bidMinor),
-    ask: formatMoney(q.askMinor),
-    high: formatMoney(q.highMinor),
-    low: formatMoney(q.lowMinor),
-    change: formatMoney(ch),
-    changePct: formatMoney(pct),
-    ts: q.ts,
+    bid: q.bidMinor > 0n ? formatMoney(q.bidMinor) : undefined,
+    ask: q.askMinor > 0n ? formatMoney(q.askMinor) : undefined,
+    high: q.highMinor > 0n ? formatMoney(q.highMinor) : undefined,
+    low: q.lowMinor > 0n ? formatMoney(q.lowMinor) : undefined,
+    change: ch === undefined ? undefined : formatMoney(ch),
+    changePct: pct === undefined ? undefined : formatMoney(pct),
+    ts: q.lastTradeAt ?? (q.ts.getTime() > 0 ? q.ts : undefined),
     source: q.source,
-    open: formatMoney(openMinor),
-    close: formatMoney(q.prevCloseMinor),
-    volume: q.volume ? String(q.volume) : String(Math.floor(5000 + Number(q.ltpMinor % 9000n))),
-    avgPrice: formatMoney(avgPriceMinor),
-    lowerCircuit: formatMoney(lowerCircuitMinor),
-    upperCircuit: formatMoney(upperCircuitMinor),
+    open: openMinor > 0n ? formatMoney(openMinor) : undefined,
+    close: q.prevCloseMinor > 0n ? formatMoney(q.prevCloseMinor) : undefined,
+    volume: q.volume !== undefined ? String(q.volume) : q.source === 'SIMULATED' ? String(Math.floor(5000 + Number(q.ltpMinor % 9000n))) : undefined,
+    avgPrice: q.source === 'SIMULATED' ? formatMoney(avgPriceMinor) : q.avgPriceMinor ? formatMoney(q.avgPriceMinor) : undefined,
+    lowerCircuit: q.source === 'SIMULATED' ? formatMoney(lowerCircuitMinor) : q.lowerCircuitMinor ? formatMoney(q.lowerCircuitMinor) : undefined,
+    upperCircuit: q.source === 'SIMULATED' ? formatMoney(upperCircuitMinor) : q.upperCircuitMinor ? formatMoney(q.upperCircuitMinor) : undefined,
     depth: {
       levels,
-      totalBidQty: totalBidQty > 0 ? totalBidQty : 198,
-      totalAskQty: totalAskQty > 0 ? totalAskQty : 266,
+      totalBidQty,
+      totalAskQty,
     },
   };
 }

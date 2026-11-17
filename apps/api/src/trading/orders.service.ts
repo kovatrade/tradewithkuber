@@ -109,7 +109,7 @@ export class OrdersService implements OnModuleInit {
       enforced: active,
       list: Object.keys(hours).map((ex) => {
         const st = sessionStatus(ex, hours as Sessions, holidays);
-        return active ? st : { ...st, isOpen: true, message: null };
+        return st;
       }),
     };
   }
@@ -117,16 +117,19 @@ export class OrdersService implements OnModuleInit {
   /** null when the exchange is open (or hours are not enforced), otherwise the reason. */
   private async closedReason(exchange: string): Promise<string | null> {
     const s = await this.sessions();
-    return s.list.find((x) => x.exchange === exchange)?.message ?? null;
+    return s.enforced ? s.list.find((x) => x.exchange === exchange)?.message ?? null : null;
   }
 
   /** Quote a would-be order (for the trade ticket): value and margins. Read-only. */
   async preview(instrumentId: string, side: Side, quantity: number, limitPriceMinor?: bigint, triggerPriceMinor?: bigint) {
     if(env().MARKET_FEED==='dhan'&&!this.market.hasVerifiedCatalog())throw badInput('Instrument catalog is unavailable or out of date. Wait for a successful refresh.');
     const q = this.market.quote(instrumentId);
-    if(env().MARKET_FEED==='dhan' && (!q || q.source!=='DHAN' || Date.now()-q.ts.getTime()>60000))throw badInput('Wait for a fresh live quote before previewing this order.');
+    const inst = this.market.instrument(instrumentId);
+    const calendar = await this.sessions();
+    const closed = calendar.list.find(s => s.exchange === inst?.exchange)?.isOpen === false;
+    if(env().MARKET_FEED==='dhan' && (!q || q.source!=='DHAN' || (!closed && Date.now()-q.ts.getTime()>60000)))throw badInput(closed ? 'Market is closed as per timing rules.' : 'Live prices are updating. Please try again.');
     if (!q) throw notFound('Instrument');
-    const price = limitPriceMinor ?? triggerPriceMinor ?? this.venue.marketFillPrice(side, q);
+    const price = limitPriceMinor ?? triggerPriceMinor ?? (closed && (side === 'BUY' ? q.askMinor : q.bidMinor) <= 0n ? q.ltpMinor : this.venue.marketFillPrice(side, q));
     const value = price * BigInt(quantity);
     return {
       priceMinor: price,
@@ -185,7 +188,7 @@ export class OrdersService implements OnModuleInit {
       if(!inst.active || (inst.expiry && inst.expiry <= new Date())) throw badInput('This contract is inactive or expired. Choose an available instrument.');
       if(env().MARKET_FEED==='dhan'&&!this.market.hasVerifiedCatalog())throw badInput('Instrument catalog is unavailable or out of date. Wait for a successful refresh.');
       const q = this.market.quote(inst.id)!;
-      if (env().MARKET_FEED === 'dhan' && (!q || q.source !== 'DHAN' || Date.now() - q.ts.getTime() > 60_000)) throw badInput('Live market data is unavailable or stale. Wait for a fresh quote and try again.');
+      if (env().MARKET_FEED === 'dhan' && (!q || q.source !== 'DHAN' || Date.now() - q.ts.getTime() > 60_000 || (input.side === 'BUY' ? q.askMinor : q.bidMinor) <= 0n)) throw badInput(closed ?? 'Live prices are updating. Please try again.');
       const [pos] = await tx
         .select()
         .from(positions)
