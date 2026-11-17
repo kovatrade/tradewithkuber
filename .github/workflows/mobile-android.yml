@@ -1,4 +1,4 @@
-# Builds an installable Android APK of the mobile app on GitHub's servers (no Expo account needed).
+# Builds separate small 64-bit and 32-bit Android APKs of the mobile app on GitHub's servers (no Expo account needed).
 # Runs on every push to main that touches apps/mobile, or by hand: Actions → mobile-android → Run workflow.
 # The APK is attached to the run as an artifact ("the-k-android-<commit>") and, when the APP_RELEASE_TOKEN secret is
 # set, published to the app download page (/download) automatically.
@@ -23,6 +23,10 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, armeabi-v7a]
     defaults: { run: { working-directory: apps/mobile } }
     env:
       EXPO_NO_TELEMETRY: '1'
@@ -38,7 +42,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run test:notifications
+      - run: node --test test/*.test.cjs
+      - run: python3 -m unittest discover -s test -p 'test_*.py'
       - name: Configure Firebase Android app
         env:
           FIREBASE_CONFIG: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
@@ -87,13 +92,19 @@ jobs:
           PY
       - name: Build the APK
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=${{ matrix.abi }} --no-daemon --stacktrace --max-workers=2
       - name: Name the APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk "the-k-${GITHUB_SHA::7}.apk"
+        run: cp android/app/build/outputs/apk/release/app-release.apk "the-k-${{ matrix.abi }}-${GITHUB_SHA::7}.apk"
+      - name: Check APK size and architecture
+        run: python3 scripts/apk-size-report.py android/app/build/outputs/apk/release/app-release.apk --expected-abi '${{ matrix.abi }}' --max-mb 20 --report apk-size-${{ matrix.abi }}.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: the-k-android-${{ github.sha }}
-          path: apps/mobile/the-k-*.apk
+          name: the-k-android-${{ matrix.abi }}-${{ github.sha }}
+          path: |
+            apps/mobile/the-k-*.apk
+            apps/mobile/apk-size-*.json
+            apps/mobile/android/app/build/outputs/mapping/release/mapping.txt
           retention-days: 30
       # Publish to the app download page (https://<server>/download). Needs the repository secret APP_RELEASE_TOKEN
       # (same value as APP_RELEASE_CI_TOKEN on the server). Skipped when the secret is missing or for other branches.
@@ -107,10 +118,10 @@ jobs:
           if [ -z "$TOKEN" ]; then echo "APP_RELEASE_TOKEN secret not set: not publishing to the download page."; exit 0; fi
           VERSION="$(node -p "require('./app.json').expo.version") (build ${GITHUB_RUN_NUMBER})"
           NOTES="$(printf '%s' "${COMMIT_MSG:-Build ${GITHUB_SHA::7}}" | head -n1 | cut -c1-300)"
-          Q="version=$(node -p 'encodeURIComponent(process.argv[1])' "$VERSION")&notes=$(node -p 'encodeURIComponent(process.argv[1])' "$NOTES")"
+          Q="version=$(node -p 'encodeURIComponent(process.argv[1])' "$VERSION")&notes=$(node -p 'encodeURIComponent(process.argv[1])' "$NOTES")&abi=${{ matrix.abi }}"
           APK=$(ls the-k-*.apk | head -n1)
           echo "Publishing $APK as $VERSION to $SERVER"
-          curl --fail-with-body -sS --retry 3 --retry-connrefused --max-time 900 -X POST "$SERVER/app-files/ci-upload?$Q" \
+          curl --fail-with-body -sS --retry 3 --retry-connrefused --max-time 900 -X POST "$SERVER/app-files/ci-upload/variant?$Q" \
             -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/vnd.android.package-archive" \
             --data-binary "@$APK"
           echo

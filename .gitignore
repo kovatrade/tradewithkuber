@@ -17,3 +17,10 @@ apps/mobile/ios/
 **/GoogleService-Info.plist
 **/*firebase-adminsdk*.json
 **/*service-account*.json
+
+# Python APK analysis/test bytecode
+__pycache__/
+
+# Generated mobile release artifacts
+/apps/mobile/the-k-*.apk
+/apps/mobile/apk-size-*.json

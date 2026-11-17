@@ -253,6 +253,13 @@
       "when": 1794839997039,
       "tag": "0035_device_account_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794906043832,
+      "tag": "0036_apk_abi",
+      "breakpoints": true
     }
   ]
 }

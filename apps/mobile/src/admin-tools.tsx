@@ -879,6 +879,7 @@ function AdminActivity() {
   );
 }
 interface Release {
+  abi?: string;
   id: string;
   platform: string;
   version: string;
@@ -895,8 +896,9 @@ function Releases() {
   const q = useQuery<{
     appReleases: { uploadsEnabled: boolean; maxUploadMb: number; autoPublish: boolean; history: Release[] };
   }>(
-    `{appReleases(limit:30){uploadsEnabled maxUploadMb autoPublish history{id platform version notes fileName fileSize sha256 active url downloadPath createdAt}}}`,
+    `{appReleases(limit:30){uploadsEnabled maxUploadMb autoPublish history{id platform abi version notes fileName fileSize sha256 active url downloadPath createdAt}}}`,
   );
+  const [abi, setAbi] = useState('arm64-v8a');
   const action = useAction();
   const [file, setFile] = useState<File | null>(null),
     [version, setVersion] = useState(''),
@@ -909,8 +911,8 @@ function Releases() {
     if (!file || !info) return;
     if (file.size > info.maxUploadMb * 1024 * 1024) throw new Error(`APK exceeds ${info.maxUploadMb} MB.`);
     const d = await gql<{ createApkUploadLink: { path: string } }>(
-      `mutation($v:String!,$n:String){createApkUploadLink(version:$v,notes:$n){path}}`,
-      { v: version.trim(), n: notes || undefined },
+      `mutation($v:String!,$n:String,$a:String){createApkUploadLink(version:$v,notes:$n,abi:$a){path}}`,
+      { v: version.trim(), n: notes || undefined, a: abi },
     );
     const response = await expoFetch(API_URL + d.createApkUploadLink.path, {
       method: 'POST',
@@ -944,6 +946,15 @@ function Releases() {
               : 'Manual publishing is enabled when server upload storage is configured.'}
           </Notice>
           <Section title="Android APK">
+            <Chips
+              value={abi}
+              onChange={setAbi}
+              items={[
+                { k: 'arm64-v8a', label: '64-bit' },
+                { k: 'armeabi-v7a', label: '32-bit' },
+                { k: 'universal', label: 'Universal' },
+              ]}
+            />
             <Field label="Version" value={version} onChangeText={setVersion} />
             <Field label="Release notes" value={notes} onChangeText={setNotes} />
             <Button
@@ -1003,7 +1014,9 @@ function Releases() {
             {info.history.map((r) => (
               <View key={r.id} style={{ gap: 6, paddingVertical: 10 }}>
                 <T w="700">
-                  {r.platform} · {r.version} · {r.active ? 'Published' : 'Removed'}
+                  {r.platform}
+                  {r.abi === 'armeabi-v7a' ? ' (32-bit)' : r.abi === 'arm64-v8a' ? ' (64-bit)' : ''} · {r.version} ·{' '}
+                  {r.active ? 'Published' : 'Removed'}
                 </T>
                 <T v="xs">
                   {when(r.createdAt)} · {r.fileName ?? r.url ?? ''}

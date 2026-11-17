@@ -16,9 +16,27 @@ module.exports = ({ config }) => {
       // Expo composes manifest mods in reverse order. Set our vector icons after its defaults.
       // Firebase native libraries are autolinked even when app configuration is missing.
       './plugins/with-firebase-notifications',
-      ...(config.plugins || []).filter(plugin => (Array.isArray(plugin) ? plugin[0] : plugin) !== 'expo-build-properties'),
-      ['expo-notifications', { defaultChannel: 'activity', color: '#08a77b', enableBackgroundRemoteNotifications: true }],
-      ['expo-build-properties', { ios: { useFrameworks: 'static' } }],
+      './plugins/with-android-release-optimization',
+      ...(config.plugins || []).filter(
+        (plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) !== 'expo-build-properties',
+      ),
+      [
+        'expo-notifications',
+        { defaultChannel: 'activity', color: '#08a77b', enableBackgroundRemoteNotifications: true },
+      ],
+      [
+        'expo-build-properties',
+        {
+          android: {
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            enableBundleCompression: true,
+            // The APK is downloaded directly from our website. Compress its native libraries too.
+            useLegacyPackaging: true,
+          },
+          ios: { useFrameworks: 'static' },
+        },
+      ],
       ...(enabled ? ['@react-native-firebase/app', '@react-native-firebase/auth'] : []),
     ],
   };

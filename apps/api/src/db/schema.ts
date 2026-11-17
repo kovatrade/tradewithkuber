@@ -764,6 +764,7 @@ export const dhanConnections = pgTable('dhan_connections', {
 export const appReleases = pgTable('app_releases', {
   id: id(),
   platform: varchar('platform', { length: 8 }).notNull(), // ANDROID | IOS
+  abi: varchar('abi', { length: 16 }), // Android architecture; null for existing/unlabelled releases
   version: varchar('version', { length: 40 }).notNull(),
   notes: text('notes'),
   fileName: text('file_name'),

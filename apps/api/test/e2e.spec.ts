@@ -1,3 +1,5 @@
+import { AppReleasesService } from '../src/app-releases/app-releases.service';
+import { Readable } from 'node:stream';
 /**
  * End-to-end security & financial-integrity tests against a real PostgreSQL database.
  * Covers: authentication, MFA, step-up, cross-account access (IDOR), role checks,
@@ -1675,5 +1677,41 @@ describe('wipe out', () => {
     // Outside an approved wipe, the ledger is still append-only.
     await expect(pg.query(`DELETE FROM audit_events`)).rejects.toThrow(/append-only/);
     expect((await gql(`{ platformWipes { status summary } }`, {}, { token: admin.token })).data.platformWipes[0].status).toBe('EXECUTED');
+  });
+});
+
+
+describe('architecture-specific Android downloads', () => {
+  it('keeps a later 32-bit upload out of the main download and serves both files independently', async () => {
+    const service = app.get(AppReleasesService);
+    const folder = mkdtempSync(join(tmpdir(), 'tradedesk-apk-test-'));
+    const storage = jest.spyOn(service, 'filesDir', 'get').mockReturnValue(folder);
+    const bytes = Buffer.concat([Buffer.from('504b0304', 'hex'), Buffer.alloc(2048, 1)]);
+    try {
+      const universal = await service.receiveFromCi('test-universal', undefined, Readable.from(bytes), bytes.length, '127.0.0.1');
+      expect((await service.latest('ANDROID'))?.id).toBe(universal.id);
+      const main = await service.receiveFromCi('test-64', undefined, Readable.from(bytes), bytes.length, '127.0.0.1', 'arm64-v8a');
+      const compatibility = await service.receiveFromCi('test-32', undefined, Readable.from(bytes), bytes.length, '127.0.0.1', 'armeabi-v7a');
+      expect((await service.latest('ANDROID'))?.id).toBe(main.id);
+      expect((await service.latest('ANDROID', 'armeabi-v7a'))?.id).toBe(compatibility.id);
+      const data = await gql(`{appDownloads{android{id abi downloadPath}android32{id abi downloadPath}}}`);
+      expect(data.errors).toBeUndefined();
+      expect(data.data.appDownloads.android).toMatchObject({ id: main.id, abi: 'arm64-v8a', downloadPath: '/app-files/android/latest' });
+      expect(data.data.appDownloads.android32).toMatchObject({ id: compatibility.id, abi: 'armeabi-v7a', downloadPath: '/app-files/android/32-bit/latest' });
+      for (const [route, suffix] of [['/app-files/android/latest', '64-bit.apk'], ['/app-files/android/32-bit/latest', '32-bit.apk']]) {
+        const res = await fetch(url.replace('/graphql', route));
+        expect(res.status).toBe(200);
+        expect(res.headers.get('content-disposition')).toContain(suffix);
+        expect(Buffer.from(await res.arrayBuffer())).toEqual(bytes);
+      }
+      for (let n = 0; n < 3; n++) await service.receiveFromCi(`test-64-${n}`, undefined, Readable.from(bytes), bytes.length, '127.0.0.1', 'arm64-v8a');
+      await (service as any).prune();
+      expect((await service.latestApkFile('armeabi-v7a')).row.id).toBe(compatibility.id);
+      expect(() => service.receiveFromCi('bad', undefined, Readable.from(bytes), bytes.length, '127.0.0.1', 'x86')).toThrow('Unsupported Android architecture');
+    } finally {
+      storage.mockRestore();
+      if (!folder.startsWith(join(tmpdir(), 'tradedesk-apk-test-'))) throw new Error('Unexpected test folder.');
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 });

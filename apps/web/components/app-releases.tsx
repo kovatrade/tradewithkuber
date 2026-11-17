@@ -6,8 +6,8 @@ import { useQuery } from '@/lib/hooks';
 import { Icon } from './icons';
 import { Empty, ErrorState, SectionHead, SkeletonRows, useToast } from './ui';
 
-export interface AppRelease { id: string; platform: 'ANDROID' | 'IOS'; version: string; notes?: string; fileName?: string; fileSize?: number; sha256?: string; downloadPath?: string; url?: string; active: boolean; createdAt: string }
-export const RELEASE_FIELDS = 'id platform version notes fileName fileSize sha256 downloadPath url active createdAt';
+export interface AppRelease { id: string; platform: 'ANDROID' | 'IOS'; abi?: string; version: string; notes?: string; fileName?: string; fileSize?: number; sha256?: string; downloadPath?: string; url?: string; active: boolean; createdAt: string }
+export const RELEASE_FIELDS = 'id platform abi version notes fileName fileSize sha256 downloadPath url active createdAt';
 
 export const mb = (n?: number) => (n ? `${(n / 1024 / 1024).toFixed(1)} MB` : '');
 export const day = (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -23,7 +23,7 @@ export function AppReleasesAdmin() {
   if (q.error && !q.data) return <ErrorState error={q.error} retry={q.refetch} />;
   const d = q.data!.appReleases;
   const hide = async (r: AppRelease) => {
-    try { await gql(`mutation($id:ID!){ hideAppRelease(id:$id){ id } }`, { id: r.id }); toast(`${r.platform === 'ANDROID' ? 'Android' : 'iOS'} ${r.version} removed from the download page`); void q.refetch(); }
+    try { await gql(`mutation($id:ID!){ hideAppRelease(id:$id){ id } }`, { id: r.id }); toast(`${r.platform === 'ANDROID' ? `Android${r.abi === 'armeabi-v7a' ? ' (32-bit)' : r.abi === 'arm64-v8a' ? ' (64-bit)' : ''}` : 'iOS'} ${r.version} removed from the download page`); void q.refetch(); }
     catch (e) { toast((e as Error).message, true); }
   };
   return (
@@ -51,7 +51,7 @@ export function AppReleasesAdmin() {
             {d.history.map((r) => (
               <div key={r.id} className="list-row">
                 <div className="grow" style={{ minWidth: 0 }}>
-                  <div className="w6 sm">{r.platform === 'ANDROID' ? 'Android' : 'iOS'} · {r.version}</div>
+                  <div className="w6 sm">{r.platform === 'ANDROID' ? `Android${r.abi === 'armeabi-v7a' ? ' (32-bit)' : r.abi === 'arm64-v8a' ? ' (64-bit)' : ''}` : 'iOS'} · {r.version}</div>
                   <div className="t3 xs" style={{ overflowWrap: 'anywhere' }}>{when(r.createdAt)}{r.platform === 'ANDROID' ? (r.fileSize ? ` · ${mb(r.fileSize)}` : '') + (r.sha256 ? ` · SHA-256 ${r.sha256.slice(0, 12)}…` : '') : r.url ? ` · ${r.url}` : ''}{r.notes ? ` · ${r.notes}` : ''}</div>
                 </div>
                 <span className={`badge ${r.active && isLatest(d.history, r) ? 'ok' : ''}`}>{r.active ? (isLatest(d.history, r) ? 'Live' : 'Older') : 'Removed'}</span>
@@ -65,10 +65,11 @@ export function AppReleasesAdmin() {
   );
 }
 
-const isLatest = (all: AppRelease[], r: AppRelease) => all.find((x) => x.platform === r.platform && x.active)?.id === r.id;
+const isLatest = (all: AppRelease[], r: AppRelease) => all.find((x) => x.platform === r.platform && (x.abi === 'armeabi-v7a') === (r.abi === 'armeabi-v7a') && x.active)?.id === r.id;
 
 function AndroidUpload({ enabled, maxMb, onDone }: { enabled: boolean; maxMb: number; onDone: () => void }) {
   const toast = useToast();
+  const [abi, setAbi] = useState('arm64-v8a');
   const [version, setVersion] = useState('');
   const [notes, setNotes] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -80,7 +81,7 @@ function AndroidUpload({ enabled, maxMb, onDone }: { enabled: boolean; maxMb: nu
     if (!file) return;
     setErr(null); setPct(0);
     try {
-      const { createApkUploadLink: l } = await gql<{ createApkUploadLink: { path: string } }>(`mutation($v:String!,$n:String){ createApkUploadLink(version:$v, notes:$n){ path } }`, { v: version.trim(), n: notes.trim() || null });
+      const { createApkUploadLink: l } = await gql<{ createApkUploadLink: { path: string } }>(`mutation($v:String!,$n:String,$a:String){ createApkUploadLink(version:$v, notes:$n, abi:$a){ path } }`, { v: version.trim(), n: notes.trim() || null, a: abi });
       await new Promise<void>((resolve, reject) => {
         const x = new XMLHttpRequest();
         x.open('POST', API_URL + l.path);
@@ -102,6 +103,7 @@ function AndroidUpload({ enabled, maxMb, onDone }: { enabled: boolean; maxMb: nu
         <div className="field" style={{ flex: '1 1 120px' }}><label htmlFor="apk-v">Version</label><input id="apk-v" className="input" maxLength={40} placeholder="e.g. 1.4.2" value={version} onChange={(e) => setVersion(e.target.value)} disabled={!enabled} /></div>
         <div className="field" style={{ flex: '2 1 180px' }}><label htmlFor="apk-n">What’s new (optional)</label><input id="apk-n" className="input" maxLength={500} placeholder="Shown on the download page" value={notes} onChange={(e) => setNotes(e.target.value)} disabled={!enabled} /></div>
       </div>
+      <div className="field"><label htmlFor="apk-abi">APK version</label><select id="apk-abi" className="input" value={abi} onChange={e => setAbi(e.target.value)} disabled={!enabled || pct !== null}><option value="arm64-v8a">Main download (64-bit)</option><option value="armeabi-v7a">Older phones (32-bit)</option><option value="universal">Universal APK</option></select></div>
       <label htmlFor="apk-f" className={`proof-drop${!enabled ? ' busy' : ''}`} style={{ padding: 14 }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (enabled) setFile(e.dataTransfer.files[0] ?? null); }}>
         <Icon name="download" size={20} /><span className="w6">{file ? file.name : 'Choose the .apk file'}</span>
         <span className={`xs ${tooBig ? 'err' : 't3'}`}>{file ? `${mb(file.size)}${tooBig ? ` · larger than ${maxMb} MB` : ''}` : `Up to ${maxMb} MB`}</span>

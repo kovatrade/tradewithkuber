@@ -25,19 +25,21 @@ function IphoneGlyph() {
 
 /** Public: download the Android app (APK) or join the iPhone TestFlight. No sign-in needed. */
 export default function Download() {
-  const q = useQuery<{ appDownloads: { android?: AppRelease; ios?: AppRelease } }>(`{ appDownloads { android { ${RELEASE_FIELDS} } ios { ${RELEASE_FIELDS} } } }`);
+  const q = useQuery<{ appDownloads: { android?: AppRelease; android32?: AppRelease; ios?: AppRelease } }>(`{ appDownloads { android { ${RELEASE_FIELDS} } android32 { ${RELEASE_FIELDS} } ios { ${RELEASE_FIELDS} } } }`);
   const [os, setOs] = useState<'android' | 'ios' | 'other'>('other');
   useEffect(() => {
     const ua = navigator.userAgent;
     setOs(/android/i.test(ua) ? 'android' : /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1) ? 'ios' : 'other');
   }, []);
   const a = q.data?.appDownloads.android;
+  const legacy = q.data?.appDownloads.android32;
   const i = q.data?.appDownloads.ios;
   const android = (
     <div key="a" className={`panel dl-card${os === 'android' ? ' dl-mine' : ''}`}>
       <div className="dl-top"><span className="dl-ico dl-android"><AndroidGlyph /></span><div><div className="w6 dl-name">Android</div><div className="t3 xs">{a ? `Version ${a.version} · ${mb(a.fileSize)} · ${day(a.createdAt)}` : 'Coming soon'}</div></div>{os === 'android' && <span className="badge ok">Your phone</span>}</div>
       {a?.notes && <p className="sm t2" style={{ margin: 0 }}>{a.notes}</p>}
-      {a?.downloadPath ? <a className="btn btn-primary btn-lg dl-btn" href={API_URL + a.downloadPath} download><Icon name="download" size={18} />Download APK</a> : <button className="btn btn-lg dl-btn" disabled>Not available yet</button>}
+      {a?.downloadPath ? <a className="btn btn-primary btn-lg dl-btn" href={API_URL + a.downloadPath} download><Icon name="download" size={18} />{a.abi === 'arm64-v8a' ? 'Download APK (64-bit)' : 'Download APK'}</a> : <button className="btn btn-lg dl-btn" disabled>Not available yet</button>}
+      {legacy?.downloadPath && <div className="stack" style={{ gap: 6 }}><a className="btn dl-btn" href={API_URL + legacy.downloadPath} download>Older Android phones (32-bit) · {mb(legacy.fileSize)}</a><span className="t3 xs">Use this version if the main APK is incompatible with your phone.</span></div>}
       <ol className="dl-steps">
         <li>Tap <b>Download APK</b> and open the file when it finishes.</li>
         <li>If asked, allow <b>Install unknown apps</b> for your browser or Files app.</li>

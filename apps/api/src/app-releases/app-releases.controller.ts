@@ -42,8 +42,8 @@ export class AppReleasesController {
     }
   }
 
-  @Post('ci-upload')
-  async ciUpload(@Query('version') version: string, @Query('notes') notes: string | undefined, @Req() req: Request, @Res() res: Response) {
+  @Post(['ci-upload', 'ci-upload/variant'])
+  async ciUpload(@Query('version') version: string, @Query('notes') notes: string | undefined, @Req() req: Request, @Res() res: Response, @Query('abi') abi?: string) {
     const rc = requestContext.get();
     let outcome: 'OK' | 'ERROR' = 'ERROR';
     let errorCode: string | null = null;
@@ -55,7 +55,7 @@ export class AppReleasesController {
       this.releases.verifyCiToken(req.headers.authorization);
       if (typeof version !== 'string' || (notes !== undefined && typeof notes !== 'string')) throw new AppError('BAD_USER_INPUT', 'version is required.');
       const len = Number(req.headers['content-length']);
-      const r = await this.releases.receiveFromCi(version, notes, req, Number.isFinite(len) ? len : undefined, rc?.ip ?? clientIp(req));
+      const r = await this.releases.receiveFromCi(version, notes, req, Number.isFinite(len) ? len : undefined, rc?.ip ?? clientIp(req), abi);
       outcome = 'OK';
       res.status(201).json({ id: r.id, version: r.version, fileName: r.fileName, size: r.fileSize, sha256: r.sha256 });
     } catch (e) {
@@ -69,8 +69,17 @@ export class AppReleasesController {
 
   @Get('android/latest')
   async latest(@Res() res: Response) {
+    return this.download(res);
+  }
+
+  @Get('android/32-bit/latest')
+  async latest32(@Res() res: Response) {
+    return this.download(res, 'armeabi-v7a');
+  }
+
+  private async download(res: Response, abi?: 'armeabi-v7a') {
     try {
-      const { file, row } = await this.releases.latestApkFile();
+      const { file, row } = await this.releases.latestApkFile(abi);
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       if (row.sha256) res.setHeader('X-Checksum-SHA256', row.sha256.trim());

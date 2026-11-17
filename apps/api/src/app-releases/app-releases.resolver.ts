@@ -10,6 +10,7 @@ import { AppReleasesService } from './app-releases.service';
 class AppRelease {
   @Field(() => ID) id: string;
   @Field({ description: 'ANDROID or IOS' }) platform: string;
+  @Field({ nullable: true, description: 'Android CPU architecture; absent on older releases.' }) abi?: string;
   @Field() version: string;
   @Field({ nullable: true }) notes?: string;
   @Field({ nullable: true, description: 'Android: file name the phone saves.' }) fileName?: string;
@@ -24,6 +25,7 @@ class AppRelease {
 @ObjectType()
 class AppDownloads {
   @Field(() => AppRelease, { nullable: true }) android?: AppRelease;
+  @Field(() => AppRelease, { nullable: true }) android32?: AppRelease;
   @Field(() => AppRelease, { nullable: true }) ios?: AppRelease;
 }
 
@@ -43,9 +45,9 @@ class UploadLink {
 }
 
 const toRelease = (r: AppReleaseRow): AppRelease => ({
-  id: r.id, platform: r.platform, version: r.version, notes: r.notes ?? undefined, fileName: r.fileName ?? undefined,
+  id: r.id, platform: r.platform, abi: r.abi ?? undefined, version: r.version, notes: r.notes ?? undefined, fileName: r.fileName ?? undefined,
   fileSize: r.fileSize ?? undefined, sha256: r.sha256?.trim() ?? undefined,
-  downloadPath: r.platform === 'ANDROID' && r.storageKey && r.active ? '/app-files/android/latest' : undefined,
+  downloadPath: r.platform === 'ANDROID' && r.storageKey && r.active ? r.abi === 'armeabi-v7a' ? '/app-files/android/32-bit/latest' : '/app-files/android/latest' : undefined,
   url: r.url ?? undefined, active: r.active, createdAt: r.createdAt,
 });
 
@@ -56,8 +58,8 @@ export class AppReleasesResolver {
   @Public()
   @Query(() => AppDownloads, { description: 'Public: the latest Android APK and iOS link for the download page.' })
   async appDownloads(): Promise<AppDownloads> {
-    const [android, ios] = await Promise.all([this.releases.latest('ANDROID'), this.releases.latest('IOS')]);
-    return { android: android ? toRelease(android) : undefined, ios: ios ? toRelease(ios) : undefined };
+    const [android, android32, ios] = await Promise.all([this.releases.latest('ANDROID'), this.releases.latest('ANDROID', 'armeabi-v7a'), this.releases.latest('IOS')]);
+    return { android: android ? toRelease(android) : undefined, android32: android32 ? toRelease(android32) : undefined, ios: ios ? toRelease(ios) : undefined };
   }
 
   @Roles('SUPER_ADMIN')
@@ -70,8 +72,8 @@ export class AppReleasesResolver {
   @RequireStepUp()
   @Throttle({ default: { limit: lim(10), ttl: 60_000 } })
   @Mutation(() => UploadLink, { description: 'Super Admin: a 15-minute link to upload a new Android APK.' })
-  createApkUploadLink(@CurrentActor() a: Actor, @Args('version') version: string, @Args('notes', { type: () => String, nullable: true }) notes: string | undefined, @Ctx() c: GqlContext) {
-    return this.releases.createUploadLink(a, version, notes, c.ip);
+  createApkUploadLink(@CurrentActor() a: Actor, @Args('version') version: string, @Args('notes', { type: () => String, nullable: true }) notes: string | undefined, @Ctx() c: GqlContext, @Args('abi', { type: () => String, nullable: true }) abi?: string) {
+    return this.releases.createUploadLink(a, version, notes, c.ip, abi);
   }
 
   @Roles('SUPER_ADMIN')

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, ne, or } from 'drizzle-orm';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -16,9 +16,9 @@ const LINK_TTL_SEC = 15 * 60; // time to start a (large) upload
 const KEEP_APKS = 3; // older APK files are removed from the disk; their history rows stay
 const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_ ()-]{0,39}$/;
 
-interface UploadClaims { sub: string; role: string; version: string; notes?: string; purpose: 'apk-upload' }
+interface UploadClaims { sub: string; role: string; version: string; notes?: string; abi?: string; purpose: 'apk-upload' }
 /** Who is publishing: a Super Admin (signed link) or the CI build (token). */
-type Publisher = { userId: string | null; version: string; notes?: string; source: 'admin' | 'github-actions' };
+type Publisher = { userId: string | null; version: string; notes?: string; source: 'admin' | 'github-actions'; abi?: string };
 
 /**
  * App downloads page. Android: a Super Admin uploads the APK through a short-lived signed link (the file streams
@@ -36,9 +36,9 @@ export class AppReleasesService {
     return env().APP_FILES_DIR;
   }
 
-  async latest(platform: 'ANDROID' | 'IOS'): Promise<AppReleaseRow | undefined> {
+  async latest(platform: 'ANDROID' | 'IOS', abi?: 'armeabi-v7a'): Promise<AppReleaseRow | undefined> {
     const [r] = await this.dbs.db.select().from(appReleases)
-      .where(and(eq(appReleases.platform, platform), eq(appReleases.active, true)))
+      .where(and(eq(appReleases.platform, platform), eq(appReleases.active, true), platform === 'ANDROID' ? abi ? eq(appReleases.abi, abi) : or(isNull(appReleases.abi), ne(appReleases.abi, 'armeabi-v7a')) : undefined))
       .orderBy(desc(appReleases.createdAt)).limit(1);
     return r;
   }
@@ -48,12 +48,13 @@ export class AppReleasesService {
   }
 
   /** Step 1 of an APK upload: a signed one-off link the admin's browser POSTs the file to. */
-  async createUploadLink(actor: Actor, version: string, notes: string | undefined, ip: string) {
+  async createUploadLink(actor: Actor, version: string, notes: string | undefined, ip: string, abi?: string) {
     if (!this.filesDir) throw badInput('APK upload is not set up on this server: add a persistent disk and set APP_FILES_DIR.');
     const v = version.trim();
     if (!VERSION_RE.test(v)) throw badInput('Version: up to 40 characters, e.g. 1.4.2 or 1.4.2 (build 37).');
     const n = notes?.trim().slice(0, 500) || undefined;
-    const claims: UploadClaims = { sub: actor.userId, role: actor.role, version: v, notes: n, purpose: 'apk-upload' };
+    if (abi !== undefined && !['arm64-v8a', 'armeabi-v7a', 'universal'].includes(abi)) throw badInput('Unsupported Android architecture.');
+    const claims: UploadClaims = { sub: actor.userId, role: actor.role, version: v, notes: n, abi, purpose: 'apk-upload' };
     const token = this.jwt.sign(claims, { secret: env().JWT_STEPUP_SECRET, expiresIn: LINK_TTL_SEC, algorithm: 'HS256', issuer: 'tradedesk', audience: 'apk-upload' });
     await this.audit.recordStandalone({ actor, action: 'app_release.upload_link_created', entityType: 'app_release', entityId: actor.userId, outcome: 'SUCCESS', ip, metadata: { version: v } });
     return { path: `/app-files/upload?token=${encodeURIComponent(token)}`, expiresIn: LINK_TTL_SEC, maxBytes: env().APK_MAX_MB * 1024 * 1024 };
@@ -79,15 +80,16 @@ export class AppReleasesService {
     if (!got || !timingSafeEqual(a, b)) throw new AppError('UNAUTHENTICATED', 'Invalid publishing token.');
   }
 
-  receiveFromCi(version: string, notes: string | undefined, body: Readable, declaredLength: number | undefined, ip: string) {
+  receiveFromCi(version: string, notes: string | undefined, body: Readable, declaredLength: number | undefined, ip: string, abi?: string) {
     const v = version.trim();
     if (!VERSION_RE.test(v)) throw badInput('Version: up to 40 characters, e.g. 1.4.2 (build 37).');
-    return this.store({ userId: null, version: v, notes: notes?.trim().slice(0, 500) || undefined, source: 'github-actions' }, body, declaredLength, ip);
+    if (abi !== undefined && !['arm64-v8a', 'armeabi-v7a', 'universal'].includes(abi)) throw badInput('Unsupported Android architecture.');
+    return this.store({ userId: null, version: v, notes: notes?.trim().slice(0, 500) || undefined, source: 'github-actions', abi }, body, declaredLength, ip);
   }
 
   /** Step 2 of an admin upload: stream the request body to disk, check it is an APK (zip), record it. */
   receiveApk(claims: UploadClaims, body: Readable, declaredLength: number | undefined, ip: string) {
-    return this.store({ userId: claims.sub, version: claims.version, notes: claims.notes, source: 'admin' }, body, declaredLength, ip);
+    return this.store({ userId: claims.sub, version: claims.version, notes: claims.notes, abi: claims.abi, source: 'admin' }, body, declaredLength, ip);
   }
 
   private async store(who: Publisher, body: Readable, declaredLength: number | undefined, ip: string) {
@@ -124,11 +126,12 @@ export class AppReleasesService {
       throw e;
     }
     const sha256 = hash.digest('hex');
-    const fileName = `TheK-${who.version.replace(/[^0-9A-Za-z.]+/g, '-').replace(/-+$/, '')}.apk`;
+    const suffix = who.abi === 'arm64-v8a' ? '-64-bit' : who.abi === 'armeabi-v7a' ? '-32-bit' : '';
+    const fileName = `TheK-${who.version.replace(/[^0-9A-Za-z.]+/g, '-').replace(/-+$/, '')}${suffix}.apk`;
     const actor: Pick<Actor, 'userId' | 'role'> | null = who.userId ? { userId: who.userId, role: 'SUPER_ADMIN' } : null;
     const row = await this.dbs.db.transaction(async (tx) => {
-      const [r] = await tx.insert(appReleases).values({ platform: 'ANDROID', version: who.version, notes: who.notes, fileName, fileSize: size, sha256, storageKey: key, createdById: who.userId }).returning();
-      await this.audit.record(tx, { actor, action: 'app_release.android_uploaded', entityType: 'app_release', entityId: r.id, outcome: 'SUCCESS', ip, metadata: { version: who.version, size, sha256, source: who.source } });
+      const [r] = await tx.insert(appReleases).values({ platform: 'ANDROID', abi: who.abi, version: who.version, notes: who.notes, fileName, fileSize: size, sha256, storageKey: key, createdById: who.userId }).returning();
+      await this.audit.record(tx, { actor, action: 'app_release.android_uploaded', entityType: 'app_release', entityId: r.id, outcome: 'SUCCESS', ip, metadata: { version: who.version, abi: who.abi, size, sha256, source: who.source } });
       return r;
     });
     void this.prune().catch((e) => this.log.warn(`Could not remove old APK files: ${(e as Error).message}`));
@@ -140,7 +143,11 @@ export class AppReleasesService {
     const dir = this.filesDir;
     if (!dir) return;
     const rows = await this.dbs.db.select().from(appReleases).where(eq(appReleases.platform, 'ANDROID')).orderBy(desc(appReleases.createdAt));
-    for (const r of rows.slice(KEEP_APKS)) {
+    const kept = new Map<string, number>();
+    for (const r of rows) {
+      const variant = r.abi ?? 'universal';
+      kept.set(variant, (kept.get(variant) ?? 0) + 1);
+      if (kept.get(variant)! <= KEEP_APKS) continue;
       if (!r.storageKey) continue;
       await fs.rm(path.join(dir, path.basename(r.storageKey)), { force: true });
       await this.dbs.db.update(appReleases).set({ storageKey: null, active: false }).where(eq(appReleases.id, r.id));
@@ -148,8 +155,8 @@ export class AppReleasesService {
   }
 
   /** Absolute path of the latest APK, for the public download. */
-  async latestApkFile() {
-    const r = await this.latest('ANDROID');
+  async latestApkFile(abi?: 'armeabi-v7a') {
+    const r = await this.latest('ANDROID', abi);
     if (!r?.storageKey || !this.filesDir) throw notFound('Android app');
     const file = path.join(this.filesDir, path.basename(r.storageKey));
     try { await fs.access(file); } catch { throw notFound('Android app file'); }
