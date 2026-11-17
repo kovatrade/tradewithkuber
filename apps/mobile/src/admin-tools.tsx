@@ -1,3 +1,4 @@
+import { Configuration, type Config } from './configuration-screen';
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
 import { router } from 'expo-router';
@@ -66,228 +67,6 @@ function Details({ title, value, close }: { title: string; value: unknown; close
   return (
     <Sheet visible title={title} onClose={close}>
       <T selectable>{typeof value === 'string' ? formatJson(value) : JSON.stringify(value, null, 2)}</T>
-    </Sheet>
-  );
-}
-const V = 'id key version valueJson status reason makerId checkerId createdAt';
-interface Version {
-  id: string;
-  key: string;
-  version: number;
-  valueJson: string;
-  status: string;
-  reason: string;
-  makerId?: string;
-  createdAt: string;
-}
-interface Config {
-  key: string;
-  description: string;
-  valueJson: string;
-  version: number;
-  isDefault: boolean;
-  pending?: Version;
-}
-function Configuration() {
-  const q = useQuery<{ configItems: Config[] }>(
-    `{configItems{key description valueJson version isDefault pending{${V}}}}`,
-  );
-  const { me } = useAuth();
-  const sole = useSoleAdmin();
-  const action = useAction();
-  const [search, setSearch] = useState(''),
-    [edit, setEdit] = useState<Config | null>(null),
-    [history, setHistory] = useState<string | null>(null);
-  const [value, setValue] = useState(''),
-    [reason, setReason] = useState('');
-  let valid = true;
-  try {
-    JSON.parse(value);
-  } catch {
-    valid = false;
-  }
-  const rows = (q.data?.configItems ?? []).filter((i) =>
-    `${i.key} ${i.description}`.toLowerCase().includes(search.toLowerCase()),
-  );
-  return (
-    <Screen back title="Configuration" scroll={false} onRefresh={q.refetch}>
-      <VList
-        data={rows}
-        keyOf={(i) => i.key}
-        header={<SearchBox value={search} onChangeText={setSearch} placeholder="Search settings" />}
-        empty={
-          q.loading && !q.data ? (
-            <Skeleton />
-          ) : q.error ? (
-            <ErrorState error={q.error} retry={q.refetch} />
-          ) : (
-            <Empty title="No matching settings" />
-          )
-        }
-        render={(i) => (
-          <View style={{ paddingVertical: 14, gap: 8 }}>
-            <T w="700">{i.key}</T>
-            <T v="sm" c="text2">
-              {i.description}
-            </T>
-            <T selectable numberOfLines={3}>
-              {i.valueJson}
-            </T>
-            {i.pending && (
-              <Notice tone="warn">
-                Proposed:{' '}
-                {i.pending.valueJson.length > 180 ? i.pending.valueJson.slice(0, 180) + '\u2026' : i.pending.valueJson}.{' '}
-                {i.pending.reason}
-              </Notice>
-            )}
-            <Row>
-              {!i.pending ? (
-                <Button
-                  title={sole ? 'Change' : 'Propose change'}
-                  onPress={() => {
-                    setValue(formatJson(i.valueJson));
-                    setReason('');
-                    setEdit(i);
-                  }}
-                />
-              ) : (
-                <>
-                  <Button
-                    title="Reject"
-                    busy={action.busy}
-                    disabled={i.pending.makerId === me?.id && !sole}
-                    onPress={() =>
-                      void action.run(
-                        () =>
-                          gql(`mutation($id:ID!,$a:Boolean!){decideConfigChange(id:$id,approve:$a){id}}`, {
-                            id: i.pending!.id,
-                            a: false,
-                          }),
-                        () => {
-                          void q.refetch();
-                        },
-                      )
-                    }
-                  />
-                  <Button
-                    title="Approve"
-                    kind="primary"
-                    busy={action.busy}
-                    disabled={i.pending.makerId === me?.id && !sole}
-                    onPress={() =>
-                      void action.run(
-                        () =>
-                          gql(`mutation($id:ID!,$a:Boolean!){decideConfigChange(id:$id,approve:$a){id}}`, {
-                            id: i.pending!.id,
-                            a: true,
-                          }),
-                        () => {
-                          void q.refetch();
-                        },
-                      )
-                    }
-                  />
-                </>
-              )}
-              <Button title="History" onPress={() => setHistory(i.key)} />
-            </Row>
-          </View>
-        )}
-      />
-      <Sheet
-        visible={!!edit}
-        title={edit?.key ?? 'Change setting'}
-        sub={edit?.description}
-        onClose={() => setEdit(null)}
-      >
-        <Field
-          label="New value (JSON)"
-          multiline
-          numberOfLines={8}
-          autoCapitalize="none"
-          autoCorrect={false}
-          value={value}
-          onChangeText={setValue}
-          error={!valid ? 'Enter valid JSON.' : null}
-        />
-        <Field label="Reason" value={reason} onChangeText={setReason} />
-        <Button
-          title={sole ? 'Save' : 'Send for approval'}
-          kind="primary"
-          busy={action.busy}
-          disabled={!valid || reason.trim().length < 5}
-          onPress={() =>
-            void action.run(
-              () =>
-                gql(
-                  `mutation($k:String!,$v:String!,$r:String!){proposeConfigChange(key:$k,valueJson:$v,reason:$r){id status}}`,
-                  { k: edit!.key, v: JSON.stringify(JSON.parse(value)), r: reason },
-                ),
-              () => {
-                setEdit(null);
-                void q.refetch();
-                toast('Change saved.');
-              },
-            )
-          }
-        />
-      </Sheet>
-      {history && (
-        <ConfigHistory
-          name={history}
-          close={() => setHistory(null)}
-          saved={() => {
-            void q.refetch();
-          }}
-        />
-      )}
-    </Screen>
-  );
-}
-function ConfigHistory({ name, close, saved }: { name: string; close: () => void; saved: () => void }) {
-  const q = useQuery<{ configHistory: Version[] }>(`query($k:String!){configHistory(key:$k){${V}}}`, { k: name });
-  const action = useAction();
-  return (
-    <Sheet visible title="Setting history" sub={name} onClose={close}>
-      {q.error ? (
-        <ErrorState error={q.error} retry={q.refetch} />
-      ) : !q.data ? (
-        <Skeleton />
-      ) : !q.data.configHistory.length ? (
-        <T>Still on the default value.</T>
-      ) : (
-        q.data.configHistory.map((v) => (
-          <View key={v.id} style={{ gap: 8, paddingVertical: 8 }}>
-            <T w="700">
-              Version {v.version} · {v.status}
-            </T>
-            <T selectable>{formatJson(v.valueJson)}</T>
-            <T v="sm">
-              {v.reason} · {when(v.createdAt)}
-            </T>
-            {v.status === 'SUPERSEDED' && (
-              <Button
-                title="Restore this version"
-                busy={action.busy}
-                onPress={() =>
-                  void action.run(
-                    () =>
-                      gql(`mutation($k:String!,$v:Int!){proposeConfigRollback(key:$k,toVersion:$v){id status}}`, {
-                        k: name,
-                        v: v.version,
-                      }),
-                    () => {
-                      saved();
-                      close();
-                      toast('Restore request saved.');
-                    },
-                  )
-                }
-              />
-            )}
-          </View>
-        ))
-      )}
     </Sheet>
   );
 }
@@ -620,7 +399,7 @@ interface Archive {
 }
 function Archives() {
   const q = useQuery<{ logArchives: Archive[]; configItems: Config[] }>(
-    `{logArchives(limit:120){day kind rows sha256 location createdAt} configItems{key description valueJson version isDefault}}`,
+    `{logArchives(limit:120){day kind rows sha256 location createdAt} configItems{key label description displayValue version isDefault}}`,
   );
   const action = useAction();
   const [result, setResult] = useState('');
@@ -630,7 +409,7 @@ function Archives() {
       {(q.data?.configItems ?? [])
         .filter((c) => c.key.startsWith('logs.'))
         .map((c) => (
-          <ListRow key={c.key} title={c.description} sub={c.valueJson} />
+          <ListRow key={c.key} title={c.label} sub={c.displayValue} />
         ))}
       <Button
         title="Run archive maintenance"

@@ -23,7 +23,7 @@ describe('native administration API contracts', () => {
     const app = await NestFactory.createApplicationContext(GraphQLSchemaBuilderModule, { logger: false });
     try {
       const schema = await app.get(GraphQLSchemaFactory).create(resolvers);
-      const source = readFileSync(resolve(__dirname, '../../mobile/src/admin-tools.tsx'), 'utf8');
+      const source = readFileSync(resolve(__dirname, '../../mobile/src/admin-tools.tsx'), 'utf8') + '\n' + readFileSync(resolve(__dirname, '../../mobile/src/configuration-screen.tsx'), 'utf8');
       const activity = readFileSync(resolve(__dirname, '../../mobile/src/activity.ts'), 'utf8').match(
         /ACTIVITY_FIELDS\s*=\s*'([^']+)'/,
       )![1];

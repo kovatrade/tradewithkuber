@@ -76,7 +76,7 @@ describe('Firebase proof consumption', () => {
 describe('Durable FCM delivery', () => {
   const dialect = new PgDialect();
   const job = { id: 'job', device_id: 'device', attempts: 1 };
-  const note = { token_enc: 'encrypted', notification_id: 'note', title: 'Order filled', body: 'Simulated order', kind: 'order.filled', user_id: 'trader', role: 'TRADER', created_at: new Date() };
+  const note = { token_enc: 'encrypted', notification_id: 'note', title: 'Order filled', body: 'Simulated order', kind: 'order.filled', user_id: 'owner', role: 'BROKER', is_demo: false, created_at: new Date() };
   function fixture() {
     const execute = jest.fn().mockResolvedValueOnce({ rows: [job] }).mockResolvedValueOnce({ rows: [note] });
     const updates: any[] = [];
@@ -94,13 +94,18 @@ describe('Durable FCM delivery', () => {
     const query = dialect.sqlToQuery(execute.mock.calls[0][0]);
     expect(query.sql).toContain('INSERT INTO push_deliveries');
     expect(query.sql).toContain('s.revoked_at IS NULL');
+    expect(query.sql).toContain("u.role IN ('SUPER_ADMIN', 'BROKER')");
+    expect(query.sql).toContain('u.is_demo = false');
     expect(query.params).toEqual(['note', 'trader']);
   });
   it('claims committed jobs with a lease and sends visible high priority alerts', async () => {
     const f = fixture(); await f.service.drain();
     expect(dialect.sqlToQuery(f.execute.mock.calls[0][0]).sql).toContain('FOR UPDATE SKIP LOCKED');
     expect(dialect.sqlToQuery(f.execute.mock.calls[1][0]).sql).toContain('s.revoked_at IS NULL');
-    expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ notification: { title: note.title, body: 'order' }, data: expect.objectContaining({ href: '/trader/orders', userId: 'trader' }), android: expect.objectContaining({ priority: 'high', notification: expect.objectContaining({ channelId: 'activity', tag: 'note' }) }) }));
+    expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ notification: { title: note.title, body: 'order' }, data: expect.objectContaining({ userId: 'owner' }), android: expect.objectContaining({ priority: 'high', notification: expect.objectContaining({ channelId: 'activity', tag: 'note' }) }) }));
+    const query = dialect.sqlToQuery(f.execute.mock.calls[1][0]);
+    expect(query.sql).toContain("u.role IN ('SUPER_ADMIN', 'BROKER')");
+    expect(query.sql).toContain('u.is_demo = false');
     expect(f.updates[0]).toEqual({ finishedAt: expect.any(Date), lastError: null });
   });
   it('delivers notifications while Firebase SMS is disabled', async () => {
@@ -112,10 +117,36 @@ describe('Durable FCM delivery', () => {
   it('rejects a test notification when the current session has no device registration', async () => {
     const where = jest.fn((_condition: any) => ({ limit: async () => [] }));
     const tx = { select: () => ({ from: () => ({ where }) }), insert: jest.fn() };
-    const db = { transaction: (fn: any) => fn(tx) };
+    const db = { select: () => ({ from: () => ({ where: async () => [{ role: 'BROKER', isDemo: false }] }) }), transaction: (fn: any) => fn(tx) };
     await expect(new NotificationsService({ db } as any).sendTest({ userId: 'owner', sessionId: 'current-session', role: 'TRADER', mfaVerified: false })).rejects.toThrow(/Allow notifications/);
     expect(tx.insert).not.toHaveBeenCalled();
     expect(dialect.sqlToQuery(where.mock.calls[0][0]).params).toEqual(['owner', 'current-session']);
+  });
+  it.each([
+    ['TRADER', false], ['TRADER', true], ['BROKER', true], ['SUPER_ADMIN', true],
+  ])('blocks queued external notifications for %s, demo=%s', async (role, isDemo) => {
+    const f = fixture();
+    f.execute.mockReset().mockResolvedValueOnce({ rows: [job] }).mockResolvedValueOnce({ rows: [{ ...note, role, is_demo: isDemo }] });
+    await f.service.drain();
+    expect(f.send).not.toHaveBeenCalled();
+    expect(f.updates[0].lastError).toBe('in-app-only');
+  });
+  it.each(['BROKER', 'SUPER_ADMIN'])('continues external delivery for %s', async role => {
+    const f = fixture();
+    f.execute.mockReset().mockResolvedValueOnce({ rows: [job] }).mockResolvedValueOnce({ rows: [{ ...note, role }] });
+    await f.service.drain();
+    expect(f.send).toHaveBeenCalledTimes(1);
+  });
+  it.each([['TRADER', false], ['TRADER', true], ['BROKER', true], ['SUPER_ADMIN', true]])('declines token registration and test pushes for %s, demo=%s', async (role, isDemo) => {
+    const deleted = jest.fn();
+    const db = { select: () => ({ from: () => ({ where: async () => [{ role, isDemo }] }) }), delete: () => ({ where: deleted }) };
+    // A stale staff claim cannot override the current database account policy.
+    const actor = { userId: 'owner', sessionId: 'session', role: 'SUPER_ADMIN' as const, mfaVerified: true };
+    const send = jest.fn();
+    await expect(new PushService({ db } as any, { messaging: { send } } as any).register(actor, 'a-valid-long-device-token', 'android', 'installation-12345')).resolves.toBe(false);
+    expect(deleted).toHaveBeenCalledTimes(1);
+    await expect(new NotificationsService({ db } as any).sendTest(actor)).rejects.toThrow(/inside the app only/);
+    expect(send).not.toHaveBeenCalled();
   });
   it('retries temporary FCM errors without marking the job delivered', async () => {
     const f = fixture(); f.send.mockRejectedValue({ code: 'messaging/server-unavailable' }); await f.service.drain();

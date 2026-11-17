@@ -13,6 +13,7 @@ import { useSplashActive } from './splash';
 import { CONSENT_FIELDS, deviceLabel, LOGIN_FIELDS, LOGIN_LABEL, stamp, type ConsentRecord, type LoginEvent } from './activity';
 import { useAuth } from './auth';
 import { PushPermission } from './push-permission';
+import { canUseSystemPush } from './push';
 import { newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, ReceivingAccountPicker } from './payment-details';
 import { QuickTradeSheet } from './quick-trade';
 import { expiryLabel, fullName } from './names';
@@ -933,8 +934,8 @@ export function ProfileView() {
         {!me?.isDemo && <Item icon="key" label="Change password" onPress={() => setPw(true)} />}
         {!me?.isDemo && me?.role !== 'SUPER_ADMIN' && <Item icon="fingerprint" label="MPIN & fingerprint" sub={quick?.owner.userId === me?.id ? (quick?.owner.biometric ? 'On: MPIN and fingerprint' : 'On: MPIN') : 'Off. Unlock without your password'} onPress={() => router.push('/quick-settings')} />}
         {me?.role !== 'SUPER_ADMIN' && <Item icon="alert" label="Request account reset" sub="Staff approval is required; historical data is retained" onPress={() => router.push('/wipe')} />}
-        {/* Traders don't see two-step verification, notifications, account activity or funds here. */}
-        {me?.role !== 'TRADER' && <NotificationsItem />}
+        {/* Administrative security and activity controls are only shown to staff. */}
+        <NotificationsItem />
         <Item icon="lock" label="Login history" sub="Sign-ins and failed attempts, and the rules you accepted" onPress={() => router.push('/logins')} />
         {me?.role !== 'TRADER' && <Item icon="activity" label="Account activity" sub="Every action with time, IP and device" onPress={() => router.push('/activity')} />}
         {me?.role === 'TRADER' && <>
@@ -1034,6 +1035,7 @@ const NoteRow = memo(function NoteRow({ n }: { n: Note }) {
   );
 });
 export function NotificationsView() {
+  const { me } = useAuth();
   const [testingPush, setTestingPush] = useState(false);
   const { data, error, loading, refetch } = useQuery<{ notifications: Note[] }>(`{ notifications(limit:100){ id kind title body readAt createdAt } }`);
   useEffect(() => subscribe('subscription { notificationAdded { id } }', {}, () => { void refetch(); }), [refetch]);
@@ -1041,13 +1043,13 @@ export function NotificationsView() {
   const state = loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} /> : <Empty icon="bell" title="You’re all caught up">Order fills, fund requests and security alerts appear here.</Empty>;
   return (
     <Screen title="Notifications" back scroll={false} right={unread ? <Button size="sm" kind="ghost" title="Mark read" onPress={async () => { await gql(`mutation { markNotificationsRead }`).catch(() => undefined); void refetch(); }} /> : undefined}>
-      <PushPermission />
+      {canUseSystemPush(me) && <><PushPermission />
       <Button kind="ghost" size="sm" title="Send test notification" busy={testingPush} onPress={async () => {
         setTestingPush(true);
         try { await gql('mutation { sendTestNotification }'); toast('Test notification queued.'); void refetch(); }
         catch (e) { toast((e as Error).message); }
         finally { setTestingPush(false); }
-      }} />
+      }} /></>}
       <VList data={data?.notifications ?? []} keyOf={(n) => n.id} empty={state} render={(n) => <NoteRow n={n} />} />
     </Screen>
   );

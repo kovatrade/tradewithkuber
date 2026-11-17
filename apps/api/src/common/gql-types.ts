@@ -242,6 +242,7 @@ export class PaymentRequest {
 
 @ObjectType()
 export class ConfigVersion {
+  @Field() displayValue: string;
   @Field(() => ID) id: string;
   @Field() key: string;
   @Field(() => Int) version: number;
@@ -256,6 +257,9 @@ export class ConfigVersion {
 
 @ObjectType()
 export class ConfigItem {
+  @Field() label: string;
+  @Field() displayValue: string;
+  @Field() editorJson: string;
   @Field() key: string;
   @Field() description: string;
   @Field() valueJson: string;

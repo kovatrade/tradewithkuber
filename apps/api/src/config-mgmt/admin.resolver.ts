@@ -12,6 +12,8 @@ import { Subscription, Context } from '@nestjs/graphql';
 import { soleAdminMayApprove } from '../common/maker-checker';
 import { DbService } from '../db/db';
 import { unauthenticated } from '../common/errors';
+import { SETTING_TEXT, settingEditor, settingDisplay } from './presentation';
+import { type ConfigKey } from './registry';
 
 @ObjectType()
 class NavigationBadge {
@@ -25,6 +27,7 @@ const toVersion = (r: CfgRow): ConfigVersion => ({
   key: r.key,
   version: r.version,
   valueJson: JSON.stringify(r.value),
+  displayValue: settingDisplay(r.key, r.value),
   status: r.status,
   reason: r.reason,
   makerId: r.makerId ?? undefined,
@@ -55,7 +58,7 @@ export class AdminResolver {
   @Query(() => [ConfigItem])
   async configItems(): Promise<ConfigItem[]> {
     const items = await this.config.listAll();
-    return items.map((i) => ({ key: i.key, description: i.description, valueJson: JSON.stringify(i.value), version: i.version, isDefault: i.isDefault, pending: i.pending ? toVersion(i.pending) : undefined }));
+    return items.map((i) => ({ key: i.key, label: SETTING_TEXT[i.key as ConfigKey][0], description: SETTING_TEXT[i.key as ConfigKey][1], displayValue: settingDisplay(i.key, i.value), editorJson: JSON.stringify(settingEditor(i.key, i.value)), valueJson: JSON.stringify(i.value), version: i.version, isDefault: i.isDefault, pending: i.pending ? toVersion(i.pending) : undefined }));
   }
 
   @Roles('SUPER_ADMIN')

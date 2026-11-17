@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DbService, type DbOrTx } from '../db/db';
-import { notifications, pushDevices } from '../db/schema';
+import { notifications, pushDevices, users } from '../db/schema';
+import { externalPushAllowed } from './push-policy';
 import type { Actor } from '../common/context';
 import { mergeNavigationCounts, notificationDestination } from './navigation';
 import { afterWipe } from '../wipe/visibility';
@@ -28,6 +29,8 @@ export class NotificationsService {
   constructor(private readonly dbs: DbService) {}
 
   async sendTest(actor: Actor) {
+    const [account] = await this.dbs.db.select({ role: users.role, isDemo: users.isDemo }).from(users).where(eq(users.id, actor.userId));
+    if (!account || !externalPushAllowed(account)) throw badInput('Notifications for this account are shown inside the app only.');
     if (!env().FIREBASE_PUSH_ENABLED) throw badInput('Push notifications have not been enabled on the server yet.');
     return this.dbs.db.transaction(async tx => {
       const [device] = await tx.select({ id: pushDevices.id }).from(pushDevices)
@@ -46,6 +49,7 @@ export class NotificationsService {
     if (env().FIREBASE_PUSH_ENABLED) await tx.execute(sql`
       INSERT INTO push_deliveries (notification_id, device_id)
       SELECT ${n.id}::uuid, d.id FROM push_devices d
+      JOIN users u ON u.id = d.user_id AND u.role IN ('SUPER_ADMIN', 'BROKER') AND u.is_demo = false AND u.status = 'ACTIVE'
       JOIN sessions s ON s.id = d.session_id AND s.revoked_at IS NULL AND s.expires_at > now()
       WHERE d.user_id = ${userId}::uuid`);
     // publish after commit would be ideal; a lost realtime push is harmless because clients refetch.

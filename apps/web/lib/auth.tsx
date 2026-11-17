@@ -50,7 +50,7 @@ export const homeFor = (r: Role) => (r === 'SUPER_ADMIN' ? '/admin' : r === 'BRO
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
-  useBrowserPush(me?.id);
+  useBrowserPush(me?.id, me?.role, me?.isDemo);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<Settings | null>(null);
   const router = useRouter();

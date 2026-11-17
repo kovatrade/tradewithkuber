@@ -5,16 +5,23 @@ import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { router } from 'expo-router';
-import { gql } from './api';
+import { gql, subscribe } from './api';
+import { toast } from './ui';
 import type { Me } from './auth';
 
 const enabled = Constants.expoConfig?.extra?.[Platform.OS === 'android' ? 'firebaseAndroidEnabled' : 'firebaseIosEnabled'] === true;
 const INSTALLATION = 'td.push.installation';
 let pending: Record<string, string> | null = null;
 let activeUser: Me | null = null;
+let pushUser: Me | null = null;
+let tokenCleanup: Promise<void> = Promise.resolve();
+export const canUseSystemPush = (me?: Pick<Me, 'role' | 'isDemo'> | null) => !!me && !me.isDemo && (me.role === 'SUPER_ADMIN' || me.role === 'BROKER');
 const seen = new Set<string>();
 
-Notifications.setNotificationHandler({ handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }) });
+Notifications.setNotificationHandler({ handleNotification: async notification => {
+  const show = canUseSystemPush(pushUser) && notification.request.content.data?.userId === pushUser?.id;
+  return { shouldShowBanner: show, shouldShowList: show, shouldPlaySound: show, shouldSetBadge: false };
+} });
 
 async function installationId() {
   const existing = await SecureStore.getItemAsync(INSTALLATION);
@@ -52,6 +59,17 @@ export async function unregisterPush() {
 
 export function usePushNotifications(me: Me | null, locked: boolean) {
   useEffect(() => {
+    pushUser = me;
+    return () => { pushUser = null; };
+  }, [me]);
+  useEffect(() => {
+    if (!me || locked || canUseSystemPush(me)) return;
+    return subscribe('subscription { notificationAdded { id title body } }', {}, (data: any) => {
+      const note = data.notificationAdded;
+      if (note && AppState.currentState === 'active' && activeUser?.id === me.id) toast(`${note.title}: ${note.body}`);
+    });
+  }, [me?.id, me?.role, me?.isDemo, locked]);
+  useEffect(() => {
     activeUser = locked ? null : me;
     if (activeUser && pending) open(pending);
     return () => { activeUser = null; };
@@ -59,9 +77,20 @@ export function usePushNotifications(me: Me | null, locked: boolean) {
 
   useEffect(() => {
     if (!enabled || !me) return;
+    if (!canUseSystemPush(me)) {
+      tokenCleanup = tokenCleanup.then(async () => {
+        await unregisterPush();
+        // Revoke a token left by a previous staff sign-in on this installation.
+        const { deleteToken, getMessaging } = await import('@react-native-firebase/messaging');
+        await deleteToken(getMessaging());
+      }).catch(() => undefined);
+      return;
+    }
     let stopped = false;
     const cleanup: (() => void)[] = [];
     const initialize = async () => {
+      await tokenCleanup;
+      if (stopped) return;
       const { getMessaging, getToken, onMessage, onTokenRefresh, onNotificationOpenedApp, getInitialNotification, registerDeviceForRemoteMessages } = await import('@react-native-firebase/messaging');
       if (stopped) return;
       const messaging = getMessaging();
@@ -82,7 +111,7 @@ export function usePushNotifications(me: Me | null, locked: boolean) {
       };
       void setup().catch(() => { if (__DEV__) console.warn('Push registration failed; it will retry when the app becomes active.'); });
       const received = onMessage(messaging, async message => {
-        if (!message.notification || message.data?.userId !== me.id) return;
+        if (stopped || !canUseSystemPush(pushUser) || pushUser?.id !== me.id || !message.notification || message.data?.userId !== me.id) return;
         const id = String(message.data?.notificationId ?? message.messageId ?? '');
         if (id && seen.has(id)) return;
         if (id) { seen.add(id); if (seen.size > 200) seen.delete(seen.values().next().value!); }
@@ -98,5 +127,5 @@ export function usePushNotifications(me: Me | null, locked: boolean) {
     };
     void initialize().catch(() => { if (__DEV__) console.warn('Push notifications are unavailable in this build.'); });
     return () => { stopped = true; cleanup.forEach(stop => stop()); };
-  }, [me?.id]);
+  }, [me?.id, me?.role, me?.isDemo]);
 }

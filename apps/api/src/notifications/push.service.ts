@@ -2,7 +2,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { and, eq, sql } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { DbService } from '../db/db';
-import { pushDevices, pushDeliveries } from '../db/schema';
+import { pushDevices, pushDeliveries, users } from '../db/schema';
+import { externalPushAllowed } from './push-policy';
 import { decryptField, encryptField } from '../common/crypto';
 import { badInput } from '../common/errors';
 import type { Actor } from '../common/context';
@@ -21,6 +22,11 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
   async register(actor: Actor, token: string, platform: string, installationId: string) {
     if (!env().FIREBASE_PUSH_ENABLED) return false;
     if (!['android', 'ios', 'web'].includes(platform) || token.length < 20 || token.length > 4096 || !/^[\w-]{16,100}$/.test(installationId)) throw badInput('Invalid push registration.');
+    const [account] = await this.dbs.db.select({ role: users.role, isDemo: users.isDemo }).from(users).where(eq(users.id, actor.userId));
+    if (!account || !externalPushAllowed(account)) {
+      await this.unregister(actor, installationId);
+      return false;
+    }
     const tokenHash = createHash('sha256').update(token).digest('hex');
     await this.dbs.db.transaction(async tx => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${installationId}))`);
@@ -66,14 +72,15 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
     try {
       const { rows: [n] } = await this.dbs.db.execute<{
         token_enc: string; notification_id: string; title: string; body: string; kind: string;
-        user_id: string; role: Actor['role']; created_at: Date;
-      }>(sql`SELECT d.token_enc, n.id AS notification_id, n.title, n.body, n.kind, n.user_id, u.role, n.created_at
+        user_id: string; role: Actor['role']; is_demo: boolean; created_at: Date;
+      }>(sql`SELECT d.token_enc, n.id AS notification_id, n.title, n.body, n.kind, n.user_id, u.role, u.is_demo, n.created_at
         FROM push_deliveries p JOIN push_devices d ON d.id = p.device_id
         JOIN notifications n ON n.id = p.notification_id AND n.user_id = d.user_id
-        JOIN users u ON u.id = d.user_id AND u.status = 'ACTIVE'
+        JOIN users u ON u.id = d.user_id AND u.status = 'ACTIVE' AND u.role IN ('SUPER_ADMIN', 'BROKER') AND u.is_demo = false
         JOIN sessions s ON s.id = d.session_id AND s.user_id = d.user_id AND s.revoked_at IS NULL AND s.expires_at > now()
         WHERE p.id = ${job.id} AND n.created_at > now() - interval '24 hours'`);
       if (!n) { await this.finish(job.id, 'expired-or-signed-out'); return; }
+      if (!externalPushAllowed({ role: n.role, isDemo: n.is_demo })) { await this.finish(job.id, 'in-app-only'); return; }
       const href = notificationDestination(n.role, n.kind) ?? '/notifications';
       const text = presentNotification(n);
       await this.firebase.messaging.send({

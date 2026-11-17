@@ -5,12 +5,15 @@ import { gql, subscribe } from '@/lib/api';
 import { when } from '@/lib/format';
 import { useQuery } from '@/lib/hooks';
 import { useEffect, useState } from 'react';
-import { BROWSER_PUSH_ERROR_EVENT, browserPushSetupMessage, registerBrowserPush, sendBrowserTestNotification } from '@/lib/push';
+import { useAuth } from '@/lib/auth';
+import { BROWSER_PUSH_ERROR_EVENT, browserPushSetupMessage, registerBrowserPush, sendBrowserTestNotification, canUseSystemPush } from '@/lib/push';
 
 interface N { id: string; kind: string; title: string; body: string; readAt?: string; createdAt: string }
 const ico = (k: string) => (k.startsWith('security') ? 'shield' : k.startsWith('payment') ? 'wallet' : k.startsWith('order') ? 'list' : 'bell') as 'bell';
 
 export default function Notifications() {
+  const { me } = useAuth();
+  const systemPush = canUseSystemPush(me?.role, me?.isDemo);
   const [pushStatus, setPushStatus] = useState('');
   const [testingPush, setTestingPush] = useState(false);
   const [enablingPush, setEnablingPush] = useState(false);
@@ -30,7 +33,7 @@ export default function Notifications() {
       <PageHead title="Notifications" sub={unread ? `${unread} unread` : undefined}>
         {unread > 0 && <button className="btn btn-sm" onClick={async () => { await gql(`mutation { markNotificationsRead }`).catch(() => undefined); void refetch(); }}><Icon name="check" size={16} />Mark all as read</button>}
       </PageHead>
-      <div className="stack" style={{ marginBottom: 16 }}>
+      {systemPush && <div className="stack" style={{ marginBottom: 16 }}>
         <button className="btn" disabled={enablingPush || testingPush} onClick={async () => {
           setEnablingPush(true); setPushStatus('Enabling browser notifications…');
           try { await registerBrowserPush(true); setPushStatus('Browser notifications enabled for this sign-in.'); }
@@ -45,7 +48,7 @@ export default function Notifications() {
           finally { setTestingPush(false); }
         }}>{testingPush ? 'Sending…' : 'Send test notification'}</button>
         {pushStatus && <p role="status" className="t2">{pushStatus}</p>}
-      </div>
+      </div>}
       {loading && !data ? <SkeletonRows /> : error && !data ? <ErrorState error={error} retry={refetch} /> : !data!.notifications.length ? <Empty icon="bell" title="You’re all caught up">Order fills, fund requests and security alerts appear here.</Empty> : (
         <div className="list">{data!.notifications.map((n) => (
           <div key={n.id} className="list-row" style={{ alignItems: 'flex-start' }}>
