@@ -59,5 +59,7 @@ async function main() {
 
 main().catch((e) => {
   console.error(e.message);
+  // Drizzle's outer error describes the SQL; PostgreSQL's cause explains why it failed.
+  if (e.cause?.message) console.error(`Database error${e.cause.code ? ` (${e.cause.code})` : ''}: ${e.cause.message}`);
   process.exit(1);
 });
