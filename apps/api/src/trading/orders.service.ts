@@ -389,7 +389,7 @@ export class OrdersService implements OnModuleInit {
         if (env().MARKET_FEED === 'dhan' && (!q || q.source !== 'DHAN' || Date.now() - q.ts.getTime() > 60_000)) continue;
         if (!q) continue;
         const inst = this.market.instrument(o.instrumentId);
-        if (inst && sessions.list.find((x) => x.exchange === inst.exchange)?.isOpen === false) continue; // no fills while the market is closed
+        if (sessions.enforced && inst && sessions.list.find((x) => x.exchange === inst.exchange)?.isOpen === false) continue; // honor the same timing policy as order placement
         const trig = isTrigger(o.type);
         // SL/TP orders are passed at the last traded price once the LTP reaches the trigger.
         const px = trig ? (triggerHit(o.type, o.side, o.triggerPriceMinor!, q.ltpMinor) ? q.ltpMinor : null) : this.venue.limitFillPrice(o.side, o.limitPriceMinor!, q);
