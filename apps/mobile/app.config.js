@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { validateIosBuild } = require('./scripts/check-ios-build.cjs');
 
 module.exports = ({ config }) => {
   const androidFile = process.env.GOOGLE_SERVICES_JSON || './google-services.json';
@@ -7,6 +8,11 @@ module.exports = ({ config }) => {
   const androidReady = fs.existsSync(path.resolve(__dirname, androidFile));
   const iosReady = fs.existsSync(path.resolve(__dirname, iosFile));
   const enabled = androidReady || iosReady;
+  // EAS file variables exist on its macOS worker. Validate before prebuild embeds the config.
+  // Local config inspection stays available while Apple/Firebase accounts are being created.
+  if (process.env.EAS_BUILD_PLATFORM === 'ios' && process.env.EAS_BUILD === 'true') {
+    validateIosBuild({ projectRoot: __dirname, env: process.env });
+  }
   return {
     ...config,
     android: { ...config.android, ...(androidReady ? { googleServicesFile: androidFile } : {}) },
@@ -17,12 +23,13 @@ module.exports = ({ config }) => {
       // Firebase native libraries are autolinked even when app configuration is missing.
       './plugins/with-firebase-notifications',
       './plugins/with-android-release-optimization',
+      './plugins/with-ios-firebase',
       ...(config.plugins || []).filter(
         (plugin) => (Array.isArray(plugin) ? plugin[0] : plugin) !== 'expo-build-properties',
       ),
       [
         'expo-notifications',
-        { defaultChannel: 'activity', color: '#08a77b', enableBackgroundRemoteNotifications: true },
+        { defaultChannel: 'activity', color: '#08a77b', enableBackgroundRemoteNotifications: true, mode: process.env.IOS_PUSH_ENVIRONMENT === 'production' ? 'production' : 'development' },
       ],
       [
         'expo-build-properties',

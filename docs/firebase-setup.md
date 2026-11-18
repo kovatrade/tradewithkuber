@@ -63,6 +63,9 @@ Run the **mobile-android** workflow after setting the secret. After clean prebui
 
 ## 3. Register iOS, if distributing an iPhone app
 
+For Windows-to-TestFlight instructions, EAS environments and signing, follow
+[iOS EAS build setup](ios-eas-build.md). The Android GitHub workflow continues separately.
+
 1. Add an Apple app with bundle ID **`com.techrover.tradedesk`**.
 2. Download `GoogleService-Info.plist` to **`apps/mobile/GoogleService-Info.plist`** (ignored by Git).
 3. Project settings → Cloud Messaging → Apple app configuration → upload the **APNs authentication key** (`.p8`) with its Key ID and Apple Team ID. Keep that key private.

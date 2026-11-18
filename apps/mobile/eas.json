@@ -1,27 +1,47 @@
 {
   "cli": {
-    "version": ">= 16.0.0",
-    "appVersionSource": "local"
+    "version": ">= 27.10.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "preview": {
+      "environment": "preview",
       "distribution": "internal",
+      "ios": {
+        "image": "sdk-56",
+        "buildConfiguration": "Release"
+      },
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://tradewithkuber.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://tradewithkuber.onrender.com",
+        "IOS_PUSH_ENVIRONMENT": "production"
       }
     },
     "production": {
+      "environment": "production",
+      "distribution": "store",
+      "ios": {
+        "image": "sdk-56",
+        "buildConfiguration": "Release",
+        "simulator": false
+      },
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://tradewithkuber.com"
+        "EXPO_PUBLIC_API_URL": "https://tradewithkuber.com",
+        "IOS_PUSH_ENVIRONMENT": "production"
       },
       "autoIncrement": true
+    },
+    "ios-simulator": {
+      "extends": "preview",
+      "ios": {
+        "simulator": true
+      }
     },
     "preview-32-bit": {
       "extends": "preview",

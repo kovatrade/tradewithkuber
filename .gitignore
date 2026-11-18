@@ -18,6 +18,13 @@ apps/mobile/ios/
 **/*firebase-adminsdk*.json
 **/*service-account*.json
 
+# Apple signing credentials and generated iOS archives
+*.p8
+*.p12
+*.mobileprovision
+*.ipa
+/apps/mobile/credentials.json
+
 # Python APK analysis/test bytecode
 __pycache__/
 

@@ -8,7 +8,14 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
-    "test:notifications": "node --test test/firebase-notifications.test.cjs"
+    "test:notifications": "node --test test/firebase-notifications.test.cjs",
+    "test:ios": "node --test test/ios-build.test.cjs",
+    "check:ios": "node scripts/check-ios-build.cjs",
+    "eas-build-pre-install": "node scripts/check-ios-build.cjs --pre-install",
+    "build:ios": "npx --yes eas-cli@27.10.0 build --platform ios --profile production",
+    "build:ios:preview": "npx --yes eas-cli@27.10.0 build --platform ios --profile preview",
+    "build:ios:simulator": "npx --yes eas-cli@27.10.0 build --platform ios --profile ios-simulator",
+    "submit:ios": "npx --yes eas-cli@27.10.0 submit --platform ios --profile production"
   },
   "dependencies": {
     "@expo/metro-runtime": "56.0.21",
