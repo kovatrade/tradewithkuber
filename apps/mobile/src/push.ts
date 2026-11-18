@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from './roles';
 import { useEffect } from 'react';
 import { AppState, Platform } from 'react-native';
 import Constants from 'expo-constants';
@@ -15,7 +16,7 @@ let pending: Record<string, string> | null = null;
 let activeUser: Me | null = null;
 let pushUser: Me | null = null;
 let tokenCleanup: Promise<void> = Promise.resolve();
-export const canUseSystemPush = (me?: Pick<Me, 'role' | 'isDemo'> | null) => !!me && !me.isDemo && (me.role === 'SUPER_ADMIN' || me.role === 'BROKER');
+export const canUseSystemPush = (me?: Pick<Me, 'role' | 'isDemo'> | null) => !!me && !me.isDemo && (isPlatformAdmin(me.role) || me.role === 'BROKER');
 const seen = new Set<string>();
 
 Notifications.setNotificationHandler({ handleNotification: async notification => {
@@ -34,7 +35,7 @@ function open(data: Record<string, string>) {
   if (!activeUser || data.userId !== activeUser.id) return;
   pending = null;
   const href = data.href ?? '/notifications';
-  const role = activeUser.role === 'SUPER_ADMIN' ? 'admin' : activeUser.role === 'BROKER' ? 'broker' : 'trader';
+  const role = isPlatformAdmin(activeUser.role) ? 'admin' : activeUser.role === 'BROKER' ? 'broker' : 'trader';
   if (!['/account', '/notifications'].includes(href) && !href.startsWith(`/${role}/`)) return;
   // The phone has its own route names. /notifications is a safe fallback for any new server destination.
   const routes: Record<string, string> = {

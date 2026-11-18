@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from './roles';
 /**
  * Super Admin tools on mobile: accounts (create, approve, suspend/reactivate, assign broker, reset password,
  * sign out), security (audit chain check, reconciliation, sign-in and consent logs), and the broker's
@@ -24,8 +25,8 @@ import {
 } from './ui';
 
 export const USER_FIELDS = 'id username displayName role status mode isDemo brokerId brokerName createdByName openingAmount commissionPct commissionPerMiniLot commissionPerMegaLot commissionIsDefault mfaEnabled resetDisabledAt createdAt phone rejectionReason';
-export interface UserRow { rejectionReason?: string; resetDisabledAt?: string; id: string; username: string; displayName: string; role: 'SUPER_ADMIN' | 'BROKER' | 'TRADER'; status: string; isDemo?: boolean; brokerId?: string; brokerName?: string; createdByName?: string; openingAmount?: string; commissionPct?: string; commissionPerMiniLot?: string; commissionPerMegaLot?: string; commissionIsDefault?: boolean; mfaEnabled: boolean; createdAt: string; phone?: string }
-const ROLE: Record<string, string> = { SUPER_ADMIN: 'Super Admin', BROKER: 'Broker', TRADER: 'Trader' };
+export interface UserRow { rejectionReason?: string; resetDisabledAt?: string; id: string; username: string; displayName: string; role: 'SUPER_ADMIN' | 'DEVELOPER' | 'BROKER' | 'TRADER'; status: string; isDemo?: boolean; brokerId?: string; brokerName?: string; createdByName?: string; openingAmount?: string; commissionPct?: string; commissionPerMiniLot?: string; commissionPerMegaLot?: string; commissionIsDefault?: boolean; mfaEnabled: boolean; createdAt: string; phone?: string }
+const ROLE: Record<string, string> = { SUPER_ADMIN: 'Super Admin', DEVELOPER: 'Developer', BROKER: 'Broker', TRADER: 'Trader' };
 const useBrokers = () => useQuery<{ users: { items: { id: string; username: string; displayName: string }[] } }>(`{ users(role:BROKER, status:ACTIVE, limit:100){ items{ id username displayName } } }`);
 
 /* ============================================================== MFA gate */
@@ -56,23 +57,23 @@ const UserItem = memo(function UserItem({ u, broker }: { u: UserRow; broker?: st
 export function AdminUsersScreen() {
   const { me } = useAuth();
   const [q, setQ] = useState('');
-  const [role, setRole] = useState<'' | 'TRADER' | 'BROKER' | 'SUPER_ADMIN'>('');
+  const [role, setRole] = useState<'' | 'TRADER' | 'BROKER' | 'SUPER_ADMIN' | 'DEVELOPER'>('');
   const [status, setStatus] = useState<'' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'>('');
   const [create, setCreate] = useState(false);
   const list = useQuery<{ users: { total: number; items: UserRow[] } }>(
     `query($r:Role,$s:UserStatus,$q:String){ users(role:$r, status:$s, search:$q, limit:100, offset:0){ total items{ ${USER_FIELDS} } } }`,
-    { r: role || undefined, s: status || undefined, q: q.trim() || undefined }, 30000, !me?.mfaEnabled,
+    { r: role || undefined, s: status || undefined, q: q.trim() || undefined }, 30000, (me?.role === 'SUPER_ADMIN' && !me.mfaEnabled),
   );
   const brokers = useBrokers();
   const name = useCallback((id?: string) => brokers.data?.users.items.find((b) => b.id === id)?.username, [brokers.data]);
-  if (!me?.mfaEnabled) return <AdminMfaGate title="Accounts" />;
+  if ((me?.role === 'SUPER_ADMIN' && !me.mfaEnabled)) return <AdminMfaGate title="Accounts" />;
   const items = list.data?.users.items ?? [];
   const header = (
     <>
       <PendingDeletions onDeleted={() => void list.refetch()} />
       <SearchBox value={q} onChangeText={setQ} placeholder="Search name or username" />
       <Chips value={status} onChange={setStatus} items={[{ k: '', label: 'All' }, { k: 'PENDING', label: 'Pending' }, { k: 'ACTIVE', label: 'Active' }, { k: 'SUSPENDED', label: 'Suspended' }, { k: 'REJECTED', label: 'Rejected' }]} />
-      <Chips value={role} onChange={setRole} items={[{ k: '', label: 'Every role' }, { k: 'TRADER', label: 'Traders' }, { k: 'BROKER', label: 'Brokers' }, { k: 'SUPER_ADMIN', label: 'Admins' }]} />
+      <Chips value={role} onChange={setRole} items={[{ k: '', label: 'Every role' }, { k: 'TRADER', label: 'Traders' }, { k: 'BROKER', label: 'Brokers' }, { k: 'SUPER_ADMIN', label: 'Admins' }, { k: 'DEVELOPER', label: 'Developers' }]} />
       <Spread><T v="xs">{list.data ? `${list.data.users.total} account${list.data.users.total === 1 ? '' : 's'}${list.data.users.total > items.length ? `, showing ${items.length}` : ''}` : ' '}</T><Button size="sm" kind="primary" icon="plus" title="New account" onPress={() => setCreate(true)} /></Spread>
     </>
   );
@@ -87,7 +88,7 @@ export function AdminUsersScreen() {
 
 /** New account. A broker uses it to ask for a trader account (with the opening amount); a Super Admin approves it. */
 export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: string; username: string }[]; onClose: () => void; onDone: () => void }) {
-  const [f, setF] = useState({ username: '', displayName: '', role: 'TRADER' as 'TRADER' | 'BROKER', phone: '', brokerId: '', tempPassword: '', commMini: '', commMega: '', openingAmount: '' });
+  const [f, setF] = useState({ username: '', displayName: '', role: 'TRADER' as 'TRADER' | 'BROKER' | 'DEVELOPER', phone: '', brokerId: '', tempPassword: '', commMini: '', commMega: '', openingAmount: '' });
   const sole = useSoleAdmin();
   const { me, settings } = useAuth();
   const asBroker = me?.role === 'BROKER';
@@ -114,7 +115,7 @@ export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: s
   return (
     <Sheet visible title={asBroker ? 'Add trader' : 'New account'} sub={needsPayment ? `Step ${step + 1} of 3 · ${['Account details', 'Super Admin receiving account', 'Payment reference and proof'][step]}` : sole ? 'It can sign in straight away.' : 'It can sign in after a Super Admin approves it.'} onClose={onClose}>
       {step === 0 && <>
-      {!asBroker && <Chips value={f.role} onChange={(role) => setF({ ...f, role })} items={[{ k: 'TRADER', label: 'Trader' }, { k: 'BROKER', label: 'Broker' }]} />}
+      {!asBroker && <Chips value={f.role} onChange={(role) => setF({ ...f, role })} items={[{ k: 'TRADER', label: 'Trader' }, { k: 'BROKER', label: 'Broker' }, { k: 'DEVELOPER', label: 'Developer' }]} />}
       <Field label="Full name" value={f.displayName} maxLength={120} onChangeText={(v) => setF({ ...f, displayName: v })} error={e('displayName')} />
       <Field label="Username" autoCapitalize="none" autoCorrect={false} value={f.username} onChangeText={(v) => setF({ ...f, username: v.toLowerCase() })} error={e('username')} />
       <Field label="Mobile number" keyboardType="phone-pad" maxLength={10} value={f.phone} onChangeText={(v) => setF({ ...f, phone: v.replace(/\D/g, '') })} error={e('phone')} />
@@ -160,9 +161,9 @@ export function AdminUserScreen({ id }: { id: string }) {
   const [act, setAct] = useState<Action | null>(null);
   const [tab, setTab] = useState<'logins' | 'sessions'>('logins');
   const x = u.data?.user;
-  if (!me?.mfaEnabled) return <AdminMfaGate title="Account" />;
+  if ((me?.role === 'SUPER_ADMIN' && !me.mfaEnabled)) return <AdminMfaGate title="Account" />;
   if (!x) return <Screen back title="Account">{u.error ? <ErrorState error={u.error} retry={u.refetch} /> : <Skeleton />}</Screen>;
-  const self = x.id === me.id;
+  const self = x.id === me?.id;
   const brokerName = brokers.data?.users.items.find((b) => b.id === x.brokerId);
   return (
     <Screen back title={x.displayName}>
@@ -279,9 +280,9 @@ export function AdminSecurityScreen() {
   const { me } = useAuth();
   const [tab, setTab] = useState<SecTab>('logins');
   const [outcome, setOutcome] = useState<'' | 'FAILURE' | 'DENIED'>('');
-  const logins = useQuery<{ loginAudit: LoginEvent[] }>(`query($o:String,$n:Int){ loginAudit(outcome:$o, limit:$n){ ${LOGIN_FIELDS} } }`, { o: outcome || undefined, n: 200 }, 30000, !me?.mfaEnabled || tab !== 'logins');
-  const consents = useQuery<{ consentLog: ConsentRecord[] }>(`query($n:Int){ consentLog(limit:$n){ ${CONSENT_FIELDS} } }`, { n: 200 }, undefined, !me?.mfaEnabled || tab !== 'consents');
-  if (!me?.mfaEnabled) return <AdminMfaGate title="Security" />;
+  const logins = useQuery<{ loginAudit: LoginEvent[] }>(`query($o:String,$n:Int){ loginAudit(outcome:$o, limit:$n){ ${LOGIN_FIELDS} } }`, { o: outcome || undefined, n: 200 }, 30000, (me?.role === 'SUPER_ADMIN' && !me.mfaEnabled) || tab !== 'logins');
+  const consents = useQuery<{ consentLog: ConsentRecord[] }>(`query($n:Int){ consentLog(limit:$n){ ${CONSENT_FIELDS} } }`, { n: 200 }, undefined, (me?.role === 'SUPER_ADMIN' && !me.mfaEnabled) || tab !== 'consents');
+  if ((me?.role === 'SUPER_ADMIN' && !me.mfaEnabled)) return <AdminMfaGate title="Security" />;
   const tabs = <Tabs value={tab} onChange={setTab} items={[{ k: 'logins', label: 'Sign-ins' }, { k: 'consents', label: 'Consents' }, { k: 'checks', label: 'Checks' }, { k: 'resets', label: 'Resets' }]} />;
   if (tab === 'resets') return <Screen title="Account resets" right={<BellButton />}>{tabs}<AccountResetPanel /><PlatformResetPanel /></Screen>;
   if (tab === 'checks') return <Screen title="Security" right={<BellButton />}>{tabs}<Checks /></Screen>;
@@ -349,7 +350,7 @@ function Checks() {
 /* ============================================================== broker commissions */
 export function CommissionsScreen() {
   const { me } = useAuth();
-  const admin = me?.role === 'SUPER_ADMIN';
+  const admin = isPlatformAdmin(me?.role);
   const [downloading, setDownloading] = useState(false);
   const download = async (format: 'PDF' | 'XLSX') => {
     setDownloading(true);

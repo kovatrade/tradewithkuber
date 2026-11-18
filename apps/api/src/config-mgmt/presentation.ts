@@ -51,7 +51,7 @@ export const SETTING_TEXT: Record<ConfigKey, [string, string]> = {
 };
 
 const words: Record<string, string> = {
-  SUPER_ADMIN: 'Super Admin', BROKER: 'Broker', TRADER: 'Trader', US_INDEX: 'US indices',
+  SUPER_ADMIN: 'Super Admin', DEVELOPER: 'Developer', BROKER: 'Broker', TRADER: 'Trader', US_INDEX: 'US indices',
   maxConcurrent: 'Maximum signed-in devices (zero means unlimited)', onLimit: 'When the device limit is reached',
   idleMinutes: 'Sign out after inactivity (minutes)', maxHours: 'Maximum sign-in duration (hours)',
   open: 'Opening time', close: 'Closing time', mode: 'Website visibility', legalName: 'Registered business name',

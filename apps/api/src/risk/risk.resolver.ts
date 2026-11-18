@@ -20,7 +20,7 @@ export class RiskStatus {
 export class RiskResolver {
   constructor(private readonly risk: RiskService, private readonly policy: PolicyService) {}
 
-  @Roles('TRADER', 'BROKER', 'SUPER_ADMIN')
+  @Roles('TRADER', 'BROKER', 'SUPER_ADMIN', 'DEVELOPER')
   @Query(() => RiskStatus, { description: 'Loss watch: traders see their own; brokers their traders; Super Admins anyone.' })
   async riskStatus(@CurrentActor() a: Actor, @Args('userId', { type: () => ID, nullable: true }) userId?: string): Promise<RiskStatus> {
     const id = userId ?? a.userId;

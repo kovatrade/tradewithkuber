@@ -1,4 +1,5 @@
 'use client';
+import { isPlatformAdmin } from './roles';
 import { useEffect } from 'react';
 import { getMessaging, getToken, deleteToken, isSupported, onMessage } from 'firebase/messaging';
 import { gql } from './api';
@@ -65,7 +66,7 @@ export async function unregisterBrowserPush() {
   const worker = await navigator.serviceWorker?.getRegistration('/firebase-messaging-sw.js');
   for (const notification of await worker?.getNotifications() ?? []) notification.close();
 }
-export const canUseSystemPush = (role?: string, isDemo?: boolean) => isDemo !== true && (role === 'SUPER_ADMIN' || role === 'BROKER');
+export const canUseSystemPush = (role?: string, isDemo?: boolean) => isDemo !== true && (isPlatformAdmin(role) || role === 'BROKER');
 export function useBrowserPush(userId?: string, role?: string, isDemo?: boolean) {
   useEffect(() => {
     if (userId && !canUseSystemPush(role, isDemo)) {

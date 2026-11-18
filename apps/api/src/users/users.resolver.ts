@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { IsEmail, IsEnum, IsOptional, IsUUID, Length, Matches, MaxLength, ValidateNested } from 'class-validator';
 import { soleAdminMayApprove } from '../common/maker-checker';
 import { DbService } from '../db/db';
@@ -67,7 +68,7 @@ export class UsersResolver {
     return this.users.approve(a, id, ip, (tx, u) => this.payments.creditOpeningTx(tx, a, u, ip));
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'DEVELOPER')
   @Query(() => UserPage, { name: 'users', description: 'Admins see everyone; brokers see only their assigned traders.' })
   async users_(
     @CurrentActor() a: Actor,
@@ -85,28 +86,28 @@ export class UsersResolver {
   /** Adds the broker's name and (for Super Admins) who asked for the account, in one lookup for the whole page. */
   private async withNames(out: UserType[], rows: UserRow[], a: Actor) {
     for (const [i, u] of rows.entries()) {
-      if (u.role !== 'BROKER' || !(a.role === 'SUPER_ADMIN' || a.userId === u.id)) continue;
+      if (u.role !== 'BROKER' || !(isPlatformAdmin(a.role) || a.userId === u.id)) continue;
       const r = await this.users.commissionPerLot(u);
       Object.assign(out[i], { commissionPerMiniLot: formatMoney(r.miniMinor), commissionPerMegaLot: formatMoney(r.megaMinor), commissionIsDefault: u.commissionMiniMinor === null && u.commissionMegaMinor === null });
     }
-    const ids = [...new Set(rows.flatMap((u) => [u.brokerId, a.role === 'SUPER_ADMIN' ? u.createdById : null]).filter((x): x is string => !!x))];
+    const ids = [...new Set(rows.flatMap((u) => [u.brokerId, isPlatformAdmin(a.role) ? u.createdById : null]).filter((x): x is string => !!x))];
     if (!ids.length) return out;
     const names = new Map((await this.dbs.db.select({ id: users.id, username: users.username, displayName: users.displayName }).from(users).where(inArray(users.id, ids))).map((n) => [n.id, n.displayName || n.username]));
     rows.forEach((u, i) => {
       if (u.brokerId) out[i].brokerName = names.get(u.brokerId);
-      if (a.role === 'SUPER_ADMIN' && u.createdById) out[i].createdByName = names.get(u.createdById);
+      if (isPlatformAdmin(a.role) && u.createdById) out[i].createdByName = names.get(u.createdById);
     });
     return out;
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'DEVELOPER')
   @Query(() => UserType)
   async user(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     const u = await this.users.get(a, id, c.ip);
     return (await this.withNames([UserType.from(u, a)], [u], a))[0];
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'DEVELOPER')
   @Mutation(() => UserType, { description: 'Creates a PENDING account (a broker: a request to the Super Admin, with the opening amount). Approving it activates the account and credits the opening amount.' })
   async createUser(@CurrentActor() a: Actor, @Args('input') input: CreateUserInput, @Ctx() c: GqlContext) {
     let openingAmountMinor: bigint | null = null;
@@ -118,18 +119,18 @@ export class UsersResolver {
     }
     const u = await this.users.create(a, { ...input, openingAmountMinor }, c.ip);
     // Only one Super Admin (single-admin mode): accounts they create are active straight away.
-    if (a.role === 'SUPER_ADMIN' && (await soleAdminMayApprove(this.dbs.db))) return UserType.from(await this.approveWithOpening(a, u.id, c.ip), a);
+    if (isPlatformAdmin(a.role) && (await soleAdminMayApprove(this.dbs.db))) return UserType.from(await this.approveWithOpening(a, u.id, c.ip), a);
     return UserType.from(u, a);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => UserType, { description: "Set a broker's commission share in percent (0–100)." })
   async setBrokerCommission(@CurrentActor() a: Actor, @Args('brokerId', { type: () => ID }) id: string, @Args('commissionPct') pct: string, @Ctx() c: GqlContext) {
     return UserType.from(await this.users.setCommission(a, id, pct, c.ip), a);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => UserType, { description: "Set a broker's earning per mini lot and per mega lot, in rupees (e.g. 170 and 1700)." })
   async setBrokerCommissionPerLot(@CurrentActor() a: Actor, @Args('brokerId', { type: () => ID }) id: string, @Args('perMiniLot') mini: string, @Args('perMegaLot') mega: string, @Ctx() c: GqlContext) {
@@ -137,20 +138,20 @@ export class UsersResolver {
     return (await this.withNames([UserType.from(u, a)], [u], a))[0];
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => UserType)
   async approveUser(@CurrentActor() a: Actor, @Args('userId', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return UserType.from(await this.approveWithOpening(a, id, c.ip), a);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => UserType)
   async rejectTrader(@CurrentActor() a: Actor, @Args('userId', { type: () => ID }) id: string, @Args('reason') reason: string, @Ctx() c: GqlContext) {
     return UserType.from(await this.users.reject(a, id, reason, c.ip), a);
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => UserType)
   async setUserStatus(
@@ -164,7 +165,7 @@ export class UsersResolver {
     return UserType.from(await this.users.setStatus(a, id, status as 'ACTIVE' | 'SUSPENDED' | 'CLOSED', reason, c.ip), a);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => UserType)
   async assignTraderToBroker(
@@ -176,14 +177,14 @@ export class UsersResolver {
     return UserType.from(await this.users.assignBroker(a, traderId, brokerId ?? null, c.ip), a);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => Boolean)
   resetUserPassword(@CurrentActor() a: Actor, @Args('userId', { type: () => ID }) id: string, @Args('tempPassword') pw: string, @Ctx() c: GqlContext) {
     return this.users.adminResetPassword(a, id, pw, c.ip);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => AdminOverview)
   async adminOverview(): Promise<AdminOverview> {
     const o = await this.users.adminOverview();
@@ -195,7 +196,7 @@ export class UsersResolver {
     };
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => AdminPendingCounts)
   async adminPendingCounts(): Promise<AdminPendingCounts> {
     const { rows } = await this.dbs.db.execute<{ accounts: number; payments: number; fees: number; configuration: number }>(sql`
@@ -206,7 +207,7 @@ export class UsersResolver {
     return rows[0];
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'DEVELOPER')
   @Query(() => CommissionDownload)
   async commissionDownload(@CurrentActor() a: Actor, @Args('month') month: string, @Args('format') format: string) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month < '2000-01' || month > new Date(Date.now() + 19_800_000).toISOString().slice(0, 7)) throw badInput('Choose a valid month.');
@@ -214,11 +215,11 @@ export class UsersResolver {
     const [year, m] = month.split('-').map(Number);
     const from = new Date(`${month}-01T00:00:00+05:30`);
     const to = new Date(Date.UTC(year, m, 1) - 19_800_000);
-    const report = a.role === 'SUPER_ADMIN' ? await this.users.adminCommission(a, from, to) : await this.users.brokerCommission(a, a.userId, from, to);
-    return renderCommission(report, month, format, a.role === 'SUPER_ADMIN');
+    const report = isPlatformAdmin(a.role) ? await this.users.adminCommission(a, from, to) : await this.users.brokerCommission(a, a.userId, from, to);
+    return renderCommission(report, month, format, isPlatformAdmin(a.role));
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'DEVELOPER')
   @Query(() => CommissionReport)
   async commissionReport(
     @CurrentActor() a: Actor,
@@ -227,12 +228,12 @@ export class UsersResolver {
     @Args('brokerId', { type: () => ID, nullable: true }) brokerId?: string,
   ): Promise<CommissionReport> {
     if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from >= to) throw badInput('Choose a start date before the end date.');
-    const r = a.role === 'SUPER_ADMIN' && !brokerId ? await this.users.adminCommission(a, from, to) : await this.users.brokerCommission(a, brokerId ?? a.userId, from, to);
+    const r = isPlatformAdmin(a.role) && !brokerId ? await this.users.adminCommission(a, from, to) : await this.users.brokerCommission(a, brokerId ?? a.userId, from, to);
     return {
       shareBps: r.shareBps,
       perMiniLot: formatMoney(r.perMiniLotMinor),
       perMegaLot: formatMoney(r.perMegaLotMinor),
-      lines: r.lines.map((l) => ({ userId: l.userId, username: l.username, brokerage: a.role === 'SUPER_ADMIN' ? formatMoney(l.brokerageMinor) : undefined, miniLots: l.miniLots, megaLots: l.megaLots, commission: formatMoney(l.commissionMinor) })),
+      lines: r.lines.map((l) => ({ userId: l.userId, username: l.username, brokerage: isPlatformAdmin(a.role) ? formatMoney(l.brokerageMinor) : undefined, miniLots: l.miniLots, megaLots: l.megaLots, commission: formatMoney(l.commissionMinor) })),
       total: formatMoney(r.totalMinor),
     };
   }

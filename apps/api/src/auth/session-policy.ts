@@ -38,4 +38,4 @@ export function signedOutMessage(reason?: string | null): { code: string; messag
 }
 
 export const policyFor = (all: Record<string, RolePolicy>, role: Role): RolePolicy =>
-  all[role] ?? { maxConcurrent: 0, onLimit: 'ask', idleMinutes: 2880, maxHours: 48 };
+  all[role] ?? (role === 'DEVELOPER' ? all.SUPER_ADMIN : undefined) ?? { maxConcurrent: 0, onLimit: 'ask', idleMinutes: 2880, maxHours: 48 };

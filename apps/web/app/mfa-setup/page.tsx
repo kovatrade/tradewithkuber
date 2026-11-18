@@ -1,4 +1,5 @@
 'use client';
+import { isPlatformAdmin } from '../../lib/roles';
 import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
@@ -6,7 +7,7 @@ import { gql } from '@/lib/api';
 import { useToast } from '@/components/ui';
 import { homeFor, useAuth, type Role } from '@/lib/auth';
 
-const destinationFor = (role: Role) => role !== 'SUPER_ADMIN' || new URLSearchParams(window.location.search).get('from') === 'account' ? '/account' : homeFor(role);
+const destinationFor = (role: Role) => !isPlatformAdmin(role) || new URLSearchParams(window.location.search).get('from') === 'account' ? '/account' : homeFor(role);
 
 /** Mandatory TOTP enrolment for Super Admins (optional for others via Security settings). */
 export default function MfaSetup() {

@@ -68,7 +68,7 @@ export default function Approvals() {
       o: page * 50,
     },
     10000,
-    !me?.mfaEnabled || invalidDates,
+    (me?.role === 'SUPER_ADMIN' && !me.mfaEnabled) || invalidDates,
   );
   const [sel, setSel] = useState<P | null>(null);
   const [mode, setMode] = useState<'approve' | 'reject'>('approve');
@@ -93,7 +93,7 @@ export default function Approvals() {
       setBusy(false);
     }
   };
-  if (!me?.mfaEnabled) return <AdminMfaGate title="Approvals" />;
+  if ((me?.role === 'SUPER_ADMIN' && !me.mfaEnabled)) return <AdminMfaGate title="Approvals" />;
   return (
     <Screen title="Transactions" scroll={false} right={<BellButton />} onRefresh={refetch}>
       <VList

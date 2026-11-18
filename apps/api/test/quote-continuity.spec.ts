@@ -102,6 +102,28 @@ describe('complete last-known market quotes', () => {
     await snapshots.clear();
     expect(await snapshots.load()).toEqual([]);
   });
+  it('does not rewrite an unchanged last-known state, but persists changes and saves again after reset', async () => {
+    const { snapshots, db } = fixture();
+    const insert = jest.spyOn(db, 'insert');
+    const q = snapshotQuote(instrument, payload)!;
+    await snapshots.save([q]);
+    await snapshots.save([structuredClone(q)]);
+    expect(insert).toHaveBeenCalledTimes(1);
+    await snapshots.save([{ ...q, prevCloseMinor: q.prevCloseMinor + 100n }]);
+    expect(insert).toHaveBeenCalledTimes(2);
+    await snapshots.clear();
+    await snapshots.save([q]);
+    expect(insert).toHaveBeenCalledTimes(3);
+  });
+  it('retries a failed checkpoint without losing the last valid snapshot', async () => {
+    const { snapshots, db } = fixture();
+    const q = snapshotQuote(instrument, payload)!;
+    const insert = jest.spyOn(db, 'insert').mockImplementationOnce(() => { throw new Error('database unavailable'); });
+    await expect(snapshots.save([q])).rejects.toThrow('database unavailable');
+    await snapshots.save([q]);
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(await snapshots.load()).toEqual([q]);
+  });
   it('deduplicates snapshot refreshes and waits between batches to respect Dhan rate limits', async () => {
     const { snapshots } = fixture();
     const request = jest

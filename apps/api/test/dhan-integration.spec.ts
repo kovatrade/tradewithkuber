@@ -55,12 +55,12 @@ suite('isolated Dhan maintenance and authorization', () => {
       .values({
         username: 'single.admin',
         displayName: 'Admin',
-        role: 'SUPER_ADMIN',
+        role: 'DEVELOPER',
         status: 'ACTIVE',
         passwordHash: 'unused',
       })
       .returning();
-    admin = { userId: row.id, sessionId: row.id, role: 'SUPER_ADMIN', mfaVerified: true };
+    admin = { userId: row.id, sessionId: row.id, role: 'DEVELOPER', mfaVerified: false };
   });
   afterEach(() => jest.restoreAllMocks());
   afterAll(async () => {
@@ -143,9 +143,9 @@ suite('isolated Dhan maintenance and authorization', () => {
     expect(restarted.isFresh()).toBe(true);
     await restarted.onModuleDestroy();
   });
-  it('requires admin/MFA, binds callback to its browser, encrypts issued tokens and rejects replay', async () => {
+  it('requires Developer authorization, binds callback to its browser, encrypts issued tokens and rejects replay', async () => {
     await expect(credentials.begin({ ...admin, role: 'BROKER' })).rejects.toThrow();
-    await expect(credentials.begin({ ...admin, mfaVerified: false })).rejects.toThrow();
+    await expect(credentials.begin({ ...admin, role: 'SUPER_ADMIN', mfaVerified: true })).rejects.toThrow();
     const url = await credentials.begin(admin);
     const ticket = new URL(url).searchParams.get('ticket')!;
     const provider = jest

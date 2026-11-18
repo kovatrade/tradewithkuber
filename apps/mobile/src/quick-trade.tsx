@@ -49,7 +49,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
   const session = i && r ? r.sessions.find((s) => s.exchange === i.exchange) : undefined;
   const closed = session?.isOpen === false;
   const n = Number(qty);
-  const [previewSide, setPreviewSide] = useState<Side>(initialSide ?? 'BUY');
+  const previewSide: Side = initialSide ?? 'BUY';
   const estimate = useQuery<{ orderPreview: { price: string; value: string; brokerage: string; intradayMargin: string; carryForwardMargin: string } }>(
     `query($id:ID!,$s:OrderSide!,$n:Int!,$l:String,$t:String){orderPreview(instrumentId:$id,side:$s,quantity:$n,limitPrice:$l,triggerPrice:$t){price value brokerage intradayMargin carryForwardMargin}}`,
     { id: instrumentId, s: previewSide, n: Number.isSafeInteger(n) && n > 0 ? n : 1, l: type === 'LIMIT' ? price || undefined : undefined, t: type === 'STOP_LOSS' ? price || undefined : undefined }, closed ? 30000 : 3000, !i || !Number.isSafeInteger(n) || n <= 0 || (type !== 'MARKET' && !price));
@@ -61,7 +61,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
 
   const place = async (side: Side) => {
     if (!i || qtyErr || priceErr || closed) return;
-    setPreviewSide(side); setBusy(side); setErr(null); tap();
+    setBusy(side); setErr(null); tap();
     try {
       const d = await gql<{ placeOrder: { status: string; fillPrice?: string; rejectReason?: string } }>(
         `mutation($i:PlaceOrderInput!){ placeOrder(input:$i){ status fillPrice rejectReason } }`,

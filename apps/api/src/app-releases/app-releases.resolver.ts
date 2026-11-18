@@ -62,13 +62,13 @@ export class AppReleasesResolver {
     return { android: android ? toRelease(android) : undefined, android32: android32 ? toRelease(android32) : undefined, ios: ios ? toRelease(ios) : undefined };
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => AppReleaseAdmin, { description: 'Super Admin: release history and whether uploads are set up.' })
   async appReleases(@Args('limit', { type: () => Int, nullable: true }) limit?: number): Promise<AppReleaseAdmin> {
     return { uploadsEnabled: !!this.releases.filesDir, maxUploadMb: env().APK_MAX_MB, autoPublish: !!env().APP_RELEASE_CI_TOKEN, history: (await this.releases.history(limit ?? 30)).map(toRelease) };
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Throttle({ default: { limit: lim(10), ttl: 60_000 } })
   @Mutation(() => UploadLink, { description: 'Super Admin: a 15-minute link to upload a new Android APK.' })
@@ -76,14 +76,14 @@ export class AppReleasesResolver {
     return this.releases.createUploadLink(a, version, notes, c.ip, abi);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => AppRelease, { description: 'Super Admin: publish the iOS TestFlight or App Store link.' })
   async setIosRelease(@CurrentActor() a: Actor, @Args('url') url: string, @Args('version') version: string, @Args('notes', { type: () => String, nullable: true }) notes: string | undefined, @Ctx() c: GqlContext) {
     return toRelease(await this.releases.setIos(a, url, version, notes, c.ip));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => AppRelease, { description: 'Super Admin: take a release off the download page (it stays in history).' })
   async hideAppRelease(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {

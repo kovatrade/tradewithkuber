@@ -42,13 +42,13 @@ export class PaymentsResolver {
     return rows.map((r) => ({ ...toPayment(r, map.get(r.userId)), isDemo: names.find(n => n.id === r.userId)?.isDemo ?? false, paymentEvidence: evidence.get(r.id), requestedByName: display.get(r.requestedById), reviewedByName: r.reviewedById ? display.get(r.reviewedById) : undefined }));
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER', 'TRADER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'TRADER', 'DEVELOPER')
   @Query(() => PaymentEvidence, { nullable: true })
   openingPayment(@CurrentActor() a: Actor, @Args('userId', { type: () => ID }) userId: string) {
     return this.evidence.opening(a, userId);
   }
 
-  @Roles('SUPER_ADMIN', 'BROKER', 'TRADER')
+  @Roles('SUPER_ADMIN', 'BROKER', 'TRADER', 'DEVELOPER')
   @Query(() => String)
   paymentEvidenceProof(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return this.evidence.proof(a, id, c.ip);
@@ -81,14 +81,14 @@ export class PaymentsResolver {
     return this.withNames(await this.payments.list(a, { status: status as any, userId, limit: clampLimit(limit), offset: Math.max(0, Math.min(offset ?? 0, 1_000_000)), type, search, from, to }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => PaymentRequest, { description: 'Checker approval. Posts to the ledger atomically. Requester cannot approve.' })
   async approvePayment(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('note', { nullable: true }) note: string, @Ctx() c: GqlContext) {
     return (await this.withNames([await this.payments.approve(a, id, note, c.ip)]))[0];
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => PaymentRequest)
   async rejectPayment(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('note') note: string, @Ctx() c: GqlContext) {
     return (await this.withNames([await this.payments.reject(a, id, note, c.ip)]))[0];

@@ -191,7 +191,7 @@ export class RiskService implements OnModuleInit, OnModuleDestroy {
       const body = `Loss reached ${Math.floor(v.lossPct)}% (${inr(v.lossMinor)} of ${inr(v.fundsMinor)}). ${cut.length ? `Cut: ${cut.join(', ')}.` : ''}${failed.length ? ` Not cut yet (will retry): ${failed.join('; ')}.` : ''}`;
       await this.dbs.db.transaction(async (tx) => {
         await this.notifications.notify(tx, v.userId, 'risk.autocut', `Trades cut automatically at ${cutPct}% loss`, `${body} Add funds to trade again.`);
-        const staff = await tx.select({ id: users.id }).from(users).where(and(eq(users.status, 'ACTIVE'), or(eq(users.role, 'SUPER_ADMIN'), u?.brokerId ? eq(users.id, u.brokerId) : sql`false`)));
+        const staff = await tx.select({ id: users.id }).from(users).where(and(eq(users.status, 'ACTIVE'), or(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), u?.brokerId ? eq(users.id, u.brokerId) : sql`false`)));
         for (const s of staff) await this.notifications.notify(tx, s.id, 'risk.autocut', `${u?.username ?? 'A trader'}: trades cut at ${cutPct}% loss`, body);
         await this.audit.record(tx, { actor: null, action: 'risk.autocut', entityType: 'user', entityId: v.userId, outcome: done ? 'SUCCESS' : 'FAILURE', metadata: { lossPct: v.lossPct, loss: v.lossMinor, funds: v.fundsMinor, cutPct, cut, failed } });
       });

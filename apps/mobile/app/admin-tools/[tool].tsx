@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../../src/roles';
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useAuth, homeFor } from '@/auth';
 import { ADMIN_SCREENS } from '@/admin-tools';
@@ -9,8 +10,8 @@ export default function AdminTool() {
   const { tool } = useLocalSearchParams<{ tool: string }>();
   if (!ready) return null;
   if (!me) return <Redirect href="/login" />;
-  if (me.role !== 'SUPER_ADMIN') return <Redirect href={homeFor(me.role)} />;
-  if (!me.mfaEnabled)
+  if (!isPlatformAdmin(me.role)) return <Redirect href={homeFor(me.role)} />;
+  if (me.role === 'SUPER_ADMIN' && !me.mfaEnabled)
     return (
       <Screen back title="Administration">
         <Notice>Set up two-step verification to manage these settings.</Notice>

@@ -47,7 +47,7 @@ export class SiteService {
     if (input.courseSlug && !course) throw badInput('That course is not available.');
     return this.dbs.db.transaction(async (tx) => {
       const [row] = await tx.insert(courseEnquiries).values({ name, phoneEnc: encryptField(phone, 'course_enquiries.phone'), emailEnc: email ? encryptField(email, 'course_enquiries.email') : null, courseSlug: course?.slug ?? null, message, ip: ip.slice(0, 64) }).returning({ id: courseEnquiries.id });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
       for (const a of admins) await this.notifications.notify(tx, a.id, 'site.enquiry', 'New course enquiry', `${name}${course ? ` · ${course.title}` : ''}. Open Course enquiries to call back.`);
       await this.audit.record(tx, { actor: null, action: 'site.enquiry_received', entityType: 'course_enquiry', entityId: row.id, outcome: 'SUCCESS', ip, metadata: { course: course?.slug ?? null } });
       return row.id;

@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { and, desc, eq, isNull, ne, or } from 'drizzle-orm';
@@ -18,7 +19,7 @@ const VERSION_RE = /^[0-9A-Za-z][0-9A-Za-z.+_ ()-]{0,39}$/;
 
 interface UploadClaims { sub: string; role: string; version: string; notes?: string; abi?: string; purpose: 'apk-upload' }
 /** Who is publishing: a Super Admin (signed link) or the CI build (token). */
-type Publisher = { userId: string | null; version: string; notes?: string; source: 'admin' | 'github-actions'; abi?: string };
+type Publisher = { role?: Actor['role']; userId: string | null; version: string; notes?: string; source: 'admin' | 'github-actions'; abi?: string };
 
 /**
  * App downloads page. Android: a Super Admin uploads the APK through a short-lived signed link (the file streams
@@ -63,7 +64,7 @@ export class AppReleasesService {
   verifyUpload(token: string): UploadClaims {
     try {
       const c = this.jwt.verify<UploadClaims>(token, { secret: env().JWT_STEPUP_SECRET, algorithms: ['HS256'], issuer: 'tradedesk', audience: 'apk-upload' });
-      if (c.purpose !== 'apk-upload' || c.role !== 'SUPER_ADMIN') throw new Error('bad purpose');
+      if (c.purpose !== 'apk-upload' || !isPlatformAdmin(c.role)) throw new Error('bad purpose');
       return c;
     } catch {
       throw new AppError('UNAUTHENTICATED', 'This upload link has expired. Start the upload again.');
@@ -89,7 +90,7 @@ export class AppReleasesService {
 
   /** Step 2 of an admin upload: stream the request body to disk, check it is an APK (zip), record it. */
   receiveApk(claims: UploadClaims, body: Readable, declaredLength: number | undefined, ip: string) {
-    return this.store({ userId: claims.sub, version: claims.version, notes: claims.notes, abi: claims.abi, source: 'admin' }, body, declaredLength, ip);
+    return this.store({ role: claims.role as Actor['role'], userId: claims.sub, version: claims.version, notes: claims.notes, abi: claims.abi, source: 'admin' }, body, declaredLength, ip);
   }
 
   private async store(who: Publisher, body: Readable, declaredLength: number | undefined, ip: string) {
@@ -128,7 +129,7 @@ export class AppReleasesService {
     const sha256 = hash.digest('hex');
     const suffix = who.abi === 'arm64-v8a' ? '-64-bit' : who.abi === 'armeabi-v7a' ? '-32-bit' : '';
     const fileName = `TheK-${who.version.replace(/[^0-9A-Za-z.]+/g, '-').replace(/-+$/, '')}${suffix}.apk`;
-    const actor: Pick<Actor, 'userId' | 'role'> | null = who.userId ? { userId: who.userId, role: 'SUPER_ADMIN' } : null;
+    const actor: Pick<Actor, 'userId' | 'role'> | null = who.userId ? { userId: who.userId, role: who.role ?? 'SUPER_ADMIN' } : null;
     const row = await this.dbs.db.transaction(async (tx) => {
       const [r] = await tx.insert(appReleases).values({ platform: 'ANDROID', abi: who.abi, version: who.version, notes: who.notes, fileName, fileSize: size, sha256, storageKey: key, createdById: who.userId }).returning();
       await this.audit.record(tx, { actor, action: 'app_release.android_uploaded', entityType: 'app_release', entityId: r.id, outcome: 'SUCCESS', ip, metadata: { version: who.version, abi: who.abi, size, sha256, source: who.source } });

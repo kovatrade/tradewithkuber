@@ -29,6 +29,7 @@ function fixture(options = {}) {
       if (name === 'react') return { useEffect: fn => effects.push(fn) };
       if (name === 'firebase/messaging') return messaging;
       if (name === './firebase') return { firebaseConfigured: options.configured !== false, firebaseApp: () => ({}) };
+      if (name === './roles') return { isPlatformAdmin: role => ['SUPER_ADMIN', 'DEVELOPER'].includes(role) };
       if (name === './api') return { gql };
       throw new Error(`Unexpected module ${name}`);
     },
@@ -89,7 +90,7 @@ test('a failed worker installation prevents the test mutation', async () => {
 
 test('only non-demo staff accounts can use browser push', () => {
   const f = fixture();
-  for (const role of ['SUPER_ADMIN', 'BROKER', 'TRADER']) {
+  for (const role of ['SUPER_ADMIN', 'DEVELOPER', 'BROKER', 'TRADER']) {
     assert.equal(f.push.canUseSystemPush(role, false), role !== 'TRADER');
     assert.equal(f.push.canUseSystemPush(role, true), false);
   }

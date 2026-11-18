@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { and, eq, type SQL } from 'drizzle-orm';
 import type { Actor } from '../common/context';
@@ -23,7 +24,7 @@ export class PolicyService {
   ) {}
 
   async assertCanAccessUser(actor: Actor, targetUserId: string, ip?: string): Promise<void> {
-    if (actor.role === 'SUPER_ADMIN' || actor.userId === targetUserId) return;
+    if (isPlatformAdmin(actor.role) || actor.userId === targetUserId) return;
     if (actor.role === 'BROKER') {
       const [t] = await this.dbs.db
         .select({ id: users.id })
@@ -45,7 +46,7 @@ export class PolicyService {
 
   /** WHERE-clause scope for listing users. */
   userScope(actor: Actor): SQL | undefined {
-    if (actor.role === 'SUPER_ADMIN') return undefined;
+    if (isPlatformAdmin(actor.role)) return undefined;
     if (actor.role === 'BROKER') return eq(users.brokerId, actor.userId);
     return eq(users.id, actor.userId);
   }

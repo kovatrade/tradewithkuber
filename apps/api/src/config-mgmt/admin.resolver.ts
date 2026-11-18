@@ -46,7 +46,7 @@ export class AdminResolver {
     private readonly dbs: DbService,
   ) {}
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => Boolean, { description: 'True when single-admin mode is on and you are the only active Super Admin, so you may approve your own requests.' })
   soleAdminApprovals() {
     return soleAdminMayApprove(this.dbs.db);
@@ -54,20 +54,20 @@ export class AdminResolver {
 
   // ------------------------------------------------------------ configuration
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [ConfigItem])
   async configItems(): Promise<ConfigItem[]> {
     const items = await this.config.listAll();
     return items.map((i) => ({ key: i.key, label: SETTING_TEXT[i.key as ConfigKey][0], description: SETTING_TEXT[i.key as ConfigKey][1], displayValue: settingDisplay(i.key, i.value), editorJson: JSON.stringify(settingEditor(i.key, i.value)), valueJson: JSON.stringify(i.value), version: i.version, isDefault: i.isDefault, pending: i.pending ? toVersion(i.pending) : undefined }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [ConfigVersion])
   async configHistory(@Args('key') key: string) {
     return (await this.config.history(key)).map(toVersion);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => ConfigVersion, { description: 'Maker: propose a change. Another Super Admin must approve.' })
   async proposeConfigChange(@CurrentActor() a: Actor, @Args('key') key: string, @Args('valueJson') valueJson: string, @Args('reason') reason: string, @Ctx() c: GqlContext) {
@@ -83,14 +83,14 @@ export class AdminResolver {
     return toVersion(await soleAdminMayApprove(this.dbs.db) ? await this.config.decide(a, v.id, true, c.ip) : v);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => ConfigVersion, { description: 'Checker: approve or reject a pending change (not your own).' })
   async decideConfigChange(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('approve') approve: boolean, @Ctx() c: GqlContext) {
     return toVersion(await this.config.decide(a, id, approve, c.ip));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => ConfigVersion)
   async proposeConfigRollback(@CurrentActor() a: Actor, @Args('key') key: string, @Args('toVersion', { type: () => Int }) v: number, @Ctx() c: GqlContext) {
@@ -100,7 +100,7 @@ export class AdminResolver {
 
   // ------------------------------------------------------------ audit
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [AuditEvent])
   async auditEvents(
     @Args('limit', { type: () => Int, nullable: true }) limit?: number,
@@ -132,7 +132,7 @@ export class AdminResolver {
     }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => AuditVerification)
   verifyAuditChain() {
     return this.audit.verifyChain();
@@ -140,14 +140,14 @@ export class AdminResolver {
 
   // ------------------------------------------------------------ reconciliation
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => ReconciliationRun)
   async runReconciliation(@CurrentActor() a: Actor): Promise<ReconciliationRun> {
     const r = await this.recon.run(a);
     return { id: r.id, ok: r.ok, summaryJson: JSON.stringify(r.summary), createdAt: r.createdAt };
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [ReconciliationRun])
   async reconciliationRuns(): Promise<ReconciliationRun[]> {
     return (await this.recon.latest(20)).map((r) => ({ id: r.id, ok: r.ok, summaryJson: JSON.stringify(r.summary), createdAt: r.createdAt }));

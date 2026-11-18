@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { recordDeviceLogin } from './shared-device';
 import { JwtService } from '@nestjs/jwt';
@@ -200,8 +201,8 @@ export class AuthService {
         return { u: undefined, ok: false, remaining: Math.max(0, 5 - fails), until: fails >= 5 ? expiresAt : null };
       }
       if (u.lockedUntil && u.lockedUntil > now) return { u, ok: false, remaining: 0, until: u.lockedUntil };
-      const max = u.role === 'SUPER_ADMIN' ? await this.config.get('security.maxFailedLogins') : 5;
-      const minutes = u.role === 'SUPER_ADMIN' ? await this.config.get('security.lockoutMinutes') : 60;
+      const max = isPlatformAdmin(u.role) ? await this.config.get('security.maxFailedLogins') : 5;
+      const minutes = isPlatformAdmin(u.role) ? await this.config.get('security.lockoutMinutes') : 60;
       if (!ok) {
         const fails = (u.lockedUntil ? 0 : u.failedLoginCount) + 1;
         const until = fails >= max ? new Date(now.getTime() + minutes * 60_000) : null;
@@ -476,7 +477,7 @@ export class AuthService {
         .returning();
       await this.ledger.cashAccount(tx, u.id, 'SIMULATED');
       await this.audit.record(tx, { actor: { userId: u.id, role: 'TRADER' }, action: 'user.self_registered', entityType: 'user', entityId: u.id, outcome: 'SUCCESS', ip, metadata: { username, phone: maskPhone(phone) } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
       for (const a of admins) await this.notifications.notify(tx, a.id, 'account.pending', 'New account request', `${displayName} (${username}) signed up and is waiting for approval.`);
       return { user: u } as const;
     });

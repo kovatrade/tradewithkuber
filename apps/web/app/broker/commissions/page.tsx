@@ -1,4 +1,5 @@
 'use client';
+import { isPlatformAdmin } from '../../../lib/roles';
 import { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { gql } from '@/lib/api';
@@ -9,7 +10,7 @@ import { useQuery } from '@/lib/hooks';
 
 export default function Commissions() {
   const { me } = useAuth();
-  const admin = me?.role === 'SUPER_ADMIN';
+  const admin = isPlatformAdmin(me?.role);
   const [month, setMonth] = useState(() => new Date(Date.now() + 19_800_000).toISOString().slice(0, 7));
   const range = useMemo(() => { const [y, m] = month.split('-').map(Number); return { f: new Date(Date.UTC(y, m - 1, 1) - 19_800_000).toISOString(), t: new Date(Date.UTC(y, m, 1) - 19_800_000).toISOString() }; }, [month]);
   const { data, loading, error, refetch } = useQuery<{ commissionReport: { perMiniLot: string; perMegaLot: string; total: string; lines: { userId: string; username: string; miniLots: number; megaLots: number; commission: string }[] } }>(

@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { Actor } from '../common/context';
 
@@ -12,5 +13,5 @@ export function afterWipe(at: AnyColumn | SQL, userId: AnyColumn | string): SQL 
 
 /** The same, but only for viewers other than Super Admin. */
 export function afterWipeFor(actor: Pick<Actor, 'role' | 'userId'>, at: AnyColumn | SQL, userId: AnyColumn | string): SQL | undefined {
-  return actor.role === 'SUPER_ADMIN' ? undefined : afterWipe(at, actor.role === 'BROKER' ? actor.userId : userId);
+  return isPlatformAdmin(actor.role) ? undefined : afterWipe(at, actor.role === 'BROKER' ? actor.userId : userId);
 }

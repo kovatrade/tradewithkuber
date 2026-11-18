@@ -1,11 +1,12 @@
 'use client';
+import { isPlatformAdmin } from './roles';
 import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { gql, refreshSession, rememberSignedOut, resetWs, setSignedOutHandler, subscribe, tokenStore } from './api';
 import { requestSplash } from './splash';
 import { unregisterBrowserPush, useBrowserPush } from './push';
 
-export type Role = 'SUPER_ADMIN' | 'BROKER' | 'TRADER';
+export type Role = 'SUPER_ADMIN' | 'DEVELOPER' | 'BROKER' | 'TRADER';
 export interface Me {
   id: string;
   username: string;
@@ -46,7 +47,7 @@ interface Ctx {
 }
 const AuthCtx = createContext<Ctx | null>(null);
 
-export const homeFor = (r: Role) => (r === 'SUPER_ADMIN' ? '/admin' : r === 'BROKER' ? '/broker' : '/trader/watchlist');
+export const homeFor = (r: Role) => (isPlatformAdmin(r) ? '/admin' : r === 'BROKER' ? '/broker' : '/trader/watchlist');
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);

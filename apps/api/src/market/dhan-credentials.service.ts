@@ -80,7 +80,7 @@ export class DhanCredentialsService implements OnModuleInit, OnModuleDestroy {
     };
   }
   async begin(actor: Actor) {
-    if (actor.role !== 'SUPER_ADMIN' || !actor.mfaVerified) throw forbidden();
+    if (actor.role !== 'DEVELOPER') throw forbidden();
     if (!this.configured())
       throw badInput('Configure the Dhan client ID, API key, secret and redirect URL on the backend.');
     await this.dbs.db.delete(dhanConnections).where(lt(dhanConnections.expiresAt, new Date(Date.now() - 86400000)));
@@ -161,7 +161,7 @@ export class DhanCredentialsService implements OnModuleInit, OnModuleDestroy {
     const [admin] = await this.dbs.db
       .select({ id: users.id })
       .from(users)
-      .where(and(eq(users.id, request.actorId), eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      .where(and(eq(users.id, request.actorId), eq(users.role, 'DEVELOPER'), eq(users.status, 'ACTIVE')));
     if (!admin) throw forbidden();
     try {
       const result = await this.provider(

@@ -249,10 +249,10 @@ export class OrdersService implements OnModuleInit {
         .returning();
 
       let final = o;
-      if (!reject && input.type === 'MARKET') final = await this.fill(tx, o, this.venue.marketFillPrice(input.side, q), fees);
+      if (!reject && input.type === 'MARKET') final = await this.fill(tx, o, this.venue.marketFillPrice(input.side, q), fees, false, cash);
       else if (!reject && input.type === 'LIMIT') {
         const px = this.venue.limitFillPrice(input.side, input.limitPriceMinor!, q);
-        if (px !== null) final = await this.fill(tx, o, px, fees);
+        if (px !== null) final = await this.fill(tx, o, px, fees, false, cash);
       }
       await this.audit.record(tx, {
         actor,
@@ -285,7 +285,7 @@ export class OrdersService implements OnModuleInit {
   // ------------------------------------------------------------------ fills
 
   /** Apply a simulated fill: update the order and position, post P&L and fees to the ledger. */
-  private async fill(tx: Tx, o: OrderRow, price: bigint, fees: FeeRule, triggered = false): Promise<OrderRow> {
+  private async fill(tx: Tx, o: OrderRow, price: bigint, fees: FeeRule, triggered = false, lockedCashAccount?: string): Promise<OrderRow> {
     const [owner] = await tx.select({ brokerId: users.brokerId, isDemo: users.isDemo }).from(users).where(eq(users.id, o.userId));
     const [broker] = owner?.brokerId ? await tx.select().from(users).where(eq(users.id, owner.brokerId)) : [];
     const mega = this.market.instrument(o.instrumentId)?.lotClass === 'MEGA';
@@ -327,7 +327,7 @@ export class OrdersService implements OnModuleInit {
       .set({ netQty: newNet, avgPriceMinor: avg, realizedPnlMinor: p.realizedPnlMinor + realized, cfDate: null, updatedAt: new Date() }) // a changed quantity needs a fresh carry forward
       .where(eq(positions.id, p.id));
 
-    const cash = await this.ledger.cashAccount(tx, o.userId, 'SIMULATED');
+    const cash = lockedCashAccount ?? await this.ledger.cashAccount(tx, o.userId, 'SIMULATED');
     if (realized !== 0n) {
       const pnlAcct = await this.ledger.systemAccount(tx, 'SIM_MARKET_PNL', 'SIMULATED');
       await this.ledger.post(tx, {
@@ -400,7 +400,7 @@ export class OrdersService implements OnModuleInit {
             await this.ledger.lock(tx, cash);
             const [cur] = await tx.select().from(orders).where(eq(orders.id, o.id)).for('update');
             if (cur?.status !== 'OPEN') return null;
-            const f = await this.fill(tx, cur, px, fees, trig);
+            const f = await this.fill(tx, cur, px, fees, trig, cash);
             // System action (matcher): no request IP of its own, so record where the order was placed from.
             await this.audit.record(tx, { action: trig ? 'order.triggered' : 'order.filled', entityType: 'order', entityId: o.id, outcome: 'SUCCESS', metadata: { price: px, type: o.type, trigger: o.triggerPriceMinor, venue: 'SIMULATED', userId: o.userId, placedFromIp: o.clientIp, placedSessionId: o.sessionId } });
             return f;

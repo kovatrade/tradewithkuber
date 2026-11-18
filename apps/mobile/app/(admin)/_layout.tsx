@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../../src/roles';
 import { Redirect, Tabs } from 'expo-router';
 import type { ColorValue } from 'react-native';
 import { homeFor, useAuth } from '@/auth';
@@ -12,7 +13,7 @@ export default function AdminTabs() {
   const opts = useTabScreenOptions(t);
   if (!ready) return null;
   if (!me) return <Redirect href="/login" />;
-  if (me.role !== 'SUPER_ADMIN') return <Redirect href={homeFor(me.role)} />;
+  if (!isPlatformAdmin(me.role)) return <Redirect href={homeFor(me.role)} />;
   return (
     <Tabs screenOptions={opts}>
       <Tabs.Screen name="market-data" options={{ href: null }} />

@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { PubSub } from 'graphql-subscriptions';
 import { and, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
@@ -49,7 +50,7 @@ export class NotificationsService {
     if (env().FIREBASE_PUSH_ENABLED) await tx.execute(sql`
       INSERT INTO push_deliveries (notification_id, device_id)
       SELECT ${n.id}::uuid, d.id FROM push_devices d
-      JOIN users u ON u.id = d.user_id AND u.role IN ('SUPER_ADMIN', 'BROKER') AND u.is_demo = false AND u.status = 'ACTIVE'
+      JOIN users u ON u.id = d.user_id AND u.role IN ('SUPER_ADMIN', 'DEVELOPER', 'BROKER') AND u.is_demo = false AND u.status = 'ACTIVE'
       JOIN sessions s ON s.id = d.session_id AND s.revoked_at IS NULL AND s.expires_at > now()
       WHERE d.user_id = ${userId}::uuid`);
     // publish after commit would be ideal; a lost realtime push is harmless because clients refetch.
@@ -74,7 +75,7 @@ export class NotificationsService {
     const updates = await this.dbs.db.select({ kind: notifications.kind, count: sql<number>`count(*)::int` }).from(notifications)
       .where(and(eq(notifications.userId, uid), isNull(notifications.readAt), afterWipe(notifications.createdAt, uid))).groupBy(notifications.kind);
     let pending: Record<string, number> = {};
-    if (actor.role === 'SUPER_ADMIN') {
+    if (isPlatformAdmin(actor.role)) {
       const { rows: [r] } = await this.dbs.db.execute<{ accounts: number; payments: number; fees: number; configuration: number; resets: number }>(sql`
         SELECT ((SELECT count(*)::int FROM users WHERE status = 'PENDING') + (SELECT count(*)::int FROM platform_wipes WHERE status = 'PENDING' AND target_user_id IS NOT NULL AND expires_at > now())) AS accounts,
                (SELECT count(*)::int FROM payment_requests WHERE status = 'REQUESTED') AS payments,

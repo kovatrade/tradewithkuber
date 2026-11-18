@@ -78,7 +78,7 @@ export const CONFIG_REGISTRY = {
   'security.maxFailedLogins': { schema: z.number().int().min(3).max(20), default: 5, description: 'Failed logins before temporary lockout.' },
   'security.sessionPolicy': {
     schema: z.record(
-      z.enum(['SUPER_ADMIN', 'BROKER', 'TRADER']),
+      z.string().regex(/^(SUPER_ADMIN|DEVELOPER|BROKER|TRADER)$/),
       z.object({
         maxConcurrent: z.number().int().min(0).max(20),
         onLimit: z.enum(['ask', 'replace_oldest', 'block']),
@@ -88,6 +88,7 @@ export const CONFIG_REGISTRY = {
     ),
     default: {
       // Stay signed in for 48 hours from sign-in, then sign in again (no early idle sign-out).
+      DEVELOPER: { maxConcurrent: 1, onLimit: 'ask', idleMinutes: 2880, maxHours: 48 },
       SUPER_ADMIN: { maxConcurrent: 1, onLimit: 'ask', idleMinutes: 2880, maxHours: 48 },
       BROKER: { maxConcurrent: 1, onLimit: 'ask', idleMinutes: 2880, maxHours: 48 },
       TRADER: { maxConcurrent: 1, onLimit: 'ask', idleMinutes: 2880, maxHours: 48 },

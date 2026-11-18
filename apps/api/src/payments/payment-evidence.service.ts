@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, type SQL } from 'drizzle-orm';
 import type { Actor } from '../common/context';
@@ -160,7 +161,7 @@ export class PaymentEvidenceService {
       .where(and(eq(paymentEvidence.id, id), afterWipeFor(actor, paymentEvidence.createdAt, paymentEvidence.userId)));
     if (!row?.proofMime || !row.proofData) throw notFound('Payment screenshot');
     await this.policy.assertCanAccessUser(actor, row.userId);
-    if (actor.role === 'SUPER_ADMIN')
+    if (isPlatformAdmin(actor.role))
       await this.audit.recordStandalone({
         actor,
         action: 'payment.proof_viewed',

@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { formatMoney } from '../common/money';
 import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 import type { UserRow } from '../db/schema';
@@ -6,6 +7,7 @@ import { readEmail, readPhone } from '../common/pii';
 
 export enum RoleGql {
   SUPER_ADMIN = 'SUPER_ADMIN',
+  DEVELOPER = 'DEVELOPER',
   BROKER = 'BROKER',
   TRADER = 'TRADER',
 }
@@ -51,7 +53,7 @@ export class UserType {
   @Field() createdAt: Date;
 
   static from(u: UserRow, viewer?: { userId: string; role: string }): UserType {
-    const full = viewer && (viewer.userId === u.id || viewer.role === 'SUPER_ADMIN');
+    const full = viewer && (viewer.userId === u.id || isPlatformAdmin(viewer.role));
     const phone = u.phoneEnc || u.legacyPhone ? readPhone(u) : null; // decrypt only when present
     return Object.assign(new UserType(), {
       id: u.id,

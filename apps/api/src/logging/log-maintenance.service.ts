@@ -8,15 +8,16 @@ import { logArchives, otpChallenges, sessions } from '../db/schema';
 import { archiveDay } from './archive';
 
 /** Quiet read operations (admin-configured) shared with the activity plugin. */
-/** Public polling that is never written to the activity log (it carries no account action). */
-export const ALWAYS_QUIET = ['marketPulse'];
+/** Successful routine refreshes carry no account action. Errors and mutations are still recorded. */
+export const ALWAYS_QUIET = ['marketPulse', 'quotes', 'candles', 'accountSummary', 'positions', 'orders',
+  'appSettings', 'tradingRules', 'unreadNotificationCount', 'navigationBadges'];
 export const quietOps = { set: new Set<string>(ALWAYS_QUIET) };
 
 /**
  * Log housekeeping, every 15 minutes, on exactly one API instance (Postgres advisory lock):
  *  1. archive every complete past day (audit + activity) that isn't archived yet;
  *  2. delete activity rows older than `logs.activityRetentionDays` — only for archived days;
- *  3. purge expired OTP challenges (>1 day) and dead sessions (>90 days).
+ *  3. purge expired OTP challenges (>1 day), dead sessions (>90 days) and finished push jobs (>7 days).
  * The audit trail is never deleted by the application; it lives in the DB and in the archives.
  */
 @Injectable()
@@ -78,7 +79,7 @@ export class LogMaintenanceService implements OnModuleInit, OnModuleDestroy {
         await this.refreshQuiet();
         const archived = await this.archivePending(now);
         const purged = await this.purge(now);
-        if (archived.length || purged.activity || purged.otp || purged.sessions) {
+        if (archived.length || purged.activity || purged.otp || purged.sessions || purged.pushJobs) {
           await this.audit.recordStandalone({ action: 'logs.maintenance', outcome: 'SUCCESS', metadata: { archived, purged } });
         }
         return { archived, purged };
@@ -123,6 +124,10 @@ export class LogMaintenanceService implements OnModuleInit, OnModuleDestroy {
       .delete(sessions)
       .where(or(and(isNotNull(sessions.revokedAt), lt(sessions.revokedAt, old)), lt(sessions.expiresAt, old)))
       .returning({ id: sessions.id });
-    return { activity: Number(r.rows[0]?.n ?? 0), otp: otp.length, sessions: sess.length, cutoff: cutoff.toISOString() };
+    // Delivery receipts are transport bookkeeping. Keep a week for troubleshooting; leave inbox records intact.
+    const jobs = await this.dbs.db.execute<{ n: string }>(sql`
+      WITH removed AS (DELETE FROM push_deliveries WHERE finished_at < ${new Date(now.getTime() - 7 * 86_400_000)} RETURNING id)
+      SELECT count(*)::text AS n FROM removed`);
+    return { activity: Number(r.rows[0]?.n ?? 0), otp: otp.length, sessions: sess.length, pushJobs: Number(jobs.rows[0]?.n ?? 0), cutoff: cutoff.toISOString() };
   }
 }

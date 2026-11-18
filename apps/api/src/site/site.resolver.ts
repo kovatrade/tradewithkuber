@@ -105,13 +105,13 @@ export class SiteResolver {
     return true;
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [CourseEnquiry])
   async courseEnquiries(@Args('status', { type: () => String, nullable: true }) status?: string | null) {
     return (await this.site.listEnquiries(status ? asStatus(status) : null)).map(toEnquiry);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => CourseEnquiry)
   async setCourseEnquiryStatus(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('status') status: string, @Args('note', { type: () => String, nullable: true }) note: string | null, @Ctx() c: GqlContext) {
     return toEnquiry(await this.site.setStatus(a, id, asStatus(status), note, c.ip));

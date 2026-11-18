@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { afterWipeFor } from '../wipe/visibility';
 import { Injectable } from '@nestjs/common';
 import { soleAdminMayApprove } from '../common/maker-checker';
@@ -58,7 +59,7 @@ export class FeesService {
   /** Traders and brokers see ACTIVE accounts only; Super Admin sees all. */
   async listPayees(actor: Actor) {
     const rows = await this.dbs.db.select().from(payeeAccounts)
-      .where(actor.role === 'SUPER_ADMIN' ? undefined : eq(payeeAccounts.status, 'ACTIVE'))
+      .where(isPlatformAdmin(actor.role) ? undefined : eq(payeeAccounts.status, 'ACTIVE'))
       .orderBy(asc(payeeAccounts.sortOrder), desc(payeeAccounts.createdAt));
     return rows.map(openPayee);
   }
@@ -88,7 +89,7 @@ export class FeesService {
     return this.dbs.db.transaction(async (tx) => {
       const p = openPayee((await tx.insert(payeeAccounts).values(row).returning())[0]);
       await this.audit.record(tx, { actor, action: 'fees.payee_added', entityType: 'payee_account', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { kind: p.kind, label: p.label, accountTail: tail(p.accountNumber), ifsc: p.ifsc, upiTail: tail(p.upiId) } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
       for (const a of admins) if (a.id !== actor.userId) await this.notifications.notify(tx, a.id, 'fees.payee_pending', 'Approve new payment details', `“${p.label}” was added and needs another Super Admin to check and approve it before traders see it.`);
       return p;
     });
@@ -145,7 +146,7 @@ export class FeesService {
       const [f] = await tx.insert(feePayments).values({ userId: actor.userId, payeeAccountId: payee.id, amountMinor: i.amountMinor, purpose, utr: encryptField(utr, A_UTR), utrHash, ip }).returning();
       await tx.insert(feePaymentProofs).values({ feePaymentId: f.id, mime: proof.mime, bytes: proof.bytes, data: encryptField(proof.base64, A_PROOF) });
       await this.audit.record(tx, { actor, action: 'fees.payment_submitted', entityType: 'fee_payment', entityId: f.id, outcome: 'SUCCESS', ip, metadata: { amountMinor: i.amountMinor.toString(), payee: payee.label, utrTail: tail(utr), proof: { mime: proof.mime, bytes: proof.bytes } } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
       const [who] = await tx.select({ username: users.username }).from(users).where(eq(users.id, actor.userId));
       for (const a of admins) await this.notifications.notify(tx, a.id, 'fees.review', 'Fee payment to check', `${who?.username ?? 'A trader'} paid ₹${(Number(i.amountMinor) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })} to ${payee.label} (${purpose}). Screenshot attached.`);
       return openFee(f);
@@ -179,9 +180,9 @@ export class FeesService {
       .innerJoin(feePayments, eq(feePayments.id, feePaymentProofs.feePaymentId))
       .innerJoin(users, eq(users.id, feePayments.userId))
       .where(eq(feePaymentProofs.feePaymentId, id));
-    const allowed = r && (actor.role === 'SUPER_ADMIN' || (actor.role === 'TRADER' && r.userId === actor.userId) || (actor.role === 'BROKER' && r.brokerId === actor.userId));
+    const allowed = r && (isPlatformAdmin(actor.role) || (actor.role === 'TRADER' && r.userId === actor.userId) || (actor.role === 'BROKER' && r.brokerId === actor.userId));
     if (!allowed) throw notFound('Screenshot');
-    if (actor.role === 'SUPER_ADMIN') await this.audit.recordStandalone({ actor, action: 'fees.proof_viewed', entityType: 'fee_payment', entityId: id, outcome: 'SUCCESS', ip });
+    if (isPlatformAdmin(actor.role)) await this.audit.recordStandalone({ actor, action: 'fees.proof_viewed', entityType: 'fee_payment', entityId: id, outcome: 'SUCCESS', ip });
     return `data:${r.p.mime};base64,${decryptField(r.p.data, A_PROOF)}`;
   }
 

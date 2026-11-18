@@ -1,4 +1,5 @@
 'use client';
+import { isPlatformAdmin } from '../../lib/roles';
 import Link from 'next/link';
 import { useState } from 'react';
 import { ROLE_LABEL } from '@/components/accounts';
@@ -97,7 +98,7 @@ export default function Security() {
 
       <Preferences />
 
-      {me.role !== 'SUPER_ADMIN' && <WipeOutSection />}
+      {!isPlatformAdmin(me.role) && <WipeOutSection />}
 
       <section className="section">
         <SectionHead title="Help" />

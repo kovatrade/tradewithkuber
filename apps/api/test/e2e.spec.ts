@@ -1715,3 +1715,23 @@ describe('architecture-specific Android downloads', () => {
     }
   });
 });
+
+
+describe('Developer administration', () => {
+  it('lets a Super Admin create a Developer who signs in without MFA and inherits administration', async () => {
+    const admin = await adminLogin('admin');
+    const created = await gql(`mutation($i:CreateUserInput!){createUser(input:$i){id role status}}`, { i: { username: 'developer.test', displayName: 'Developer Test', role: 'DEVELOPER', phone: '+919011112222', tempPassword: PW } }, { token: admin.token, stepUp: await stepUp(admin.token, 'admin') });
+    expect(created.errors).toBeUndefined();
+    expect(created.data.createUser).toMatchObject({ role: 'DEVELOPER', status: 'ACTIVE' });
+    const developer = await freshLogin('developer.test');
+    expect(developer.mfaRequired).toBe(false);
+    expect(developer.accessToken).toBeTruthy();
+    const overview = await gql(`{adminOverview{traders brokers}}`, {}, { token: developer.accessToken });
+    expect(overview.errors).toBeUndefined();
+    expect((await gql(`{configItems{key label}}`, {}, { token: developer.accessToken })).errors).toBeUndefined();
+    expect((await gql(`{dhanIntegrationStatus{configured connected}}`, {}, { token: developer.accessToken })).errors).toBeUndefined();
+    expect(code(await gql(`mutation{beginDhanConnection}`, {}, { token: admin.token }))).toBe('FORBIDDEN');
+    // Without configured credentials a Developer gets setup guidance, not an authorization/MFA rejection.
+    expect(code(await gql(`mutation{beginDhanConnection}`, {}, { token: developer.accessToken }))).toBe('BAD_USER_INPUT');
+  });
+});

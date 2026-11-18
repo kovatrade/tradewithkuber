@@ -5,6 +5,7 @@ import { integrationState, type InstrumentRow } from '../db/schema';
 import { DhanCredentialsService } from './dhan-credentials.service';
 import type { Quote } from './market-data.service';
 import { env } from '../config/env';
+import { createHash } from 'node:crypto';
 
 const KEY = 'market.quotes.v1';
 const money = (v: unknown) =>
@@ -68,6 +69,7 @@ export function snapshotQuote(i: InstrumentRow, value: any): Quote | undefined {
 export class QuoteSnapshotService {
   private readonly log = new Logger('QuoteSnapshot');
   private refreshing?: Promise<Quote[]>;
+  private savedDigest?: string;
   constructor(
     private readonly dbs: DbService,
     private readonly credentials: DhanCredentialsService,
@@ -119,18 +121,22 @@ export class QuoteSnapshotService {
     });
   }
   async save(quotes: Quote[]) {
-    const value = JSON.parse(
-      JSON.stringify({ quotes: quotes.filter((q) => q.source === 'DHAN') }, (_k, v) =>
+    // One latest state, not a history. Closed-market REST refreshes often repeat identical data.
+    const serialized = JSON.stringify({ quotes: quotes.filter((q) => q.source === 'DHAN').sort((a, b) => a.instrumentId.localeCompare(b.instrumentId)) }, (_k, v) =>
         typeof v === 'bigint' ? v.toString() : v,
-      ),
     );
+    const digest = createHash('sha256').update(serialized).digest('hex');
+    if (digest === this.savedDigest) return;
+    const value = JSON.parse(serialized);
     await this.dbs.db
       .insert(integrationState)
       .values({ name: KEY, value })
       .onConflictDoUpdate({ target: integrationState.name, set: { value, updatedAt: new Date() } });
+    this.savedDigest = digest; // Failed saves must remain retryable.
   }
   async clear() {
     await this.dbs.db.delete(integrationState).where(eq(integrationState.name, KEY));
+    this.savedDigest = undefined;
   }
   refresh(instruments: InstrumentRow[]) {
     return (this.refreshing ??= this.fetch(instruments).finally(() => {

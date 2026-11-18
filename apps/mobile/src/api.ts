@@ -94,6 +94,7 @@ async function raw(query: string, variables?: Record<string, unknown>, stepUp?: 
 }
 
 async function rawFetch(query: string, variables?: Record<string, unknown>, stepUp?: string) {
+  const startedAt = Date.now();
   const deviceId = await loginDeviceId().catch(() => undefined);
   const res = await fetch(`${API_URL}/graphql`, {
     method: 'POST',
@@ -107,7 +108,9 @@ async function rawFetch(query: string, variables?: Record<string, unknown>, step
     },
     body: JSON.stringify({ query, variables }),
   });
-  return (await res.json()) as { data?: any; errors?: { message: string; extensions?: { code?: string; reason?: string; lockedUntil?: string; retryAfterSec?: number; remainingAttempts?: number } }[] };
+  const result = await res.json();
+  if (/\b(placeOrder|closePosition|squareOffAll)\b/.test(query)) console.info(`[order-timing] total=${Date.now() - startedAt}ms server=${res.headers.get('server-timing') ?? 'unavailable'}`);
+  return result as { data?: any; errors?: { message: string; extensions?: { code?: string; reason?: string; lockedUntil?: string; retryAfterSec?: number; remainingAttempts?: number } }[] };
 }
 
 /**

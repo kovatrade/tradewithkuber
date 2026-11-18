@@ -1,4 +1,5 @@
 'use client';
+import { isPlatformAdmin } from '../../../lib/roles';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useAuth } from '@/lib/auth';
@@ -7,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 export function AdminGate({ children }: { children: ReactNode }) {
   const { me, loading } = useAuth();
   if (loading) return null;
-  if (me?.role !== 'SUPER_ADMIN') {
+  if (!isPlatformAdmin(me?.role)) {
     return (
       <div className="ws"><div className="ws-wrap ws-narrow ws-gate"><h1>Page not available</h1><p>This page is not public. <Link href="/">Go to the home page</Link>.</p></div></div>
     );

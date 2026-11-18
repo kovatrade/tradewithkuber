@@ -119,7 +119,7 @@ export class LogsResolver {
     private readonly dbs: DbService,
   ) {}
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [ActivityEntry], { description: 'Every API request with time, IP, device, user and outcome. Newest first.' })
   async activityLog(
     @Args('filter', { nullable: true }) f: ActivityFilter = {},
@@ -143,7 +143,7 @@ export class LogsResolver {
     return (await this.activity.mine(a.userId, clampLimit(limit, 50, 100), cursor(beforeId))).map((r) => toEntry(r));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [IpAccount], { description: 'Accounts that used this IP in the last N days (shared devices / multi-accounting signal).' })
   async accountsOnIp(@Args('ip') ip: string, @Args('days', { type: () => Int, nullable: true }) days?: number): Promise<IpAccount[]> {
     if (!IP_RE.test(ip)) throw badInput('Invalid IP address.');
@@ -152,7 +152,7 @@ export class LogsResolver {
     return rows.map((r) => ({ userId: r.user_id, username: r.username, role: r.role, requests: r.requests, firstSeen: new Date(r.first_seen), lastSeen: new Date(r.last_seen) }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [UserIp], { description: 'IP addresses an account has used, and how many other accounts shared each one.' })
   async userIps(@Args('userId', { type: () => ID }) userId: string, @Args('days', { type: () => Int, nullable: true }) days?: number): Promise<UserIp[]> {
     await this.activity.flush();
@@ -160,14 +160,14 @@ export class LogsResolver {
     return rows.map((r) => ({ ip: r.ip, requests: r.requests, firstSeen: new Date(r.first_seen), lastSeen: new Date(r.last_seen), otherAccounts: r.other_accounts }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [LogArchive])
   async logArchives(@Args('limit', { type: () => Int, nullable: true }) limit?: number): Promise<LogArchive[]> {
     const rows = await this.dbs.db.select().from(logArchives).orderBy(desc(logArchives.day), logArchives.kind).limit(clampLimit(limit, 60, 400));
     return rows.map((r) => ({ ...r, lastAuditHash: r.lastAuditHash ?? undefined }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => ArchiveCheck, { description: 'Re-hash an archive file and compare it with the checksum recorded when it was written.' })
   async verifyLogArchive(@Args('day') day: string, @Args('kind') kind: string): Promise<ArchiveCheck> {
     if (kind !== 'audit' && kind !== 'activity') throw badInput('kind must be audit or activity');
@@ -176,7 +176,7 @@ export class LogsResolver {
     return { ok: r.ok, reason: 'reason' in r ? r.reason : undefined, rows: 'rows' in r ? r.rows : undefined };
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => String, { description: 'Run archive + retention now (normally runs every 15 minutes). Returns a JSON summary.' })
   async runLogMaintenance() {

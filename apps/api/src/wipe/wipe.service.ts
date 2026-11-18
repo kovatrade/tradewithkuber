@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { soleAdminMayApprove } from '../common/maker-checker';
 import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
@@ -114,7 +115,7 @@ export class WipeService {
   private async self(actor: Actor) {
     const [u] = await this.dbs.db.select().from(users).where(eq(users.id, actor.userId));
     if (!u) throw notFound('Account');
-    if (u.role === 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Super Admins use “Wipe all trading data” instead.');
+    if (isPlatformAdmin(u.role)) throw new AppError('FORBIDDEN', 'Administrators use “Wipe all trading data” instead.');
     if (u.status !== 'ACTIVE') throw new AppError('FORBIDDEN', 'This account is not active.');
     return u;
   }
@@ -176,14 +177,14 @@ export class WipeService {
   }
 
   private async resetRecipients(tx: DbOrTx, u: { id: string; role: string; brokerId: string | null }): Promise<string[]> {
-    const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+    const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
     return [...new Set([...admins.map((a) => a.id), ...(u.role === 'TRADER' && u.brokerId ? [u.brokerId] : [])])];
   }
 
   async listAccountResets(actor: Actor) {
-    const scope = actor.role === 'SUPER_ADMIN' ? undefined : actor.role === 'BROKER' ? sql`(${accountResetRequests.userId} = ${actor.userId} OR ${users.brokerId} = ${actor.userId})` : eq(accountResetRequests.userId, actor.userId);
+    const scope = isPlatformAdmin(actor.role) ? undefined : actor.role === 'BROKER' ? sql`(${accountResetRequests.userId} = ${actor.userId} OR ${users.brokerId} = ${actor.userId})` : eq(accountResetRequests.userId, actor.userId);
     const rows = await this.dbs.db.select({ request: accountResetRequests, username: users.username, role: users.role, brokerId: users.brokerId }).from(accountResetRequests).innerJoin(users, eq(users.id, accountResetRequests.userId)).where(scope).orderBy(desc(accountResetRequests.createdAt)).limit(100);
-    return rows.map(({ request, username, role, brokerId }) => ({ ...request, username, role, status: request.status === 'PENDING' && request.expiresAt <= new Date() ? 'EXPIRED' : request.status, canApprove: request.status === 'PENDING' && request.expiresAt > new Date() && request.userId !== actor.userId && (actor.role === 'SUPER_ADMIN' || (actor.role === 'BROKER' && role === 'TRADER' && brokerId === actor.userId)) }));
+    return rows.map(({ request, username, role, brokerId }) => ({ ...request, username, role, status: request.status === 'PENDING' && request.expiresAt <= new Date() ? 'EXPIRED' : request.status, canApprove: request.status === 'PENDING' && request.expiresAt > new Date() && request.userId !== actor.userId && (isPlatformAdmin(actor.role) || (actor.role === 'BROKER' && role === 'TRADER' && brokerId === actor.userId)) }));
   }
 
   async decideAccountReset(actor: Actor, id: string, approve: boolean, ip: string) {
@@ -194,7 +195,7 @@ export class WipeService {
       if (!r || r.status !== 'PENDING') throw notFound('Pending reset request');
       const [u] = await tx.select().from(users).where(eq(users.id, r.userId)).for('update');
       if (!u) throw notFound('Account');
-      const allowed = actor.role === 'SUPER_ADMIN' || (actor.role === 'BROKER' && u.role === 'TRADER' && u.brokerId === actor.userId);
+      const allowed = isPlatformAdmin(actor.role) || (actor.role === 'BROKER' && u.role === 'TRADER' && u.brokerId === actor.userId);
       if (!allowed || actor.userId === u.id) throw new AppError('FORBIDDEN', "Only a Super Admin or this trader's assigned broker may decide this request.");
       if (r.expiresAt <= new Date()) { await tx.update(accountResetRequests).set({ status: 'EXPIRED' }).where(eq(accountResetRequests.id, id)); return null; }
       if (approve && u.status !== 'ACTIVE') throw new AppError('CONFLICT', 'The account must be active before its reset can be approved.');
@@ -252,7 +253,7 @@ export class WipeService {
 
   /** Super Admin: a user's wipes, with what was cleared. */
   async listForUser(userId: string, actor: Actor) {
-    if (actor.role !== 'SUPER_ADMIN') {
+    if (!isPlatformAdmin(actor.role)) {
       const [u] = await this.dbs.db.select().from(users).where(eq(users.id, userId));
       if (actor.role !== 'BROKER' || !u || u.brokerId !== actor.userId) throw notFound('Account');
     }
@@ -272,7 +273,7 @@ export class WipeService {
   }
 
   async requestPlatform(actor: Actor, reason: string, confirm: string, ip: string) {
-    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Super Admin access required.');
+    if (!isPlatformAdmin(actor.role)) throw new AppError('FORBIDDEN', 'Super Admin access required.');
     if (confirm.trim() !== PLATFORM_WIPE_CONFIRM) throw badInput(`Type ${PLATFORM_WIPE_CONFIRM} to confirm.`);
     const why = reason.trim();
     if (why.length < 10 || why.length > 300) throw badInput('Give a reason (10–300 characters).');
@@ -283,7 +284,7 @@ export class WipeService {
       if (open) throw new AppError('CONFLICT', 'A wipe request is already waiting for approval.');
       const [r] = await tx.insert(platformWipes).values({ requestedById: actor.userId, requestedIp: ip, reason: why, expiresAt: new Date(Date.now() + PLATFORM_WIPE_TTL_MS) }).returning();
       await this.audit.record(tx, { actor, action: 'platform.wipe_requested', entityType: 'platform_wipe', entityId: r.id, outcome: 'SUCCESS', ip, metadata: { reason: why } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE'), ne(users.id, actor.userId)));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE'), ne(users.id, actor.userId)));
       for (const a of admins) await this.notifications.notify(tx, a.id, 'platform.wipe_requested', 'Approval needed: wipe all trading data', `A Super Admin asked to permanently delete all trader and broker data. Reason: ${why}. It expires in 30 minutes.`);
       return r;
     });
@@ -297,7 +298,7 @@ export class WipeService {
   }
 
   async approvePlatform(actor: Actor, id: string, confirm: string, ip: string) {
-    if (actor.role !== 'SUPER_ADMIN') throw new AppError('FORBIDDEN', 'Super Admin access required.');
+    if (!isPlatformAdmin(actor.role)) throw new AppError('FORBIDDEN', 'Super Admin access required.');
     if (confirm.trim() !== PLATFORM_WIPE_CONFIRM) throw badInput(`Type ${PLATFORM_WIPE_CONFIRM} to confirm.`);
     const signedOut: string[] = [];
     const result = await this.dbs.serializable(async (tx) => {
@@ -311,12 +312,12 @@ export class WipeService {
 
       // The one place append-only ledger and consent rows may be deleted (see migration 0013). Never the audit log.
       await tx.execute(sql`SET LOCAL td.platform_wipe = 'on'`);
-      const targets = (await tx.select({ id: users.id }).from(users).where(ne(users.role, 'SUPER_ADMIN'))).map((x) => x.id);
+      const targets = (await tx.select({ id: users.id }).from(users).where(sql`${users.role} NOT IN ('SUPER_ADMIN', 'DEVELOPER')`)).map((x) => x.id);
       const counts = await this.purge(tx, targets, signedOut);
       Object.assign(counts, await clearPlatformData(tx));
       await tx.update(platformWipes).set({ status: 'EXECUTED', decidedById: actor.userId, decidedIp: ip, decidedAt: new Date(), summary: counts }).where(eq(platformWipes.id, id));
       await this.audit.record(tx, { actor, action: 'platform.wiped', entityType: 'platform_wipe', entityId: id, outcome: 'SUCCESS', ip, metadata: { requestedBy: r.requestedById, reason: r.reason, ...counts } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
       for (const admin of admins) await this.notifications.notify(tx, admin.id, 'platform.wipe_completed', 'Full wipe approved and completed', `The Super Admin confirmed the wipe. ${counts.accounts} broker/trader accounts were permanently deleted.`);
       return counts;
     });
@@ -352,7 +353,7 @@ export class WipeService {
       if (open) throw new AppError('CONFLICT', 'A delete request for this account is already waiting for approval.');
       const [r] = await tx.insert(platformWipes).values({ targetUserId: u.id, targetUsername: u.username, targetRole: u.role, requestedById: actor.userId, requestedIp: ip, reason: why, expiresAt: new Date(Date.now() + PLATFORM_WIPE_TTL_MS) }).returning();
       await this.audit.record(tx, { actor, action: 'user.delete_requested', entityType: 'user', entityId: u.id, outcome: 'SUCCESS', ip, metadata: { username: u.username, role: u.role, reason: why, request: r.id } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE'), ne(users.id, actor.userId)));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE'), ne(users.id, actor.userId)));
       for (const a of admins) await this.notifications.notify(tx, a.id, 'user.delete_requested', `Approval needed: delete ${u.username}`, `A Super Admin asked to permanently delete ${u.displayName} (${u.username}) and all their data. Reason: ${why}. It expires in 30 minutes.`);
       return r;
     });

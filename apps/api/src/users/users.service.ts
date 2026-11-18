@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { emailColumns, emailIndex, normalizeEmail, normalizePhone, phoneColumns, phoneIndex } from '../common/pii';
 import { soleAdminMayApprove } from '../common/maker-checker';
 import { Injectable } from '@nestjs/common';
@@ -85,6 +86,7 @@ export class UsersService {
    * New accounts start PENDING and must be approved by a (different) Super Admin.
    */
   async create(actor: Actor, input: { username: string; displayName: string; role: Role; phone?: string; email?: string; brokerId?: string; tempPassword: string; commissionPct?: string; commissionPerMiniLot?: string; commissionPerMegaLot?: string; openingAmountMinor?: bigint | null; payment?: PaymentEvidenceInput }, ip: string) {
+    if (!isPlatformAdmin(actor.role) && actor.role !== 'BROKER') throw forbidden();
     const username = input.username.trim().toLowerCase();
     if (!USERNAME_RE.test(username)) throw badInput('Username: 4–40 characters, starting with a letter; letters, digits and _ . - @ # only.');
     if (input.role === 'SUPER_ADMIN') throw forbidden('Super Admin accounts are provisioned by operations, not via the API.');
@@ -137,7 +139,7 @@ export class UsersService {
       await this.audit.record(tx, { actor, action: 'user.created', entityType: 'user', entityId: u.id, outcome: 'SUCCESS', ip, metadata: { username, role: input.role, brokerId, ...(commissionShareBps !== null ? { commissionShareBps } : {}), ...(u.openingAmountMinor ? { openingAmount: u.openingAmountMinor } : {}) } });
       if (actor.role === 'BROKER') {
         // The broker's request goes to the Super Admins: the new account, and the opening amount if one was asked for.
-        const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+        const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
         const amt = u.openingAmountMinor ? ` with an opening amount of ₹${(Number(u.openingAmountMinor) / 100).toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : '';
         for (const a of admins) await this.notifications.notify(tx, a.id, 'user.review', 'New trader account to approve', `${brokerName ?? 'A broker'} asked for ${username}${amt}.`);
       }
@@ -163,7 +165,7 @@ export class UsersService {
   }
 
   async reject(actor: Actor, userId: string, reason: string, ip: string) {
-    if (actor.role !== 'SUPER_ADMIN') throw forbidden();
+    if (!isPlatformAdmin(actor.role)) throw forbidden();
     const note = reason.trim();
     if (note.length < 5 || note.length > 300) throw badInput('Give a rejection reason of 5–300 characters.');
     return this.dbs.serializable(async (tx) => {
@@ -186,7 +188,7 @@ export class UsersService {
       const [u] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
       if (!u) throw notFound('Account');
       if (u.role === 'SUPER_ADMIN') throw forbidden('Super Admin status is managed by operations.');
-      if (actor.role !== 'SUPER_ADMIN' && !(actor.role === 'BROKER' && u.role === 'TRADER' && u.brokerId === actor.userId && u.resetDisabledAt && status === 'ACTIVE')) throw forbidden('Only the assigned broker can re-enable a reset-disabled trader.');
+      if (!isPlatformAdmin(actor.role) && !(actor.role === 'BROKER' && u.role === 'TRADER' && u.brokerId === actor.userId && u.resetDisabledAt && status === 'ACTIVE')) throw forbidden('Only the assigned broker can re-enable a reset-disabled trader.');
       if (u.status === 'PENDING' || u.status === 'REJECTED') throw badInput('Only approved accounts can be enabled or disabled.');
       const [r] = await tx.update(users).set({ status, updatedAt: new Date(), ...(status === 'ACTIVE' && u.resetDisabledAt ? { resetDisabledAt: null, dataSince: sql`now()`, riskState: 'OK' } : {}) }).where(eq(users.id, userId)).returning();
       if (status !== 'ACTIVE') {
@@ -195,7 +197,7 @@ export class UsersService {
         await tx.update(orders).set({ status: 'CANCELLED', updatedAt: new Date() }).where(and(eq(orders.userId, userId), eq(orders.status, 'OPEN')));
       }
       if (status === 'ACTIVE' && u.resetDisabledAt) {
-        const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+        const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
         for (const id of new Set([u.id, ...(u.brokerId ? [u.brokerId] : []), ...admins.map((a) => a.id)])) await this.notifications.notify(tx, id, 'account.reenabled', 'Trader account re-enabled', `${u.username} has been re-enabled with a fresh view and zero starting balance. Historical records remain available to staff.`);
       }
       await this.audit.record(tx, { actor, action: `user.${status.toLowerCase()}`, entityType: 'user', entityId: userId, outcome: 'SUCCESS', ip, metadata: { from: u.status, reason } });
@@ -334,7 +336,7 @@ export class UsersService {
    */
   /** Platform earnings are collected brokerage less the assigned broker's entitlement. */
   async adminCommission(actor: Actor, from: Date, to: Date) {
-    if (actor.role !== 'SUPER_ADMIN') throw forbidden();
+    if (!isPlatformAdmin(actor.role)) throw forbidden();
     const [mini, mega] = await Promise.all([this.config.get('broker.commissionPerMiniLot'), this.config.get('broker.commissionPerMegaLot')]);
     const result = await this.dbs.db.execute<{ user_id: string; username: string; fees: string; commission: string; mini: string; mega: string }>(sql`
       SELECT u.id AS user_id, u.username, (-SUM(p.amount_minor))::text AS fees,
@@ -371,7 +373,7 @@ export class UsersService {
         JOIN journal_entries j ON j.id = p.journal_id AND j.kind = 'FEE'
         LEFT JOIN orders o ON j.ref_type = 'order' AND o.id = j.ref_id
         LEFT JOIN instruments i ON i.id = o.instrument_id
-       WHERE (o.broker_id_at_fill = ${brokerId} OR (o.broker_commission_minor IS NULL AND u.broker_id = ${brokerId})) AND p.created_at >= ${from} AND (${actor.role} = 'SUPER_ADMIN' OR p.created_at >= coalesce((SELECT data_since FROM users WHERE id = ${actor.userId}), '-infinity'::timestamptz)) AND p.created_at < ${to}
+       WHERE (o.broker_id_at_fill = ${brokerId} OR (o.broker_commission_minor IS NULL AND u.broker_id = ${brokerId})) AND p.created_at >= ${from} AND (${actor.role} IN ('SUPER_ADMIN', 'DEVELOPER') OR p.created_at >= coalesce((SELECT data_since FROM users WHERE id = ${actor.userId}), '-infinity'::timestamptz)) AND p.created_at < ${to}
        GROUP BY u.id, u.username
        ORDER BY u.username`);
     const lines = r.rows.map((x) => {

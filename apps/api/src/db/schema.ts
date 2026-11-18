@@ -33,7 +33,7 @@ const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' 
 const money = (name: string) => bigint(name, { mode: 'bigint' });
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 
-export const roleEnum = pgEnum('role', ['SUPER_ADMIN', 'BROKER', 'TRADER']);
+export const roleEnum = pgEnum('role', ['SUPER_ADMIN', 'DEVELOPER', 'BROKER', 'TRADER']);
 export const userStatusEnum = pgEnum('user_status', ['PENDING', 'ACTIVE', 'SUSPENDED', 'CLOSED', 'REJECTED']);
 export const accountModeEnum = pgEnum('account_mode', ['SIMULATED', 'LIVE']);
 

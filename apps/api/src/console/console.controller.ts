@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Controller, Get, NotFoundException, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { env } from '../config/env';
@@ -111,7 +112,7 @@ const PAGE = `<!doctype html>
     if (r.sessionConflict) { conflictToken = r.conflictToken; show('conf'); msg(''); return; }
     if (r.mfaRequired) { mfaToken = r.mfaToken; show('mfa'); $('code').focus(); msg(''); return; }
     token = r.accessToken; me = r.user; $('p').value = ''; $('gmsg').textContent = ''; show('in');
-    msg(me.role === 'SUPER_ADMIN' ? 'Signed in. Super Admins without an authenticator must set one up first (beginMfaEnrollment).' : 'Signed in.');
+    msg(isPlatformAdmin(me.role) ? 'Signed in. Super Admins without an authenticator must set one up first (beginMfaEnrollment).' : 'Signed in.');
   }
   $('login').onclick = function () {
     msg('Signing in…');

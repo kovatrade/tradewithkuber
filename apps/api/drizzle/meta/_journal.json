@@ -260,6 +260,13 @@
       "when": 1794906043832,
       "tag": "0036_apk_abi",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1795000000000,
+      "tag": "0037_developer_role",
+      "breakpoints": true
     }
   ]
 }

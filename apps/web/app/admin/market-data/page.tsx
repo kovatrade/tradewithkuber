@@ -1,9 +1,11 @@
 'use client';
+import { useAuth } from '@/lib/auth';
 import { useState } from 'react';
 import { gql } from '@/lib/api';
 import { useQuery } from '@/lib/hooks';
 import { ErrorState, PageHead, useToast } from '@/components/ui';
 export default function MarketData() {
+  const { me } = useAuth();
   const q = useQuery<{
     dhanIntegrationStatus: {
       configured: boolean;
@@ -75,13 +77,13 @@ export default function MarketData() {
         </p>
         {s?.expiresAt && <p>Authorization expires: {new Date(s.expiresAt).toLocaleString()}</p>}
         {!s?.configured && <p>Add Dhan client ID, API key, secret and redirect URL to the backend environment.</p>}
-        <div>
+        {me?.role === 'DEVELOPER' && <div>
           <button className="btn btn-primary" disabled={busy || !s?.configured} onClick={() => void connect()}>
             {s?.connected ? 'Reconnect Dhan' : 'Connect Dhan'}
           </button>
-        </div>
+        </div>}
         <p>
-          Only the Super Admin connects Dhan. Broker and trader logins are unaffected. Reconnect here when Dhan
+          Only a Developer connects Dhan. Broker and trader logins are unaffected. Reconnect here when Dhan
           authorization expires.
         </p>
       </section>

@@ -52,9 +52,14 @@ export function activityPlugin(svc: () => ActivityLogService, quiet: () => Set<s
         async willSendResponse({ response, contextValue }) {
           const rc = requestContext.get();
           if (!rc) return;
-          if (opType === 'query' && fields && fields.split(',').every((f) => quiet().has(f))) return; // admin-configured quiet reads
           const body = response.body.kind === 'single' ? response.body.singleResult : undefined;
           const err = body?.errors?.[0];
+          if (!err && opType === 'query' && fields && fields.split(',').every((f) => quiet().has(f))) return;
+          if (opType === 'mutation' && /\b(placeOrder|closePosition|squareOffAll)\b/.test(fields)) {
+            const durationMs = Date.now() - rc.startedAt;
+            response.http?.headers.set('server-timing', `app;dur=${durationMs}`);
+            console.info(JSON.stringify({ event: 'order_timing', requestId: rc.requestId, operation: fields, durationMs, outcome: err ? 'ERROR' : 'OK' }));
+          }
           const actor = contextValue.actor;
           svc().record({
             rc,

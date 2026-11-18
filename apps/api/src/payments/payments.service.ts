@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { soleAdminMayApprove } from '../common/maker-checker';
 import { and, desc, eq, gte, lt, ilike, or, inArray, isNull, sql, type SQL } from 'drizzle-orm';
@@ -50,7 +51,7 @@ export class PaymentsService {
     await this.policy.assertCanAccessUser(actor, userId, ip);
     if (!/^[A-Za-z0-9_-]{8,120}$/.test(input.idempotencyKey)) throw badInput('Invalid idempotency key.');
     await this.assertAmount(input.type, input.amountMinor);
-    if (input.type === 'DEPOSIT' && actor.role !== 'SUPER_ADMIN' && !input.payment) throw badInput('Enter the receiving account, UTR, payer name and payment date.');
+    if (input.type === 'DEPOSIT' && !isPlatformAdmin(actor.role) && !input.payment) throw badInput('Enter the receiving account, UTR, payer name and payment date.');
     if (input.type !== 'DEPOSIT' && input.payment) throw badInput('Payment evidence is only accepted for deposits.');
 
     return this.dbs.serializable(async (tx) => {
@@ -68,7 +69,7 @@ export class PaymentsService {
       if (u.status !== 'ACTIVE') throw badInput('Account is not active.');
       if (input.type === 'DEPOSIT' && !u.isDemo && !input.payment) throw badInput('Enter the payment reference and attach the payment screenshot.');
       // Demo balances are practice money: only a Super Admin may adjust them.
-      if (u.isDemo && actor.role !== 'SUPER_ADMIN') throw forbidden('Adding funds and withdrawing are not available in demo accounts.');
+      if (u.isDemo && !isPlatformAdmin(actor.role)) throw forbidden('Adding funds and withdrawing are not available in demo accounts.');
 
       if (input.type === 'WITHDRAWAL') {
         const cash = await this.ledger.cashAccount(tx, userId, u.mode);
@@ -83,7 +84,7 @@ export class PaymentsService {
         .returning();
       if (input.payment) await this.evidence.record(tx, actor, userId, input.amountMinor, input.payment, p.id);
       await this.audit.record(tx, { actor, action: `payment.${input.type.toLowerCase()}_requested`, entityType: 'payment', entityId: p.id, outcome: 'SUCCESS', ip, metadata: { userId, amount: input.amountMinor, mode: u.mode } });
-      const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+      const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
       for (const a of admins) {
         await this.notifications.notify(tx, a.id, 'payment.review', `${input.type === 'DEPOSIT' ? 'Deposit' : 'Withdrawal'} awaiting review`, `${u.username}: ₹${formatMoney(input.amountMinor)}${u.isDemo ? ' (virtual)' : ''}`, u.isDemo);
       }

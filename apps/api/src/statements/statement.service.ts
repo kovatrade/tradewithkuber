@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Injectable } from '@nestjs/common';
 import { accountText } from '../common/account-text';
 import { JwtService } from '@nestjs/jwt';
@@ -95,7 +96,7 @@ export class StatementService {
     const [viewer] = await this.dbs.db.select().from(users).where(eq(users.id, c.sub));
     if (!viewer || viewer.status !== 'ACTIVE') throw unauthenticated();
     await this.usersSvc.get({ userId: viewer.id, role: viewer.role, sessionId: 'statement', mfaVerified: true }, u.id, ip);
-    const cutoff = viewer.role === 'SUPER_ADMIN' ? null : viewer.role === 'BROKER' ? viewer.dataSince : u.dataSince;
+    const cutoff = isPlatformAdmin(viewer.role) ? null : viewer.role === 'BROKER' ? viewer.dataSince : u.dataSince;
     if (cutoff && from < cutoff) from = cutoff;
     const to = new Date(istDayStart(c.to).getTime() + 86_400_000);
     const cash = await this.ledger.cashAccount(this.dbs.db, u.id, u.mode);

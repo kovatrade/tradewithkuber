@@ -159,7 +159,7 @@ export class MarketResolver {
     return rows.map((r) => toInstrument(r, this.market.quote(r.id)));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [Instrument], { description: 'Super Admin: every active instrument, to set which are mini and which are mega lots.' })
   async allInstruments(@Args('lotClass', { nullable: true }) lotClass?: string) {
     const rows = await this.dbs.db
@@ -171,7 +171,7 @@ export class MarketResolver {
     return rows.map((r) => toInstrument(r, this.market.quote(r.id)));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => [Instrument], { description: 'Super Admin: mark instruments as MINI or MEGA lots (brokerage and broker earning per lot follow).' })
   async setInstrumentLotClass(@CurrentActor() a: Actor, @Args('instrumentIds', { type: () => [ID] }) ids: string[], @Args('lotClass') lotClass: string, @Ctx() c: GqlContext) {
     if (lotClass !== 'MINI' && lotClass !== 'MEGA') throw badInput('Choose MINI or MEGA.');
@@ -188,7 +188,7 @@ export class MarketResolver {
     return rows.map((r) => toInstrument(r, this.market.quote(r.id)));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => Instrument, { description: 'Super Admin: what one lot is, in words (e.g. "100 g"). Empty clears it.' })
   async setInstrumentLotLabel(@CurrentActor() a: Actor, @Args('instrumentId', { type: () => ID }) id: string, @Args('lotLabel') label: string, @Ctx() c: GqlContext) {
     const v = label.trim().replace(/\s+/g, ' ');

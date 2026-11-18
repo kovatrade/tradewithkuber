@@ -15,7 +15,7 @@ import { Icon, Logo, type IconName } from './icons';
 import { SkeletonRows, Dialog } from './ui';
 
 type Item = { href: string; label: string; icon: IconName; exact?: boolean };
-const NAV: Record<Role, Item[]> = {
+const NAV: Record<Exclude<Role, 'DEVELOPER'>, Item[]> = {
   TRADER: [
     { href: '/trader/watchlist', label: 'Watchlist', icon: 'eye' },
     { href: '/trader/positions', label: 'Positions', icon: 'briefcase' },
@@ -46,7 +46,7 @@ const NAV: Record<Role, Item[]> = {
     { href: '/admin/reset', label: 'Data reset', icon: 'alert' },
   ],
 };
-const ROLE: Record<Role, string> = { SUPER_ADMIN: 'Super Admin', BROKER: 'Broker', TRADER: 'Trader' };
+const ROLE: Record<Role, string> = { SUPER_ADMIN: 'Super Admin', DEVELOPER: 'Developer', BROKER: 'Broker', TRADER: 'Trader' };
 
 export function Shell({ roles, children }: { roles: Role[]; children: ReactNode }) {
   const { me, loading, signOut, settings } = useAuth();
@@ -63,7 +63,7 @@ export function Shell({ roles, children }: { roles: Role[]; children: ReactNode 
     if (loading) return;
     if (!me) router.replace('/login');
     else if (me.role === 'SUPER_ADMIN' && !me.mfaEnabled) router.replace('/mfa-setup');
-    else if (!roles.includes(me.role)) router.replace(homeFor(me.role));
+    else if (!(roles.includes(me.role) || (me.role === 'DEVELOPER' && roles.includes('SUPER_ADMIN')))) router.replace(homeFor(me.role));
   }, [loading, me, roles, router]);
   useEffect(() => onLiveState(setLive), []);
   useEffect(() => {
@@ -105,8 +105,8 @@ export function Shell({ roles, children }: { roles: Role[]; children: ReactNode 
     );
   }, [me?.role, toast]);
 
-  if (loading || !me || !roles.includes(me.role)) return <div style={{ padding: 24 }}><SkeletonRows rows={6} /></div>;
-  const nav = NAV[me.role];
+  if (loading || !me || !(roles.includes(me.role) || (me.role === 'DEVELOPER' && roles.includes('SUPER_ADMIN')))) return <div style={{ padding: 24 }}><SkeletonRows rows={6} /></div>;
+  const nav = NAV[me.role === 'DEVELOPER' ? 'SUPER_ADMIN' : me.role];
   const active = (i: Item) => (i.exact ? path === i.href : path === i.href || path.startsWith(i.href + '/'));
   const badges = Object.fromEntries((counters.data?.navigationBadges ?? []).map((b) => [b.href, b.count]));
   const count = badges['/notifications'] ?? 0;

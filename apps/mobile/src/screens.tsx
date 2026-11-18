@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from './roles';
 import { ADMIN_NAV } from './admin-navigation';
 /** Domain building blocks shared by trader / broker / admin screens. */
 import { ReenableResetTrader } from './resets';
@@ -449,7 +450,7 @@ export function PaymentSheet({ type, userId, available, onClose }: { type: 'DEPO
   // A new key whenever the amount changes: a retry of the same request is safe, a different amount is a new request.
   const key = useMemo(newKey, [amount, payment.utr, payment.payeeAccountId]);
   const { settings, me } = useAuth();
-  const sole = useSoleAdmin() && me?.role === 'SUPER_ADMIN';
+  const sole = useSoleAdmin() && isPlatformAdmin(me?.role);
   const needsPayment = type === 'DEPOSIT';
   const review = step === (needsPayment ? 3 : 1);
   const min = type === 'DEPOSIT' ? Number(settings?.minDeposit ?? 50000) : 0;
@@ -912,12 +913,12 @@ export function ProfileView() {
   const [mfa, setMfa] = useState(false);
   const [others, setOthers] = useState(false);
   const [terms, setTerms] = useState(false);
-  const role = me?.role === 'SUPER_ADMIN' ? 'Super Admin' : me?.role === 'BROKER' ? 'Broker' : 'Trader';
+  const role = me?.role === 'DEVELOPER' ? 'Developer' : isPlatformAdmin(me?.role) ? 'Super Admin' : me?.role === 'BROKER' ? 'Broker' : 'Trader';
   const Item = ({ icon, label, sub, onPress }: { icon: import('./icons').IconName; label: string; sub?: string; onPress?: () => void }) => (
     <ListRow onPress={onPress} label={label} left={<IconMark icon={icon} />} title={label} sub={sub} right={onPress ? <Icon name="chevronRight" size={18} color={t.text3} /> : undefined} />
   );
   return (
-    <Screen title="Settings" onRefresh={sessions.refetch} right={me?.role !== 'SUPER_ADMIN' ? (
+    <Screen title="Settings" onRefresh={sessions.refetch} right={!isPlatformAdmin(me?.role) ? (
       // Red reset button, opposite the logo: opens the account reset request (staff approve it).
       <Pressable onPress={() => router.push('/wipe')} accessibilityRole="button" accessibilityLabel="Reset account" hitSlop={6}
         style={({ pressed }) => ({ width: 40, height: 40, borderRadius: 20, marginRight: S[2], backgroundColor: t.neg, alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.8 : 1 })}>
@@ -929,11 +930,11 @@ export function ProfileView() {
         <View style={{ flex: 1 }}><T v="h2">{me?.displayName}</T><T v="sm" c="text2">{me?.username} · {role}{me?.isDemo ? ' · demo' : ''}</T></View>
       </Row>
       <View>
-        {me?.role === 'SUPER_ADMIN' && <Section title="Administration">{ADMIN_NAV.map(item => <Item key={item.web} icon={item.icon} label={item.label} onPress={() => router.push(item.href as never)} />)}</Section>}
+        {isPlatformAdmin(me?.role) && <Section title="Administration">{ADMIN_NAV.map(item => <Item key={item.web} icon={item.icon} label={item.label} onPress={() => router.push(item.href as never)} />)}</Section>}
         {me?.role !== 'TRADER' && <Item icon="shield" label="Two-step verification" sub={me?.mfaEnabled ? 'On. Your authenticator can recover a forgotten password' : 'Off. Tap to set it up'} onPress={me?.mfaEnabled || me?.isDemo ? undefined : () => setMfa(true)} />}
         {!me?.isDemo && <Item icon="key" label="Change password" onPress={() => setPw(true)} />}
-        {!me?.isDemo && me?.role !== 'SUPER_ADMIN' && <Item icon="fingerprint" label="MPIN & fingerprint" sub={quick?.owner.userId === me?.id ? (quick?.owner.biometric ? 'On: MPIN and fingerprint' : 'On: MPIN') : 'Off. Unlock without your password'} onPress={() => router.push('/quick-settings')} />}
-        {me?.role !== 'SUPER_ADMIN' && <Item icon="alert" label="Request account reset" sub="Staff approval is required; historical data is retained" onPress={() => router.push('/wipe')} />}
+        {!me?.isDemo && !isPlatformAdmin(me?.role) && <Item icon="fingerprint" label="MPIN & fingerprint" sub={quick?.owner.userId === me?.id ? (quick?.owner.biometric ? 'On: MPIN and fingerprint' : 'On: MPIN') : 'Off. Unlock without your password'} onPress={() => router.push('/quick-settings')} />}
+        {!isPlatformAdmin(me?.role) && <Item icon="alert" label="Request account reset" sub="Staff approval is required; historical data is retained" onPress={() => router.push('/wipe')} />}
         {/* Administrative security and activity controls are only shown to staff. */}
         <NotificationsItem />
         <Item icon="lock" label="Login history" sub="Sign-ins and failed attempts, and the rules you accepted" onPress={() => router.push('/logins')} />

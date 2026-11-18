@@ -237,14 +237,14 @@ export class AuthResolver {
     return pubsub.asyncIterableIterator(TOPIC.session(c.actor.sessionId));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [SessionType], { description: 'Signed-in devices of any account.' })
   async userSessions(@CurrentActor() a: Actor, @Args('userId', { type: () => ID }) userId: string) {
     const rows = await this.auth.listUserSessions(userId);
     return rows.map((s) => ({ ...s, current: s.id === a.sessionId }));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => Int, { description: 'Sign out one device (sessionId) or every device of an account.' })
   revokeUserSessions(@CurrentActor() a: Actor, @Args('userId', { type: () => ID }) userId: string, @Ctx() c: GqlContext, @Args('sessionId', { type: () => ID, nullable: true }) sessionId?: string) {

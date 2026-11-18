@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from './roles';
 import * as Device from 'expo-device';
 import { router } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -7,7 +8,7 @@ import { forgetQuickDevice, quickDevice, RELOCK_AFTER_MS, type QuickOwner } from
 import { requestSplash } from './splash';
 import { unregisterPush } from './push';
 
-export type Role = 'SUPER_ADMIN' | 'BROKER' | 'TRADER';
+export type Role = 'SUPER_ADMIN' | 'DEVELOPER' | 'BROKER' | 'TRADER';
 export interface Me { id: string; username: string; displayName: string; role: Role; isDemo: boolean; mfaEnabled: boolean; termsAccepted: boolean; /** Traders: broker's WhatsApp digits, e.g. 919876543210. */ brokerWhatsapp?: string | null }
 export interface Settings { appName: string; tickerMessages: string[]; termsRules: string[]; guidelinesHi?: string[]; helplineUrl: string; /** Exchanges whose scripts can be added to a watchlist. */ watchlistExchanges?: string[]; demoEnabled: boolean; signupEnabled: boolean; maxWatchlists: number; minDeposit?: string; apiVersion: string }
 
@@ -30,7 +31,7 @@ interface Ctx {
 }
 const C = createContext<Ctx | null>(null);
 
-export const homeFor = (r: Role) => (r === 'SUPER_ADMIN' ? '/(admin)' : r === 'BROKER' ? '/(broker)' : '/(trader)/watchlist');
+export const homeFor = (r: Role) => (isPlatformAdmin(r) ? '/(admin)' : r === 'BROKER' ? '/(broker)' : '/(trader)/watchlist');
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);

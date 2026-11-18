@@ -13,9 +13,9 @@ export default function Overview() {
   const t = useTheme();
   const sole = useSoleAdmin();
   const { me } = useAuth();
-  const { data, error, refetch } = useQuery<{ adminOverview: O }>(`{ adminOverview { brokers traders activeTraders pendingAccounts pendingPayments pendingPaymentsAmount openOrders securityEvents24h lastReconciliation { ok } } }`, undefined, 15000, !me?.mfaEnabled);
+  const { data, error, refetch } = useQuery<{ adminOverview: O }>(`{ adminOverview { brokers traders activeTraders pendingAccounts pendingPayments pendingPaymentsAmount openOrders securityEvents24h lastReconciliation { ok } } }`, undefined, 15000, (me?.role === 'SUPER_ADMIN' && !me.mfaEnabled));
   const o = data?.adminOverview;
-  if (!me?.mfaEnabled) return <AdminMfaGate title="Overview" />;
+  if ((me?.role === 'SUPER_ADMIN' && !me.mfaEnabled)) return <AdminMfaGate title="Overview" />;
   return (
     <Screen title="Overview" right={<BellButton />} onRefresh={refetch}>
       {error && !o ? <ErrorState error={error} retry={refetch} /> : !o ? <Skeleton /> : (

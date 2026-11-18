@@ -70,7 +70,7 @@ export class FeesResolver {
     return (await this.fees.listPayees(a)).map(toPayee);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => PayeeAccount, { description: 'Add a bank account or UPI ID. Traders see it only after a different Super Admin approves it.' })
   async addPayeeAccount(@CurrentActor() a: Actor, @Args('input') input: PayeeAccountInput, @Ctx() c: GqlContext) {
@@ -79,26 +79,26 @@ export class FeesResolver {
     return toPayee(await soleAdminMayApprove(this.dbs.db) ? await this.fees.decidePayee(a, p.id, 'approve', c.ip) : p);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => PayeeAccount)
   async approvePayeeAccount(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return toPayee(await this.fees.decidePayee(a, id, 'approve', c.ip));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => PayeeAccount)
   async rejectPayeeAccount(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return toPayee(await this.fees.decidePayee(a, id, 'reject', c.ip));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => PayeeAccount, { description: 'Stop showing these details. To change details, disable and add new ones.' })
   async disablePayeeAccount(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return toPayee(await this.fees.decidePayee(a, id, 'disable', c.ip));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @RequireStepUp()
   @Mutation(() => PayeeAccount, { description: 'Turn disabled (previously approved) details back on. Only one bank account and one UPI ID are live at a time: the other live one of the same kind is turned off.' })
   async enablePayeeAccount(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
@@ -131,13 +131,13 @@ export class FeesResolver {
     return (await this.fees.list(a, status, Math.min(Math.max(limit ?? 100, 1), 500))).map(toFee);
   }
 
-  @Roles('TRADER', 'BROKER', 'SUPER_ADMIN')
+  @Roles('TRADER', 'BROKER', 'SUPER_ADMIN', 'DEVELOPER')
   @Query(() => String, { description: 'The payment screenshot as a data URL: for the trader who paid, their broker and Super Admins.' })
   feePaymentProof(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return this.fees.proof(a, id, c.ip);
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => FeePayment)
   async reviewFeePayment(@CurrentActor() a: Actor, @Args('id', { type: () => ID }) id: string, @Args('verified') verified: boolean, @Args('note', { nullable: true }) note: string, @Ctx() c: GqlContext) {
     await this.fees.review(a, id, verified, note, c.ip);

@@ -24,7 +24,7 @@ export class DhanIntegrationResolver {
     private readonly catalog: DhanCatalogService,
     private readonly market: MarketDataService,
   ) {}
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => DhanIntegrationStatus)
   async dhanIntegrationStatus() {
     return {
@@ -37,12 +37,12 @@ export class DhanIntegrationResolver {
       }),
     };
   }
-  @Roles('SUPER_ADMIN')
+  @Roles('DEVELOPER')
   @Mutation(() => String)
   beginDhanConnection(@CurrentActor() actor: Actor) {
     return this.credentials.begin(actor);
   }
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Mutation(() => String)
   async syncDhanCatalog() {
     return JSON.stringify(this.catalog.startSync());

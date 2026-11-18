@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../common/roles';
 import { Args, Field, ID, Int, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
 import type { Actor, GqlContext } from '../common/context';
 import { AllowWithoutMfa, Ctx, CurrentActor, Roles } from '../common/context';
@@ -97,7 +98,7 @@ export class ConsentResolver {
     @Args('before', { nullable: true }) before?: string,
     @Args('limit', { type: () => Int, nullable: true }) limit?: number,
   ): Promise<ConsentRecord[]> {
-    const target = userId ?? (a.role === 'SUPER_ADMIN' ? undefined : a.userId);
+    const target = userId ?? (isPlatformAdmin(a.role) ? undefined : a.userId);
     if (target) await this.policy.assertCanAccessUser(a, target, c.ip);
     if (ip && !IP_RE.test(ip)) throw badInput('Invalid IP address.');
     const rows = await this.consent.listConsents({ userId: target, ip, from: date(from), to: date(to), beforeAt: date(before), limit: clampLimit(limit, 50, 500) });
@@ -120,7 +121,7 @@ export class ConsentResolver {
     return rows.map((r) => toLogin(r.e, r.username, r.role));
   }
 
-  @Roles('SUPER_ADMIN')
+  @Roles('SUPER_ADMIN', 'DEVELOPER')
   @Query(() => [LoginEvent], { description: 'Platform-wide sign-in audit, including attempts on unknown usernames.' })
   async loginAudit(
     @Args('outcome', { nullable: true }) outcome?: string,

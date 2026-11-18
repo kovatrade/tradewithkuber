@@ -1,3 +1,4 @@
+import { isPlatformAdmin } from '../src/roles';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -49,7 +50,7 @@ export default function Login() {
     router.replace(homeFor(me.role));
     // Offer MPIN/fingerprint unlock once per account on this phone (traders and brokers; not demo).
     const mine = quick?.owner.userId === me.id;
-    if (!mine && me.role !== 'SUPER_ADMIN' && !me.isDemo && !(await skippedQuickSetup(me.id))) router.push('/quick-setup');
+    if (!mine && !isPlatformAdmin(me.role) && !me.isDemo && !(await skippedQuickSetup(me.id))) router.push('/quick-setup');
   };
   const done = async (p: AuthPayload) => {
     if (p.sessionConflict) { setConflict(p); return; }

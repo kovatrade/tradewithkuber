@@ -76,7 +76,8 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
         this.snapshots?.onCredentialsChange(() => { void this.refreshSnapshots(); });
         void this.refreshSnapshots();
         this.refreshTimer = setInterval(() => { void this.refreshSnapshots(); }, 60000);
-        this.snapshotTimer = setInterval(() => { void this.saveSnapshots(); }, 15000);
+        // Persist a recovery checkpoint, not a tick history. Live trading continues from memory.
+        this.snapshotTimer = setInterval(() => { void this.saveSnapshots(); }, 60000);
         if(env().DHAN_CATALOG_SYNC==='on')this.catalog?.startSync();
       }
       this.timer = setInterval(() => this.tick(), 1000);

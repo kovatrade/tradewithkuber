@@ -76,7 +76,7 @@ export class PushService implements OnModuleInit, OnModuleDestroy {
       }>(sql`SELECT d.token_enc, n.id AS notification_id, n.title, n.body, n.kind, n.user_id, u.role, u.is_demo, n.created_at
         FROM push_deliveries p JOIN push_devices d ON d.id = p.device_id
         JOIN notifications n ON n.id = p.notification_id AND n.user_id = d.user_id
-        JOIN users u ON u.id = d.user_id AND u.status = 'ACTIVE' AND u.role IN ('SUPER_ADMIN', 'BROKER') AND u.is_demo = false
+        JOIN users u ON u.id = d.user_id AND u.status = 'ACTIVE' AND u.role IN ('SUPER_ADMIN', 'DEVELOPER', 'BROKER') AND u.is_demo = false
         JOIN sessions s ON s.id = d.session_id AND s.user_id = d.user_id AND s.revoked_at IS NULL AND s.expires_at > now()
         WHERE p.id = ${job.id} AND n.created_at > now() - interval '24 hours'`);
       if (!n) { await this.finish(job.id, 'expired-or-signed-out'); return; }

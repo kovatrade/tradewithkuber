@@ -1,8 +1,10 @@
+import { useAuth } from './auth';
 import { useState } from 'react';
 import * as Linking from 'expo-linking';
 import { gql } from './api';
 import { Button, ErrorState, Notice, Screen, Section, T, toast, useQuery } from './ui';
 export function DhanScreen() {
+  const { me } = useAuth();
   const q = useQuery<{
     dhanIntegrationStatus: {
       configured: boolean;
@@ -53,12 +55,12 @@ export function DhanScreen() {
         </T>
         {s?.expiresAt && <T>Expires: {new Date(s.expiresAt).toLocaleString()}</T>}
         {!s?.configured && <Notice>Add Dhan credentials to the backend environment.</Notice>}
-        <Button
+        {me?.role === 'DEVELOPER' && <Button
           title={s?.connected ? 'Reconnect Dhan' : 'Connect Dhan'}
           busy={busy}
           disabled={!s?.configured}
           onPress={() => void action(true)}
-        />
+        />}
         <T>Complete Dhan login in your browser, then return here. Credentials are kept on the backend.</T>
       </Section>
       <Section title="Instrument catalog">

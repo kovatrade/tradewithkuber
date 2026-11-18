@@ -16,7 +16,7 @@ export interface UserRow { rejectionReason?: string; resetDisabledAt?: string; i
 export const USER_FIELDS = 'id username displayName role status mode isDemo brokerId brokerName createdByName openingAmount commissionPct commissionPerMiniLot commissionPerMegaLot commissionIsDefault mfaEnabled resetDisabledAt createdAt phone rejectionReason';
 /** "40.00" → "40%"; empty for non-brokers. Brokers without their own value use the platform default. */
 export const pctLabel = (u: Pick<UserRow, 'role' | 'commissionPerMiniLot' | 'commissionPerMegaLot'>) => (u.role !== 'BROKER' ? '' : u.commissionPerMiniLot ? `₹${Number(u.commissionPerMiniLot).toLocaleString('en-IN')} / mini lot · ₹${Number(u.commissionPerMegaLot).toLocaleString('en-IN')} / mega` : '');
-export const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: 'Super Admin', BROKER: 'Broker', TRADER: 'Trader' };
+export const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: 'Super Admin', DEVELOPER: 'Developer', BROKER: 'Broker', TRADER: 'Trader' };
 
 export function Person({ u, href }: { u: Pick<UserRow, 'displayName' | 'username'>; href?: string }) {
   const body = (
@@ -29,7 +29,7 @@ export function Person({ u, href }: { u: Pick<UserRow, 'displayName' | 'username
 }
 
 /** Create a broker or trader. Accounts start PENDING until a Super Admin approves them. */
-export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: ('BROKER' | 'TRADER')[]; brokers?: { id: string; username: string }[]; onClose: () => void; onDone: () => void }) {
+export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: ('BROKER' | 'TRADER' | 'DEVELOPER')[]; brokers?: { id: string; username: string }[]; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ username: '', displayName: '', role: roles[0], phone: '', email: '', brokerId: '', tempPassword: '', commMini: '', commMega: '', openingAmount: '' });
   const [showPw, setShowPw] = useState(false);
   const [step, setStep] = useState(0);

@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, sql , inArray} from 'drizzle-orm';
 import { deviceAccountLogins, users, type UserRow } from '../db/schema';
 import type { Tx } from '../db/db';
 import { peppered } from '../common/crypto';
@@ -19,7 +19,7 @@ export async function recordDeviceLogin(tx: Tx, user: UserRow, meta: ClientMeta,
   await tx.insert(deviceAccountLogins).values({ deviceHash, userId: user.id, ...details })
     .onConflictDoUpdate({ target: [deviceAccountLogins.deviceHash, deviceAccountLogins.userId], set: details });
   if (!previous.length) return;
-  const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'SUPER_ADMIN'), eq(users.status, 'ACTIVE')));
+  const admins = await tx.select({ id: users.id }).from(users).where(and(inArray(users.role, ['SUPER_ADMIN', 'DEVELOPER']), eq(users.status, 'ACTIVE')));
   const stamp = (at: Date) => at.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
   for (const other of previous) {
     const body = `${other.username} (${other.role}) signed in at ${stamp(other.at)} from IP ${other.ip ?? 'unknown'}. ${user.username} (${user.role}) signed in on the same device at ${stamp(now)} from IP ${meta.ip}. Device: ${meta.deviceName ?? meta.userAgent.slice(0, 120)}. Device reference: ${deviceHash.slice(0, 12)}. Session: ${sessionId}.`;

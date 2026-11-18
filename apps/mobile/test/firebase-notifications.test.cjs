@@ -50,6 +50,7 @@ function pushFixture() {
     'expo-secure-store': { getItemAsync: async () => 'installation-12345' },
     'expo-crypto': {}, 'expo-router': {},
     './api': { gql: async query => { events.push(query.includes('unregisterPushToken') ? 'unregister' : 'register'); }, subscribe: (_query, _vars, fn) => { subscriptions.push(fn); return () => {}; } },
+    './roles': { isPlatformAdmin: role => ['SUPER_ADMIN', 'DEVELOPER'].includes(role) },
     './ui': { toast: text => events.push(text) },
     '@react-native-firebase/messaging': { getMessaging: () => ({}), deleteToken: async () => { events.push('delete-token'); } },
   };
@@ -61,7 +62,7 @@ function pushFixture() {
 
 test('native push is available only to non-demo staff', () => {
   const f = pushFixture();
-  for (const role of ['SUPER_ADMIN', 'BROKER', 'TRADER']) {
+  for (const role of ['SUPER_ADMIN', 'DEVELOPER', 'BROKER', 'TRADER']) {
     assert.equal(f.push.canUseSystemPush({ role, isDemo: false }), role !== 'TRADER');
     assert.equal(f.push.canUseSystemPush({ role, isDemo: true }), false);
   }

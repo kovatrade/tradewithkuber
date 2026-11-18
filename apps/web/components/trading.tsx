@@ -1,4 +1,5 @@
 'use client';
+import { isPlatformAdmin } from '../lib/roles';
 import { quoteMove } from '@/lib/quote-flash';
 import { useSoleAdmin } from '@/lib/sole-admin';
 import { useAuth } from '@/lib/auth';
@@ -321,7 +322,7 @@ export function PaymentDialog({ type, userId, onClose, onDone, available }: { ty
   const toast = useToast();
   const m = useMutation(`mutation($i:PaymentRequestInput!){ requestPayment(input:$i){ id status } }`);
   const { settings, me } = useAuth();
-  const sole = useSoleAdmin() && me?.role === 'SUPER_ADMIN';
+  const sole = useSoleAdmin() && isPlatformAdmin(me?.role);
   const needsPayment = type === 'DEPOSIT';
   const review = step === (needsPayment ? 3 : 1);
   const min = type === 'DEPOSIT' ? Number(settings?.minDeposit ?? 50000) : 0;

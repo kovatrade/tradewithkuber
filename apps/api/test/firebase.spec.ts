@@ -94,7 +94,7 @@ describe('Durable FCM delivery', () => {
     const query = dialect.sqlToQuery(execute.mock.calls[0][0]);
     expect(query.sql).toContain('INSERT INTO push_deliveries');
     expect(query.sql).toContain('s.revoked_at IS NULL');
-    expect(query.sql).toContain("u.role IN ('SUPER_ADMIN', 'BROKER')");
+    expect(query.sql).toContain("u.role IN ('SUPER_ADMIN', 'DEVELOPER', 'BROKER')");
     expect(query.sql).toContain('u.is_demo = false');
     expect(query.params).toEqual(['note', 'trader']);
   });
@@ -104,7 +104,7 @@ describe('Durable FCM delivery', () => {
     expect(dialect.sqlToQuery(f.execute.mock.calls[1][0]).sql).toContain('s.revoked_at IS NULL');
     expect(f.send).toHaveBeenCalledWith(expect.objectContaining({ notification: { title: note.title, body: 'order' }, data: expect.objectContaining({ userId: 'owner' }), android: expect.objectContaining({ priority: 'high', notification: expect.objectContaining({ channelId: 'activity', tag: 'note' }) }) }));
     const query = dialect.sqlToQuery(f.execute.mock.calls[1][0]);
-    expect(query.sql).toContain("u.role IN ('SUPER_ADMIN', 'BROKER')");
+    expect(query.sql).toContain("u.role IN ('SUPER_ADMIN', 'DEVELOPER', 'BROKER')");
     expect(query.sql).toContain('u.is_demo = false');
     expect(f.updates[0]).toEqual({ finishedAt: expect.any(Date), lastError: null });
   });
