@@ -21,7 +21,9 @@
     "keys:rotate": "dotenv -e .env -e ../../.env.local -- ts-node --transpile-only scripts/rotate-keys.ts",
     "logs:verify": "dotenv -e .env -e ../../.env.local -- ts-node --transpile-only scripts/archive-logs.ts verify",
     "instruments:audit-dhan": "dotenv -e .env -e ../../.env.local -- ts-node --transpile-only scripts/audit-dhan-instruments.ts",
-    "predev": "npm run db:migrate"
+    "predev": "npm run db:migrate",
+    "audit:prod": "node scripts/audit-production.cjs",
+    "test:audit": "node --test test/audit-production.test.cjs"
   },
   "devDependencies": {
     "@types/cookie-parser": "1.4.10",
@@ -75,6 +77,7 @@
   "overrides": {
     "@nestjs/graphql": {
       "@graphql-tools/utils": "12.0.2"
-    }
+    },
+    "uuid": "11.1.1"
   }
 }

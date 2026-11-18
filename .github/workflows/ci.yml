@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: apps/api/package-lock.json }
       - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run test:audit && npm run audit:prod
       - run: npm run typecheck
       - name: e2e tests (authz, idempotency, ledger invariants)
         run: |
