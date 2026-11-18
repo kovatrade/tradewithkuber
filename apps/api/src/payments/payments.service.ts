@@ -128,8 +128,7 @@ export class PaymentsService {
   /** Withdrawable = cash − margin in use − other pending withdrawals. */
   private async available(tx: Parameters<Parameters<DbService['db']['transaction']>[0]>[0], userId: string, cashAccountId: string, excludePaymentId?: string) {
     const bal = await this.ledger.balance(tx, cashAccountId);
-    const bps = await this.config.get('trading.intradayMarginBps');
-    const margin = await this.orders.marginUsed(tx, userId, bps);
+    const margin = await this.orders.marginUsed(tx, userId);
     const [pend] = await tx
       .select({ s: sql<string>`COALESCE(SUM(${paymentRequests.amountMinor}),0)::text` })
       .from(paymentRequests)

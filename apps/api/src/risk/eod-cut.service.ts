@@ -106,7 +106,7 @@ export class EodCutService implements OnModuleInit, OnModuleDestroy {
         let left = Math.abs(p.netQty);
         while (left > 0) {
           const qty = Math.min(left, maxQty);
-          const o = await this.orders.place(actor, { instrumentId: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', type: 'MARKET', quantity: qty, idempotencyKey: `eod-${randomUUID()}` }, 'eod', { reason: 'eod' })
+          const o = await this.orders.place(actor, { instrumentId: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', type: 'MARKET', quantity: qty, reduceOnly: true, idempotencyKey: `eod-${randomUUID()}` }, 'eod', { reason: 'eod' })
             .catch((e: Error) => ({ status: 'ERROR', rejectReason: e.message }) as const);
           if (o.status !== 'FILLED') { failed.push(`${sym}: ${o.rejectReason ?? o.status}`); break; }
           left -= qty;

@@ -118,7 +118,6 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
       <Lines lines={[
         ['Market price', q ? `₹${inr(q.ltp)}` : '—'],
         ['Order value', preview ? `₹${inr(preview.value)}` : '—'],
-        ['BRK', preview ? `₹${inr(preview.brokerage)}` : '—'],
         ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'],
         ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'],
       ]} />

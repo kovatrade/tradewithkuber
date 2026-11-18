@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { OrdersService } from '../src/trading/orders.service';
 import { SimulatedVenue } from '../src/trading/execution-venue';
 import { CONFIG_REGISTRY } from '../src/config-mgmt/registry';
+import { orders, positions } from '../src/db/schema';
 
 const settings = { MARKET_FEED: 'simulated', MARKET_HOURS: 'always_open' };
 jest.mock('../src/config/env', () => ({ env: () => settings }));
@@ -14,17 +15,21 @@ describe('resting orders follow the configured market timing policy', () => {
     settings.MARKET_HOURS = hours;
     if (time) jest.setSystemTime(new Date(time));
     const order = { id: 'order', userId: 'trader', instrumentId: 'instrument', status: 'OPEN', type,
-      side: type === 'LIMIT' ? 'BUY' : 'SELL', limitPriceMinor: 630000n, triggerPriceMinor: 245000n };
+      quantity: 1, reduceOnly: type === 'STOP_LOSS', side: type === 'LIMIT' ? 'BUY' : 'SELL', limitPriceMinor: 630000n, triggerPriceMinor: 245000n };
     const quote = { instrumentId: 'instrument', ltpMinor: type === 'LIMIT' ? 629000n : 244000n, askMinor: 629100n, bidMinor: 628900n };
-    const tx = { select: () => ({ from: () => ({ where: () => ({ for: async () => [order] }) }) }) };
+    const tx = { select: () => ({ from: (table: unknown) => ({ where: () => {
+      const rows = table === orders ? [order] : table === positions ? [{ netQty: type === 'STOP_LOSS' ? 1 : 0, avgPriceMinor: 250000n, cfDate: null }] : [{ riskState: 'OK' }];
+      return Object.assign(Promise.resolve(rows), { for: async () => rows });
+    } }) }) };
     const db = { select: () => ({ from: () => ({ where: () => ({ limit: async () => [order] }) }) }) };
     const config = { get: async (key: keyof typeof CONFIG_REGISTRY) => key === 'trading.enforceMarketHours' ? enforce : CONFIG_REGISTRY[key].default };
     const audit = { record: jest.fn() };
     const service = new OrdersService({ db, serializable: (fn: any) => fn(tx) } as any,
-      { cashAccount: async () => 'cash', lock: async () => {} } as any, config as any,
-      { quote: () => quote, instrument: () => ({ exchange: 'NSE' }) } as any,
+      { cashAccount: async () => 'cash', lock: async () => {}, balance: async () => 100000000n } as any, config as any,
+      { quote: () => quote, instrument: () => ({ exchange: 'NSE', active: true, lotClass: 'MINI' }) } as any,
       new SimulatedVenue(), audit as any, {} as any, {} as any, {} as any);
     const fill = jest.spyOn(service as any, 'fill').mockResolvedValue(null);
+    jest.spyOn(service, 'marginUsed').mockResolvedValue(750000n);
     return { service, fill, quote };
   }
 

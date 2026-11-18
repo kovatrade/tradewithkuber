@@ -179,7 +179,7 @@ export class RiskService implements OnModuleInit, OnModuleDestroy {
         let left = Math.abs(p.netQty);
         while (left > 0) {
           const qty = Math.min(left, maxQty);
-          const o = await this.orders.place(actor, { instrumentId: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', type: 'MARKET', quantity: qty, idempotencyKey: `risk-${randomUUID()}` }, 'risk', { reason: 'risk' });
+          const o = await this.orders.place(actor, { instrumentId: p.instrumentId, side: p.netQty > 0 ? 'SELL' : 'BUY', type: 'MARKET', quantity: qty, reduceOnly: true, idempotencyKey: `risk-${randomUUID()}` }, 'risk', { reason: 'risk' });
           if (o.status !== 'FILLED') { failed.push(`${sym}: ${o.rejectReason ?? o.status}`); break; }
           left -= qty;
         }

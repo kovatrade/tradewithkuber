@@ -240,10 +240,9 @@ export class UsersService {
   async accountSummary(actor: Actor, userId: string, ip?: string) {
     const u = await this.get(actor, userId, ip);
     const cash = await this.ledger.cashAccount(this.dbs.db, userId, u.mode);
-    const bps = await this.config.get('trading.intradayMarginBps');
     const [balance, marginUsed, totals, pos, credits] = await Promise.all([
       this.ledger.balance(this.dbs.db, cash),
-      this.dbs.db.transaction((tx) => this.orders.marginUsed(tx, userId, bps)),
+      this.dbs.db.transaction((tx) => this.orders.marginUsed(tx, userId)),
       this.dbs.db
         .select({ kind: journalEntries.kind, s: sql<string>`COALESCE(SUM(${ledgerPostings.amountMinor}),0)::text` })
         .from(ledgerPostings)

@@ -374,6 +374,7 @@ describe('paper trading', () => {
   });
 
   it('carries an open position forward only for its owner, holds the CF margin, and drops CF when the quantity changes', async () => {
+    await setConfig('trading.carryForwardMarginPerMiniLot', 10000);
     const t = await login('trader.two');
     const buy = await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(buy.data.placeOrder.status).toBe('FILLED');
@@ -395,6 +396,7 @@ describe('paper trading', () => {
     await gql(CF, { p: open.id }, { token: t.accessToken });
     await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect((await gql(POS, {}, { token: t.accessToken })).data.positions.find((x: { id: string }) => x.id === open.id).carriedForward).toBe(false);
+    await setConfig('trading.carryForwardMarginPerMiniLot', null);
   });
 
   it('auto cuts open positions at the exchange close, except those carried forward for that day', async () => {
@@ -673,17 +675,17 @@ describe('stop-loss / take-profit orders', () => {
     expect(code(noTrig)).toBe('BAD_USER_INPUT');
     const limitWithTrig = await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'LIMIT', quantity: 1, limitPrice: '2400.00', triggerPrice: '2400.00', idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(code(limitWithTrig)).toBe('BAD_USER_INPUT');
-    // selling with no open buy position is blocked
+    // a protective exit requires an existing opposite position
     const naked = await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'STOP_LOSS', quantity: 1, triggerPrice: '2400.00', idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(naked.data.placeOrder.status).toBe('REJECTED');
-    expect(naked.data.placeOrder.rejectReason).toMatch(/Cannot sell without holding/);
+    expect(naked.data.placeOrder.rejectReason).toMatch(/must reduce an existing opposite position/);
     // a BUY stop-loss below the current LTP would fire immediately → rejected with a reason
     const hit = await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'STOP_LOSS', quantity: 1, triggerPrice: '2400.00', idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(hit.data.placeOrder.status).toBe('REJECTED');
     expect(hit.data.placeOrder.rejectReason).toMatch(/already reached/);
   });
 
-  it('fires a stop-loss at the LTP when the price falls to the trigger, leaving the take-profit open', async () => {
+  it('fires a stop-loss at the LTP when the price falls to the trigger, cancelling the leftover take-profit', async () => {
     const t = await login('trader.one');
     const buy = await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'MARKET', quantity: 4, idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(buy.data.placeOrder.status).toBe('FILLED');
@@ -693,15 +695,39 @@ describe('stop-loss / take-profit orders', () => {
     expect(tp.data.placeOrder.status).toBe('OPEN');
     market.setPrice(instrumentId, 244000n); // ₹2440: below the stop
     await new Promise((res) => setTimeout(res, 1500));
-    const o = await gql(`{ orders(status:[FILLED, OPEN]){ id status fillPrice triggeredAt } }`, {}, { token: t.accessToken });
+    const o = await gql(`{ orders(status:[FILLED, OPEN, CANCELLED]){ id status fillPrice triggeredAt } }`, {}, { token: t.accessToken });
     const slNow = o.data.orders.find((x: any) => x.id === sl.data.placeOrder.id);
     expect(slNow.status).toBe('FILLED');
     expect(slNow.triggeredAt).toBeTruthy();
     expect(Number(slNow.fillPrice)).toBeLessThanOrEqual(2450); // passed at LTP, not at the trigger
-    expect(o.data.orders.find((x: any) => x.id === tp.data.placeOrder.id).status).toBe('OPEN');
+    expect(o.data.orders.find((x: any) => x.id === tp.data.placeOrder.id).status).toBe('CANCELLED');
     const { rows } = await pg.query(`SELECT action FROM audit_events WHERE entity_id = $1 ORDER BY seq`, [sl.data.placeOrder.id]);
     expect(rows.map((r) => r.action)).toEqual(['order.placed', 'order.triggered']);
     await gql(`mutation($o:ID!){ cancelOrder(orderId:$o){ status } }`, { o: tp.data.placeOrder.id }, { token: t.accessToken });
+  });
+
+  it('lets a trader sell first and buy to cover, charging both sides and realising short P&L', async () => {
+    const t = await login('trader.one');
+    const minor = (v: string) => BigInt(v.replace('.', ''));
+    const summary = async () => (await gql(`{ accountSummary { balance fees realizedPnl marginUsed } }`, {}, { token: t.accessToken })).data.accountSummary;
+    const before = await summary();
+    market.setPrice(instrumentId, 250000n);
+    const entry = (await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    expect(entry.status).toBe('FILLED');
+    const short = (await gql(`{ positions { instrumentId netQty } }`, {}, { token: t.accessToken })).data.positions.find((p: any) => p.instrumentId === instrumentId);
+    expect(short.netQty).toBe(-1);
+    const opened = await summary();
+    expect(minor(before.balance) - minor(opened.balance)).toBe(minor(opened.fees) - minor(before.fees));
+    market.setPrice(instrumentId, 240000n);
+    const cover = (await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    expect(cover.status).toBe('FILLED');
+    const after = await summary();
+    const pnl = minor(entry.fillPrice) - minor(cover.fillPrice);
+    expect(pnl).toBeGreaterThan(0n);
+    expect(minor(after.realizedPnl) - minor(before.realizedPnl)).toBe(pnl);
+    expect(minor(after.fees) - minor(before.fees)).toBe(50000n);
+    expect(minor(after.balance) - minor(before.balance)).toBe(pnl - 50000n);
+    expect(after.marginUsed).toBe(before.marginUsed);
   });
 
   it('exposes order limits and market sessions for the order screen', async () => {
@@ -1364,7 +1390,7 @@ describe('loss watch: warning at 80%, all trades cut at 95%', () => {
     const market = app.get(MarketDataService);
     const risk = app.get(RiskService);
     const inst = (await pg.query(`SELECT id FROM instruments WHERE symbol = 'ABB26NOVFUT'`)).rows[0].id;
-    market.setPrice(inst, 636450n);
+    market.setPrice(inst, 1000000n);
     // A fresh trader with ₹50,000 (approved by the second admin, opening amount credited).
     const admin = await adminLogin('admin');
     const created = await gql(`mutation($i:CreateUserInput!){ createUser(input:$i){ id } }`, { i: { username: 'trader.risk', displayName: 'Risk Trader', phone: '9898000102', role: 'TRADER', tempPassword: PW, openingAmount: '50000', payment: fundEvidence() } }, { token: admin.token });
@@ -1376,9 +1402,9 @@ describe('loss watch: warning at 80%, all trades cut at 95%', () => {
     const STATUS = `{ riskStatus { funds loss lossPct state warnPct cutPct openPositions } }`;
     expect((await gql(STATUS, {}, tok)).data.riskStatus).toMatchObject({ funds: '50000.00', loss: '0.00', state: 'OK', warnPct: 80, cutPct: 95 });
 
-    expect((await gql(PLACE, { i: { instrumentId: inst, side: 'BUY', type: 'MARKET', quantity: 10, idempotencyKey: randomUUID() } }, tok)).data.placeOrder.status).toBe('FILLED');
+    expect((await gql(PLACE, { i: { instrumentId: inst, side: 'BUY', type: 'MARKET', quantity: 5, idempotencyKey: randomUUID() } }, tok)).data.placeOrder.status).toBe('FILLED');
     const avg = Number((await pg.query(`SELECT avg_price_minor FROM positions WHERE user_id = $1`, [uid])).rows[0].avg_price_minor);
-    const priceFor = (lossRupees: number) => BigInt(Math.round(avg - ((lossRupees - 2500) * 100) / 10)); // 10 lots; ₹2,500 brokerage already paid
+    const priceFor = (lossRupees: number) => BigInt(Math.round(avg - ((lossRupees - 1250) * 100) / 5)); // 10 lots; ₹2,500 brokerage already paid
     const notes = async (kind: string) => (await pg.query(`SELECT count(*)::int AS n FROM notifications WHERE user_id = $1 AND kind = $2`, [uid, kind])).rows[0].n;
 
     market.setPrice(inst, priceFor(39_000)); // 78%

@@ -6,7 +6,7 @@ import { Alert, Pressable, View } from 'react-native';
 import { tradeFeedback, usePrefs, usePrivate } from '@/prefs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { gql, newKey } from '@/api';
-import { useLiveQuotes, useSummary } from '@/screens';
+import { useLiveQuotes } from '@/screens';
 import { inr, ohlcTone, R, S, shortSymbol, useTheme } from '@/theme';
 import { Badge, Button, Change, Chips, Divider, Field, Lines, LotStepper, Mark, Notice, Row, Screen, Section, Sheet, Spread, T, toast, useQuery } from '@/ui';
 
@@ -43,7 +43,7 @@ export default function StockScreen() {
   const lowVal = q?.low;
   const rules = useQuery<{ tradingRules: { minQty: number; maxQtyPerOrder: number; maxQtyPerInstrument: number; sessions: { exchange: string; open: string; close: string; isOpen: boolean; message?: string }[] } }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument sessions { exchange open close isOpen message } } }`, undefined, 15000);
   const rl = rules.data?.tradingRules;
-  const margin = useQuery<{ orderPreview: { intradayMargin: string } }>(`query($i:ID!){ orderPreview(instrumentId:$i, side:BUY, quantity:1){ intradayMargin } }`, { i: id }, 15000);
+  const margin = useQuery<{ orderPreview: { intradayMargin: string; brokerage: string }; sell: { brokerage: string } }>(`query($i:ID!){ orderPreview(instrumentId:$i, side:BUY, quantity:1){ intradayMargin brokerage } sell: orderPreview(instrumentId:$i, side:SELL, quantity:1){ brokerage } }`, { i: id }, 15000);
   const allowTrade = i && rl ? (rl.sessions.find((x) => x.exchange === i.exchange)?.isOpen ?? true) : undefined;
   const dash = (v?: string | number | null) => (v === undefined || v === null || v === '' ? '—' : String(v));
 
@@ -172,6 +172,8 @@ export default function StockScreen() {
             ['Script', i?.name.replace(/ — .*/, '') ?? '—'],
             ['Expiry', i?.expiry ? new Date(i.expiry).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—'],
             ['Lot size', i ? (i.lotLabel ?? String(i.lotSize)) : '—'],
+            ['BRK Buy (1 lot)', margin.data ? `₹${inr(margin.data.orderPreview.brokerage)}` : '—'],
+            ['BRK Sell (1 lot)', margin.data ? `₹${inr(margin.data.sell.brokerage)}` : '—'],
             ['Trade margin (1 lot)', margin.data ? `₹${inr(margin.data.orderPreview.intradayMargin)}` : '—'],
             ['Allow trade', allowTrade === undefined ? '—' : allowTrade ? 'Yes' : 'No (market closed)'],
             ['Max lots (open)', dash(rl?.maxQtyPerInstrument)],
@@ -183,6 +185,7 @@ export default function StockScreen() {
             ['Lot type', i?.lotClass === 'MEGA' ? 'Mega lot' : 'Mini lot'],
             ['Price source', q?.source === 'SIMULATED' ? (demo ? 'Simulated feed' : 'Practice feed') : q?.source ?? '—'],
           ]} />
+          <T v="xs" c="text2">BRK is charged per lot on each buy and sell fill.</T>
         </Section>
       )}
       {i && order && <OrderSheet allowAdvanced={from === 'positions'} i={i} q={q} side={order} setSide={setOrder} initialQty={q0 ?? '1'} onClose={() => setOrder(null)} />}
@@ -210,7 +213,6 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
   const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const priv = usePrivate();
-  const sum = useSummary();
   const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange open close isOpen message } } }`, undefined, 15000);
   const pos = useQuery<{ positions: { instrumentId: string; netQty: number }[] }>(`{ positions { instrumentId netQty } }`);
   const [type, setType] = useState<OType>('MARKET');
@@ -239,19 +241,9 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
     const h = setTimeout(() => gql<{ orderPreview: Preview }>(`query($i:ID!,$s:OrderSide!,$q:Int!,$l:String,$t:String){ orderPreview(instrumentId:$i, side:$s, quantity:$q, limitPrice:$l, triggerPrice:$t){ price value intradayMargin carryForwardMargin brokerage } }`, { i: i.id, s: side, q: n, l: type === 'LIMIT' ? price : undefined, t: isTrig(type) ? price : undefined }).then((d) => setPreview(d.orderPreview)).catch(() => setPreview(null)), 250);
     return () => clearTimeout(h);
   }, [i.id, side, n, type, price, valid]);
-  const avail = sum.data?.accountSummary.available;
-  const short = preview && avail && Number(preview.intradayMargin) + Number(preview.brokerage) > Number(avail);
   const place = async () => {
     if (session && !session.isOpen) {
       Alert.alert('Market Closed', session.message || `Trading is closed for ${i.exchange}.`);
-      return;
-    }
-    if (side === 'SELL' && held <= 0) {
-      Alert.alert('Cannot Sell', 'You cannot sell without holding an open buy position. Please buy first.');
-      return;
-    }
-    if (side === 'SELL' && n > held) {
-      Alert.alert('Insufficient Holdings', `Cannot sell ${n} lots. You only hold ${held} lots in this instrument.`);
       return;
     }
     setBusy(true); setErr(null);
@@ -311,22 +303,11 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
           )}
           {isTrig(type) && <T v="xs">{TYPE_LABEL[type]}: when the LTP {firesOnFall(type, side) ? 'falls to' : 'rises to'} your trigger, the order is filled at the LTP.</T>}
           <Divider />
-          <Lines lines={[ ['Market price', q ? `₹${inr(q.ltp)}` : '—'], ['Order value', preview ? `₹${inr(preview.value)}` : '—'], ['BRK', preview ? `₹${inr(preview.brokerage)}` : '—'], ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'], ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'] ]} />
-          {session && !session.isOpen ? <Notice tone="warn">{session.message}</Notice> : err ? <Notice tone="err">{err}</Notice> : short ? <Notice tone="warn">Not enough available balance for this order.</Notice> : null}
+          <Lines lines={[ ['Market price', q ? `₹${inr(q.ltp)}` : '—'], ['Order value', preview ? `₹${inr(preview.value)}` : '—'], ['Intraday margin', preview ? `₹${inr(preview.intradayMargin)}` : '—'], ['C/F margin', preview ? `₹${inr(preview.carryForwardMargin)}` : '—'] ]} />
+          {session && !session.isOpen ? <Notice tone="warn">{session.message}</Notice> : err ? <Notice tone="err">{err}</Notice> : null}
           <Button size="lg" kind={side === 'BUY' ? 'buy' : 'sell'} title={valid && preview ? `${side === 'BUY' ? 'Buy' : 'Sell'} ${n} @ ${type === 'MARKET' ? inr(side === 'BUY' ? q?.ask : q?.bid) : inr(price)}` : `Review ${side === 'BUY' ? 'buy' : 'sell'}`} disabled={session?.isOpen === false || !valid || !preview} onPress={() => {
             if (session && !session.isOpen) {
               Alert.alert('Market Closed', session.message || 'Market is closed as per timing rules.', [{ text: 'OK' }]);
-              return;
-            }
-            if (side === 'SELL' && held <= 0) {
-              Alert.alert('Cannot Sell Without Holdings', 'You cannot sell without holding an open buy position. Please buy first.', [
-                { text: 'Switch to Buy', onPress: () => setSide('BUY') },
-                { text: 'Cancel', style: 'cancel' },
-              ]);
-              return;
-            }
-            if (side === 'SELL' && n > held) {
-              Alert.alert('Insufficient Holdings', `Cannot sell ${n} lots. You only hold ${held} lots in this instrument.`);
               return;
             }
             setErr(null);
@@ -337,7 +318,7 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
       ) : preview && (
         <>
           <Row gap={S[2]}><Badge text={side === 'BUY' ? 'Buy' : 'Sell'} tone={side === 'BUY' ? 'ok' : 'bad'} /><T w="800">{shortSymbol(i.symbol)}</T></Row>
-          <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['BRK', `₹${inr(preview.brokerage)}`], ['Intraday margin', `₹${inr(preview.intradayMargin)}`], ['C/F margin', `₹${inr(preview.carryForwardMargin)}`]]} />
+          <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['Intraday margin', `₹${inr(preview.intradayMargin)}`], ['C/F margin', `₹${inr(preview.carryForwardMargin)}`]]} />
           {type === 'MARKET' && <Notice>{demo ? 'Market orders execute at the best simulated price, which can differ slightly from the estimate.' : 'Market orders execute at the best available price, which can differ slightly from the estimate.'}</Notice>}
           {isTrig(type) && <Notice>When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.</Notice>}
           {session?.isOpen === false ? <Notice tone="warn">{session.message}</Notice> : err && <Notice tone="err">{err}</Notice>}

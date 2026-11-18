@@ -4,7 +4,8 @@ import { CONFIG_REGISTRY, type ConfigKey, isConfigKey } from './registry';
 export const SETTING_TEXT: Record<ConfigKey, [string, string]> = {
   'demo.enabled': ['Demo accounts', 'Allow people to create a demo account.'],
   'demo.initialBalanceMinor': ['Demo opening balance', 'Starting credit for each new demo account.'],
-  'trading.intradayMarginBps': ['Intraday margin', 'Percentage of the order value required for an intraday trade.'],
+  'trading.intradayMarginPerMiniLot': ['Intraday margin per Mini lot', 'Fixed rupee amount held for each Mini lot. Two lots require twice this amount.'],
+  'trading.intradayMarginPerMegaLot': ['Intraday margin per Mega lot', 'Fixed rupee amount held for each Mega lot. Two lots require twice this amount.'],
   'trading.carryForwardMarginBps': ['Carry-forward margin', 'Percentage of the order value required to carry a position forward.'],
   'trading.carryForwardMarginPerMiniLot': ['Carry-forward margin per mini lot', 'Set a fixed amount for one mini lot, or use the percentage margin.'],
   'trading.carryForwardMarginPerMegaLot': ['Carry-forward margin per mega lot', 'Set a fixed amount for one mega lot, or use the percentage margin.'],
@@ -99,13 +100,14 @@ export function settingEditor(key: string, value: unknown): SettingField {
     if (choices[fieldKey]) return { label, type: 'select', value: String(v || choices[fieldKey][0][0]), options: [...choices[fieldKey], ...(v && !choices[fieldKey].some(o => o[0] === v) ? [[String(v), title(String(v))] as [string, string]] : [])].map(([value, label]) => ({ value, label })) };
     const minor = root && key.endsWith('Minor');
     const bps = root && key.endsWith('Bps');
-    const fixedMargin = root && /carryForwardMarginPer/.test(key);
+    const fixedMargin = root && /(?:carryForward|intraday)MarginPer/.test(key);
+    const nullableMargin = root && /carryForwardMarginPer/.test(key);
     const money = minor || fixedMargin || root && /brokeragePer|commissionPer/.test(key) || fieldKey === 'fee';
     if (typeof v === 'number' || minor || fixedMargin || fieldKey === 'fee') {
       const scale = minor || bps ? 100 : 1;
       const input = v == null ? null : scale === 100 ? (Number(v) / 100).toFixed(2) : String(v);
       return { label, type: 'number', value: input, scale, stringNumber: minor || fieldKey === 'fee', unit: money ? '₹' : bps || root && key.endsWith('Pct') ? '%' : undefined,
-        nullable: fixedMargin || undefined, nullLabel: fixedMargin ? 'Use percentage margin' : undefined };
+        nullable: nullableMargin || undefined, nullLabel: nullableMargin ? 'Use percentage margin' : undefined };
     }
     return { label, type: fieldKey.endsWith('marketHolidays') ? 'date' : ['open', 'close'].includes(fieldKey) ? 'time' : 'text', value: String(v ?? '') };
   };

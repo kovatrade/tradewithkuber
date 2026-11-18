@@ -338,6 +338,10 @@ export const orders = pgTable(
     side: orderSideEnum('side').notNull(),
     type: orderTypeEnum('type').notNull(),
     quantity: integer('quantity').notNull(),
+    /** Original size remains stable when a protective fill is capped to the remaining position. */
+    requestedQuantity: integer('requested_quantity'),
+    /** An exit must never turn into an entry after another order closes the position. */
+    reduceOnly: boolean('reduce_only').notNull().default(false),
     limitPriceMinor: money('limit_price_minor'),
     /** STOP_LOSS / TAKE_PROFIT: the last traded price that triggers the order; it then fills at LTP. */
     triggerPriceMinor: money('trigger_price_minor'),

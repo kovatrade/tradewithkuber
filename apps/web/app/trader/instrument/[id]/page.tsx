@@ -6,7 +6,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { CandleChart } from '@/components/CandleChart';
 import { Icon } from '@/components/icons';
 import { QUOTE_FIELDS, useLiveQuotes, useSummary, type Instrument } from '@/components/trading';
-import { Change, Chips, Confirm, Dialog, ErrorState, Mark, Metrics, SkeletonRows, useToast } from '@/components/ui';
+import { Change, Chips, Confirm, ErrorState, Mark, Metrics, SkeletonRows, useToast } from '@/components/ui';
 import { gql, newKey, pollingPaused } from '@/lib/api';
 import { fullName, inr, ohlcTone, shortSymbol, curSign } from '@/lib/format';
 import { useMutation, useQuery } from '@/lib/hooks';
@@ -26,6 +26,9 @@ function StockPage() {
   // Focus mode hides the order panel so the chart can use the full width. Remembered in this browser.
   const [focus, setFocusState] = useState(false);
   const [tab, setTab] = useState<'chart' | 'depth' | 'details'>('chart');
+  const details = useQuery<{ buy: { brokerage: string; intradayMargin: string }; sell: { brokerage: string } }>(
+    `query($i:ID!){ buy:orderPreview(instrumentId:$i,side:BUY,quantity:1){ brokerage intradayMargin } sell:orderPreview(instrumentId:$i,side:SELL,quantity:1){ brokerage } }`,
+    { i: id }, { skip: tab !== 'details', pollMs: 15000 });
   // The candle chart loads only when the trader asks for it (Show chart), not on every page open.
   const [chartOn, setChartOn] = useState(false);
   useEffect(() => { try { setFocusState(localStorage.getItem('k.chartFocus') === '1'); } catch { /* storage unavailable */ } }, []);
@@ -53,7 +56,6 @@ function StockPage() {
   const closeVal = q?.close ?? q?.ltp;
   const highVal = q?.high ?? q?.ltp;
   const lowVal = q?.low ?? q?.ltp;
-  const tradeMarginVal = Math.max(10000, Math.round((Number(String(q?.ltp ?? '0').replace(/,/g, '')) * i.lotSize) * 0.08));
 
   return (
     <div className={`cols${focus ? ' focus' : ''}`}>
@@ -184,7 +186,10 @@ function StockPage() {
               <div className="details-row"><span className="k">Script</span><span className="v">{fullName(i)}</span></div>
               <div className="details-row zebra"><span className="k">Expiry</span><span className="v">{i.expiry ? `${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} 12:00:00 AM` : '—'}</span></div>
               <div className="details-row"><span className="k">Lotsize</span><span className="v">{i.lotSize}</span></div>
-              <div className="details-row zebra"><span className="k">Trade Margin</span><span className="v">Rs.{tradeMarginVal.toFixed(2)}</span></div>
+              <div className="details-row zebra"><span className="k">Trade margin (1 lot)</span><span className="v">{details.data ? `₹${inr(details.data.buy.intradayMargin)}` : '—'}</span></div>
+              <div className="details-row"><span className="k">BRK Buy (1 lot)</span><span className="v">{details.data ? `₹${inr(details.data.buy.brokerage)}` : '—'}</span></div>
+              <div className="details-row zebra"><span className="k">BRK Sell (1 lot)</span><span className="v">{details.data ? `₹${inr(details.data.sell.brokerage)}` : '—'}</span></div>
+              <p className="t3 sm">BRK is charged per lot on each buy and sell fill.</p>
               <div className="details-row"><span className="k">Allow Trade</span><span className="v" style={{ color: 'var(--pos)' }}>Yes</span></div>
               <div className="details-row zebra"><span className="k">Max Qty</span><span className="v">500</span></div>
               <div className="details-row"><span className="k">Breakup Qty</span><span className="v">200</span></div>
@@ -238,7 +243,6 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
   useEffect(() => { if (!allowAdvanced) { setType('MARKET'); setPrice(''); } }, [allowAdvanced]);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState(false);
-  const [sellModal, setSellModal] = useState<string | null>(null);
   const [idem, setIdem] = useState(newKey);
   const place = useMutation(`mutation($i:PlaceOrderInput!){ placeOrder(input:$i){ id status fillPrice rejectReason } }`);
 
@@ -275,20 +279,10 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
     // Market orders: refresh the estimate every 10 s (not on every tick: that alone was ~60 requests a minute).
   }, [i.id, side, n, type, price, valid, type === 'MARKET' ? previewTick : 0]);
 
-  const available = sum.data?.accountSummary.available;
-  const short = preview && available && Number(preview.intradayMargin) + Number(preview.brokerage) > Number(available);
 
   const handleTradeClick = () => {
     if (closed) {
       toast(session?.message ?? 'Market is closed as per timing rules.');
-      return;
-    }
-    if (side === 'SELL' && held <= 0) {
-      setSellModal('Cannot sell without holding an open buy position. Please buy first.');
-      return;
-    }
-    if (side === 'SELL' && n > held) {
-      setSellModal(`Cannot sell ${n} lots. You only hold ${held} lots in this instrument.`);
       return;
     }
     place.setError(null);
@@ -384,10 +378,8 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
       <div className="order-foot">
         <div className="kv"><span className="k">Market price</span><span className="num">{q ? `₹${inr(q.ltp)}` : '—'}</span></div>
         <div className="kv"><span className="k">Order value</span><span className="num">{preview ? `₹${inr(preview.value)}` : '—'}</span></div>
-        <div className="kv"><span className="k">BRK</span><span className="num">{preview ? `₹${inr(preview.brokerage)}` : '—'}</span></div>
         <div className="kv"><span className="k">Intraday margin</span><span className="num w6">{preview ? `₹${inr(preview.intradayMargin)}` : '—'}</span></div>
         <div className="kv"><span className="k">C/F margin</span><span className="num">{preview ? `₹${inr(preview.carryForwardMargin)}` : '—'}</span></div>
-        {!closed && short && <div className="notice warn"><Icon name="info" size={16} />Not enough available balance for this order.</div>}
 
         <button className={`btn btn-lg btn-block ${side === 'BUY' ? 'btn-buy' : 'btn-sell'}`} disabled={!!closed || !valid || !preview} onClick={handleTradeClick}>
           {side === 'BUY' ? 'Buy' : 'Sell'}{valid && preview ? ` ${n} @ ${type === 'MARKET' ? inr(side === 'BUY' ? q?.ask : q?.bid) : inr(price)}` : ''}
@@ -403,7 +395,6 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
             ['Quantity', n],
             [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`],
             ['Order value', `₹${inr(preview.value)}`],
-            ['BRK', `₹${inr(preview.brokerage)}`],
             ['Margin required', `₹${inr(preview.intradayMargin)}`],
             ['Carry-forward margin', `₹${inr(preview.carryForwardMargin)}`],
           ]}
@@ -417,18 +408,6 @@ function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initialQty }
         />
       )}
 
-      {sellModal && (
-        <Dialog title="Cannot Sell Without Holdings" sub="Short selling is disabled" onClose={() => setSellModal(null)}>
-          <div className="stack" style={{ gap: 16 }}>
-            <div className="notice warn" style={{ margin: 0 }}>
-              <Icon name="alert" size={18} />
-              <span>{sellModal}</span>
-            </div>
-            <p className="t2 sm">Traders cannot sell an instrument without holding an open buy position. Please buy this instrument first before placing a sell order.</p>
-            <button className="btn btn-buy btn-block" onClick={() => { setSellModal(null); setSide('BUY'); }}>Switch to Buy</button>
-          </div>
-        </Dialog>
-      )}
     </section>
   );
 }

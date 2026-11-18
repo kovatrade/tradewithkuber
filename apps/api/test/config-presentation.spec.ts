@@ -25,7 +25,7 @@ for (const app of ['web/lib', 'mobile/src']) {
       const money = settingEditor('demo.initialBalanceMinor', '50000000');
       expect(money.value).toBe('500000.00');
       expect(encode({ ...money, value: '50000.50' })).toBe('5000050');
-      const pct = settingEditor('trading.intradayMarginBps', 20);
+      const pct = settingEditor('trading.carryForwardMarginBps', 20);
       expect(pct.value).toBe('0.20');
       expect(encode({ ...pct, value: '0.25' })).toBe(25);
       expect(() => encode({ ...pct, value: '0.251' })).toThrow(/two decimal/);
@@ -42,7 +42,8 @@ it('provides plain language for names, values and nested device rules', () => {
   expect(Object.keys(SETTING_TEXT)).toEqual(Object.keys(CONFIG_REGISTRY));
   expect(settingDisplay('demo.enabled', true)).toBe('Enabled');
   expect(settingDisplay('demo.initialBalanceMinor', '50000000')).toBe('\u20b95,00,000.00');
-  expect(settingDisplay('trading.intradayMarginBps', 20)).toBe('0.2%');
+  expect(settingDisplay('trading.intradayMarginPerMiniLot', 7500)).toBe('\u20b97,500.00');
+  expect(settingDisplay('trading.intradayMarginPerMegaLot', 75000)).toBe('\u20b975,000.00');
   expect(settingDisplay('trading.carryForwardMarginPerMiniLot', null)).toBe('Use percentage margin');
   expect(settingDisplay('security.sessionPolicy', CONFIG_REGISTRY['security.sessionPolicy'].default)).toContain('Ask before signing out another device');
 });

@@ -198,7 +198,7 @@ export class AlgoRunnerService implements OnModuleInit, OnModuleDestroy {
     const side = s.posQty > 0 ? 'SELL' : 'BUY';
     const qty = Math.abs(s.posQty);
     const entryKey = s.entryAt ? s.entryAt.getTime() : 0;
-    const o = await this.orders.place(this.actor(s), { instrumentId: s.instrumentId, side, type: 'MARKET', quantity: qty, idempotencyKey: `algo-${s.id}-${entryKey}-out${s.rejectStreak}` }, 'algo', { strategyId: s.id });
+    const o = await this.orders.place(this.actor(s), { instrumentId: s.instrumentId, side, type: 'MARKET', quantity: qty, reduceOnly: true, idempotencyKey: `algo-${s.id}-${entryKey}-out${s.rejectStreak}` }, 'algo', { strategyId: s.id });
     if (o.status !== 'FILLED' || o.fillPriceMinor === null) return this.rejected(s, `Exit ${side} ${qty} not filled (${label}): ${o.rejectReason ?? o.status}. Will retry.`, o.id);
     const fr = await feeRule(this.config);
     const cls = this.market.instrument(s.instrumentId)?.lotClass;
