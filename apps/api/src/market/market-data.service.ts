@@ -1,7 +1,7 @@
 import { QuoteSnapshotService } from './quote-snapshot.service';
 import { DhanCatalogService } from './dhan-catalog.service';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { roundToTick } from '../common/money';
 import { DbService } from '../db/db';
 import { instruments, type InstrumentRow } from '../db/schema';
@@ -10,6 +10,7 @@ import { env } from '../config/env';
 import { DhanFeedService, DHAN_SEGMENT_MAP } from './dhan-feed.service';
 import { DhanGlobalFeedService } from './dhan-global-feed.service';
 import { CandleStore, type Bar, type CandleInterval } from './candles';
+import { defaultLotLabel, linkedMiniSymbol } from '../trading/instrument-meta';
 
 export interface Quote {
   instrumentId: string;
@@ -54,6 +55,8 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
   private version = 0;
   private savedVersion = 0;
   private listeners: Array<(q: Quote[]) => void> = [];
+  /** Mega contract id → linked Mini ids that copy its price. */
+  private linked = new Map<string, string[]>();
   private readonly history = new CandleStore();
   constructor(
     private readonly dbs: DbService,
@@ -68,6 +71,7 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     await this.reload();
     if (env().MARKET_FEED === 'dhan' && this.snapshots) {
       for (const q of await this.snapshots.load()) if (this.meta.has(q.instrumentId)) this.quotes.set(q.instrumentId, q);
+      this.withLinked([...this.quotes.values()]);
     }
     if (process.env.NODE_ENV !== 'test') {
       const feedMode = env().MARKET_FEED;
@@ -125,7 +129,7 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
 
       // Previous-close/OHLC packets must not overwrite the latest traded price.
       if (!Number.isFinite(tick.ltp) || tick.ltp <= 0) {
-        if (q.source === 'DHAN') { this.version++; void pubsub.publish(TOPIC.quotes, { quotes: [q] }); }
+        if (q.source === 'DHAN') { this.version++; void pubsub.publish(TOPIC.quotes, { quotes: this.withLinked([q]) }); }
         return;
       }
       const ltpMinor = BigInt(Math.round(tick.ltp * 100));
@@ -235,7 +239,9 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
 
   /** Load instrument metadata; candle history exists only in this process. */
   async reload() {
-    const rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
+    let rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
+    const linkedChanged = await this.syncLinkedMinis(rows).catch((e) => { this.log.warn(`Could not update linked Mini scripts: ${(e as Error).message}`); return false; });
+    if (linkedChanged) rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
     const now = Date.now();
     const liveIds=new Set(rows.map(r=>r.id));
     for(const id of this.meta.keys())if(!liveIds.has(id)){this.meta.delete(id);this.quotes.delete(id);this.history.forget(id);}
@@ -259,6 +265,9 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     if (env().MARKET_FEED === 'dhan') {
       for (const q of this.quotes.values()) if (q.source !== 'DHAN') Object.assign(q, { ltpMinor: 0n, bidMinor: 0n, askMinor: 0n, highMinor: 0n, lowMinor: 0n, prevCloseMinor: 0n });
     }
+    this.linked.clear();
+    for (const r of rows) if (r.priceSourceId) this.linked.set(r.priceSourceId, [...(this.linked.get(r.priceSourceId) ?? []), r.id]);
+    this.withLinked([...this.quotes.values()]);
     if (env().MARKET_FEED === 'simulated') {
       for (const r of rows) {
         if (this.history.has(r.id)) continue;
@@ -287,7 +296,7 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     if (env().MARKET_FEED === 'dhan') return; // Never substitute synthetic ticks for missing live instruments.
     for (const q of this.quotes.values()) {
       const m = this.meta.get(q.instrumentId);
-      if (!m) continue;
+      if (!m || m.priceSourceId) continue; // a linked Mini moves with its Mega
       // Skip simulated tick for real exchange instruments subscribed to Dhan feed
       if (Math.random() < 0.5) continue;
       const drift = (Math.random() - 0.5) * 0.0016; // ±0.08%
@@ -306,7 +315,57 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     if (changed.length) this.emit(changed);
   }
 
+  /**
+   * Copy each Mega quote onto its linked Mini scripts (same bid/ask/LTP; only the lot differs) and return the input
+   * plus the updated Mini quotes, so they are published, recorded and matched together.
+   */
+  private withLinked(changed: Quote[]): Quote[] {
+    if (!this.linked.size) return changed;
+    const out = [...changed];
+    for (const src of changed) {
+      for (const id of this.linked.get(src.instrumentId) ?? []) {
+        const m = this.meta.get(id);
+        if (!m) continue;
+        const copy = { ...src, instrumentId: id, symbol: m.symbol };
+        const cur = this.quotes.get(id);
+        if (cur) Object.assign(cur, copy); else this.quotes.set(id, copy);
+        out.push(this.quotes.get(id)!);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Keep one linked Mini row per active Mega contract (GOLD → GOLDM-…-LNK, SILVER → SILVERM-…-LNK ...) and retire
+   * linked rows whose Mega is no longer active. `rows` are the active instruments. Returns true when anything changed.
+   */
+  private async syncLinkedMinis(rows: InstrumentRow[]): Promise<boolean> {
+    const active = new Map(rows.map((r) => [r.id, r]));
+    const bySymbol = new Map(rows.map((r) => [r.symbol, r]));
+    let changed = false;
+    for (const r of rows) {
+      if (r.exchange !== 'MCX' || r.priceSourceId || !r.expiry) continue;
+      const sym = linkedMiniSymbol(r.symbol, r.expiry);
+      if (!sym) continue;
+      const cur = bySymbol.get(sym);
+      if (cur && cur.priceSourceId === r.id && cur.expiry?.getTime() === r.expiry.getTime() && cur.tickMinor === r.tickMinor) continue;
+      const keep = { active: true, priceSourceId: r.id, expiry: r.expiry, tickMinor: r.tickMinor };
+      await this.dbs.db.insert(instruments).values({
+        symbol: sym, name: r.name.replace(/^\S+/, sym.split('-')[0]).slice(0, 120), exchange: 'MCX', segment: r.segment, lotSize: 1,
+        lotClass: 'MINI', lotLabel: defaultLotLabel(sym), refPriceMinor: r.refPriceMinor, ...keep,
+      }).onConflictDoUpdate({ target: instruments.symbol, set: keep });
+      changed = true;
+    }
+    const orphans = rows.filter((r) => r.priceSourceId && !active.has(r.priceSourceId)).map((r) => r.id);
+    if (orphans.length) {
+      await this.dbs.db.update(instruments).set({ active: false }).where(inArray(instruments.id, orphans));
+      changed = true;
+    }
+    return changed;
+  }
+
   private emit(changed: Quote[]) {
+    changed = this.withLinked(changed);
     if (changed.some(q => q.source === 'DHAN')) this.version++;
     for (const q of changed) {
       this.history.record(q.instrumentId, Number(q.ltpMinor), q.ts.getTime());

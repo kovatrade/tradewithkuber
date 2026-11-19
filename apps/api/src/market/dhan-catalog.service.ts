@@ -230,7 +230,7 @@ export class DhanCatalogService implements OnModuleInit, OnModuleDestroy {
                 lotLabel: sql`excluded.lot_label`,
               },
             });
-        const retire = existing.filter((r) => r.active && !seen.has(r.id)).map((r) => r.id);
+        const retire = existing.filter((r) => r.active && !seen.has(r.id) && !r.priceSourceId).map((r) => r.id); // linked Minis follow their Mega
         retired = retire.length;
         for (const r of existing)
           if (retire.includes(r.id) && pinned.has(r.id) && !conflicts.includes(r.symbol)) conflicts.push(r.symbol);

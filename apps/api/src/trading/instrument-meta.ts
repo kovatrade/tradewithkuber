@@ -60,7 +60,20 @@ const MCX_ORDER = ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'LEAD', 'ZINC', 'NATU
  * One contract per listed MCX script and lot class: the nearest expiry that is still open (rows must come sorted by
  * expiry, then symbol). Other MCX contracts are left out of the MCX list.
  */
-export function uniqueMcx<T extends { symbol: string }>(rows: T[], lotClass?: string | null): T[] {
+/**
+ * Mini scripts are priced from the Mega contract (the trader's choice: one rate for both). For each listed Mega
+ * contract a linked Mini row exists (symbol `<MINI>-<ddMonyyyy>-LNK`), and the real MCX mini contracts are not listed.
+ */
+export const MINI_OF: Record<string, string> = { GOLD: 'GOLDM', SILVER: 'SILVERM', CRUDEOIL: 'CRUDEOILM', NATURALGAS: 'NATGASMINI', LEAD: 'LEADMINI', ZINC: 'ZINCMINI' };
+export function linkedMiniSymbol(megaSymbol: string, expiry: Date): string | null {
+  const mini = MINI_OF[baseSymbol(megaSymbol)];
+  if (!mini) return null;
+  const d = new Date(expiry.getTime() + 19_800_000); // IST date
+  const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getUTCMonth()];
+  return `${mini}-${String(d.getUTCDate()).padStart(2, '0')}${mon}${d.getUTCFullYear()}-LNK`;
+}
+
+export function uniqueMcx<T extends { symbol: string; priceSourceId?: string | null }>(rows: T[], lotClass?: string | null): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const r of rows) {
@@ -69,6 +82,8 @@ export function uniqueMcx<T extends { symbol: string }>(rows: T[], lotClass?: st
     // Mini or Mega comes from the contract itself (GOLD = Mega, GOLDM = Mini), not from a per-row setting, so the
     // nearest GOLD contract is always the one listed under Mega.
     if ((lotClass === 'MINI' || lotClass === 'MEGA') && defaultLotClass('MCX', base) !== lotClass) continue;
+    // A Mini with a Mega to follow is listed only as its linked row (same rate as the Mega).
+    if (!r.priceSourceId && Object.values(MINI_OF).includes(base)) continue;
     if (seen.has(base)) continue;
     seen.add(base);
     out.push(r);

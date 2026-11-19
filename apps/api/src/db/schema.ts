@@ -307,6 +307,8 @@ export const instruments = pgTable(
     active: boolean('active').notNull().default(true),
     dhanSecurityId: varchar('dhan_security_id', { length: 32 }),
     dhanSegment: varchar('dhan_segment', { length: 20 }),
+    /** Set on a Mini script that takes its price from a Mega contract (SILVERM-04Dec2026-LNK → SILVER-04Dec2026-FUT). */
+    priceSourceId: uuid('price_source_id').references((): AnyPgColumn => instruments.id),
   },
   (t) => [index('instruments_exchange_idx').on(t.exchange, t.segment), index('instruments_dhan_idx').on(t.dhanSegment, t.dhanSecurityId)],
 );

@@ -371,6 +371,25 @@ describe('paper trading', () => {
     expect(Number(row.realizedPnl)).toBeCloseTo((Number(sell.fillPrice) - Number(buy.fillPrice)) * 100, 2);
   });
 
+  it('prices a Mini from its Mega contract: same bid/ask/LTP and expiry, value and P/L at the Mini multiplier', async () => {
+    const t = await login('trader.one');
+    const row = async (sym: string) => (await pg.query(`SELECT id, expiry, lot_class, price_source_id FROM instruments WHERE symbol = $1`, [sym])).rows[0];
+    const silver = await row('SILVER26NOVFUT');
+    const mini = await row('SILVERM-24Nov2026-LNK');
+    expect(mini).toMatchObject({ lot_class: 'MINI', price_source_id: silver.id });
+    expect(new Date(mini.expiry).getTime()).toBe(new Date(silver.expiry).getTime());
+    const QQ = `query($i:[ID!]!){ quotes(instrumentIds:$i){ instrumentId ltp bid ask } }`;
+    const qs = (await gql(QQ, { i: [silver.id, mini.id] }, { token: t.accessToken })).data.quotes;
+    const [a, b] = [qs.find((q: { instrumentId: string }) => q.instrumentId === silver.id), qs.find((q: { instrumentId: string }) => q.instrumentId === mini.id)];
+    expect({ ltp: b.ltp, bid: b.bid, ask: b.ask }).toEqual({ ltp: a.ltp, bid: a.bid, ask: a.ask });
+    const pv = (await gql(`query($i:ID!){ orderPreview(instrumentId:$i, side:BUY, quantity:2){ price value } }`, { i: mini.id }, { token: t.accessToken })).data.orderPreview;
+    expect(Number(pv.value)).toBeCloseTo(Number(pv.price) * 2 * 5, 2);
+    const buy = (await gql(PLACE, { i: { instrumentId: mini.id, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    expect(buy.status).toBe('FILLED');
+    expect(buy.fillPrice).toBe(a.ask); // filled on the Mega contract's ask
+    await gql(PLACE, { i: { instrumentId: mini.id, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
+  });
+
   it('lists the nearest MCX contract under Mega and Mini, whatever lot class a row was saved with', async () => {
     const t = await login('trader.two');
     const Q = `query($l:String){ searchInstruments(query:"", category:"MCX", lotClass:$l){ symbol lotClass } }`;
@@ -389,7 +408,7 @@ describe('paper trading', () => {
       expect(mega).toContain('SILVER26NOVFUT');
       expect(mega).not.toContain('SILVER100-20Nov2026-FUT');
       const mini = (await gql(Q, { l: 'MINI' }, { token: t.accessToken })).data.searchInstruments.map((i: { symbol: string }) => i.symbol);
-      expect(mini).toContain('GOLDM26NOVFUT');
+      expect(mini).toContain('GOLDM-24Nov2026-LNK');
       expect(mini).not.toContain('GOLD26NOVFUT');
     } finally {
       await pg.query(`UPDATE instruments SET lot_class = 'MEGA' WHERE symbol = 'GOLD26NOVFUT'`);
@@ -1361,9 +1380,11 @@ describe('instrument categories and lot details', () => {
     expect(mcx.length).toBeGreaterThan(0);
     expect(mcx.every((i: { category: string }) => i.category === 'MCX')).toBe(true);
     const mini = (await gql(Q, { c: 'MCX', l: 'MINI' }, { token: t.accessToken })).data.searchInstruments;
-    expect(mini.map((i: { symbol: string }) => i.symbol)).toEqual(expect.arrayContaining(['GOLDM26NOVFUT', 'SILVERM26NOVFUT', 'CRUDEOILM26NOVFUT']));
-    expect(mini.find((i: { symbol: string }) => i.symbol === 'GOLDM26NOVFUT')).toMatchObject({ lotClass: 'MINI', lotLabel: '100 g' });
-    expect(mini.find((i: { symbol: string }) => i.symbol === 'SILVERM26NOVFUT').lotLabel).toBe('5 kg');
+    // Minis are listed as rows linked to their Mega contract (same rate), not the separate MCX mini contracts.
+    expect(mini.map((i: { symbol: string }) => i.symbol)).toEqual(expect.arrayContaining(['GOLDM-24Nov2026-LNK', 'SILVERM-24Nov2026-LNK', 'CRUDEOILM-24Nov2026-LNK']));
+    expect(mini.map((i: { symbol: string }) => i.symbol)).not.toContain('GOLDM26NOVFUT');
+    expect(mini.find((i: { symbol: string }) => i.symbol === 'GOLDM-24Nov2026-LNK')).toMatchObject({ lotClass: 'MINI', lotLabel: '100 g' });
+    expect(mini.find((i: { symbol: string }) => i.symbol === 'SILVERM-24Nov2026-LNK').lotLabel).toBe('5 kg');
     const mega = (await gql(Q, { c: 'MCX', l: 'MEGA' }, { token: t.accessToken })).data.searchInstruments;
     expect(mega.find((i: { symbol: string }) => i.symbol === 'GOLD26NOVFUT')).toMatchObject({ lotClass: 'MEGA', lotLabel: '1 kg' });
     const fx = (await gql(Q, { c: 'FOREX' }, { token: t.accessToken })).data.searchInstruments;

@@ -274,6 +274,13 @@
       "when": 1795000000001,
       "tag": "0038_reduce_only_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1795000000002,
+      "tag": "0039_linked_mini",
+      "breakpoints": true
     }
   ]
 }
