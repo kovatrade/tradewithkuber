@@ -9,7 +9,8 @@ import { useToast } from './ui';
 import { Splash } from './Splash';
 import { ThemeMenu } from './ThemeMenu';
 import { homeFor, useAuth, type Role } from '@/lib/auth';
-import { fullName, inr, initials, shortSymbol } from '@/lib/format';
+import { fullName, inr, initials, scriptTitle } from '@/lib/format';
+import { ScriptName } from './ScriptName';
 import { useQuery } from '@/lib/hooks';
 import { Icon, Logo, type IconName } from './icons';
 import { SkeletonRows, Dialog } from './ui';
@@ -93,14 +94,14 @@ export function Shell({ roles, children }: { roles: Role[]; children: ReactNode 
   // Resting orders (limit / stop-loss / take-profit) fill later: tell the trader wherever they are.
   useEffect(() => {
     if (me?.role !== 'TRADER') return;
-    return subscribe<{ orderUpdated: { status: string; type: string; side: string; quantity: number; fillPrice?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string } } }>(
-      `subscription { orderUpdated { status type side quantity fillPrice createdAt filledAt instrument { symbol } } }`, {},
+    return subscribe<{ orderUpdated: { status: string; type: string; side: string; quantity: number; fillPrice?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string; name?: string; expiry?: string } } }>(
+      `subscription { orderUpdated { status type side quantity fillPrice createdAt filledAt instrument { symbol name expiry } } }`, {},
       ({ orderUpdated: o }) => {
         if (o.status !== 'FILLED' || o.type === 'MARKET') return;
         if (o.filledAt && new Date(o.filledAt).getTime() - new Date(o.createdAt).getTime() < 1500) return; // filled on placement: the order screen already said so
         playTone('fill', sounds.current);
         const what = o.type === 'STOP_LOSS' ? 'Stop-loss triggered' : o.type === 'TAKE_PROFIT' ? 'Take-profit triggered' : 'Limit order filled';
-        toast(`${what}: ${o.side === 'BUY' ? 'bought' : 'sold'} ${o.quantity} ${shortSymbol(o.instrument?.symbol ?? '')} at ₹${inr(o.fillPrice)}`);
+        toast(`${what}: ${o.side === 'BUY' ? 'bought' : 'sold'} ${o.quantity} ${scriptTitle(o.instrument)} at ₹${inr(o.fillPrice)}`);
       },
     );
   }, [me?.role, toast]);
@@ -237,7 +238,7 @@ function Ticker({ messages }: { messages: string[] }) {
   );
 }
 
-interface Hit { id: string; symbol: string; name: string; exchange: string; segment: string }
+interface Hit { id: string; symbol: string; name: string; exchange: string; segment: string; expiry?: string; category?: string }
 /** Header instrument search with keyboard navigation (Groww-style). */
 function GlobalSearch() {
   const [q, setQ] = useState('');
@@ -248,7 +249,7 @@ function GlobalSearch() {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!q.trim()) { setHits(null); return; }
-    const h = setTimeout(() => gql<{ searchInstruments: Hit[] }>(`query($q:String!){ searchInstruments(query:$q, limit:8){ id symbol name exchange segment } }`, { q }).then((d) => { setHits(d.searchInstruments); setIdx(0); }).catch(() => setHits([])), 180);
+    const h = setTimeout(() => gql<{ searchInstruments: Hit[] }>(`query($q:String!){ searchInstruments(query:$q, limit:8){ id symbol name exchange segment expiry category } }`, { q }).then((d) => { setHits(d.searchInstruments); setIdx(0); }).catch(() => setHits([])), 180);
     return () => clearTimeout(h);
   }, [q]);
   useEffect(() => {
@@ -278,8 +279,7 @@ function GlobalSearch() {
           {hits.length === 0 ? <li className="t2 sm" style={{ padding: '12px 16px' }}>No instruments match “{q}”.</li> : hits.map((h, i) => (
             <li key={h.id} role="option" aria-selected={i === idx} onMouseEnter={() => setIdx(i)} onMouseDown={(e) => { e.preventDefault(); go(h); }}>
               <span className="mark" aria-hidden>{fullName(h).slice(0, 2).toUpperCase()}</span>
-              <span className="grow"><span className="w6 instrument-name">{fullName(h)}</span><span className="t3" style={{ display: 'block' }}>{shortSymbol(h.symbol)} · {h.exchange} {h.segment}</span></span>
-              <span className="badge">{h.exchange} {h.segment}</span>
+              <span className="grow"><ScriptName i={h} size="sm" /></span>
             </li>
           ))}
         </ul>

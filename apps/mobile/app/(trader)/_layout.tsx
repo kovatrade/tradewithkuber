@@ -2,7 +2,8 @@ import { Redirect, Tabs } from 'expo-router';
 import { useEffect } from 'react';
 import { subscribe } from '@/api';
 import { tradeFeedback } from '@/prefs';
-import { inr, shortSymbol } from '@/theme';
+import { inr } from '@/theme';
+import { scriptTitle } from '@/names';
 import { toast } from '@/ui';
 import { View, type ColorValue } from 'react-native';
 import { homeFor, useAuth } from '@/auth';
@@ -24,14 +25,14 @@ export default function TraderTabs() {
   // Resting orders (limit / stop-loss / take-profit) fill later: tell the trader wherever they are.
   useEffect(() => {
     if (me?.role !== 'TRADER') return;
-    return subscribe<{ orderUpdated: { status: string; type: string; side: string; quantity: number; fillPrice?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string } } }>(
-      `subscription { orderUpdated { status type side quantity fillPrice createdAt filledAt instrument { symbol } } }`, {},
+    return subscribe<{ orderUpdated: { status: string; type: string; side: string; quantity: number; fillPrice?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string; name?: string; expiry?: string } } }>(
+      `subscription { orderUpdated { status type side quantity fillPrice createdAt filledAt instrument { symbol name expiry } } }`, {},
       ({ orderUpdated: o }) => {
         if (o.status !== 'FILLED' || o.type === 'MARKET') return;
         if (o.filledAt && new Date(o.filledAt).getTime() - new Date(o.createdAt).getTime() < 1500) return;
         tradeFeedback('fill');
         const what = o.type === 'STOP_LOSS' ? 'Stop-loss triggered' : o.type === 'TAKE_PROFIT' ? 'Take-profit triggered' : 'Limit order filled';
-        toast(`${what}: ${o.side === 'BUY' ? 'bought' : 'sold'} ${o.quantity} ${shortSymbol(o.instrument?.symbol ?? '')} at ₹${inr(o.fillPrice)}`);
+        toast(`${what}: ${o.side === 'BUY' ? 'bought' : 'sold'} ${o.quantity} ${scriptTitle(o.instrument)} at ₹${inr(o.fillPrice)}`);
       },
     );
   }, [me?.role]);

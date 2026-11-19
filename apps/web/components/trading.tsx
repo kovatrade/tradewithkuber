@@ -7,9 +7,11 @@ import Link from 'next/link';
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { gql, newKey, pollingPaused, subscribe } from '@/lib/api';
 import { downloadXlsx } from '@/lib/xlsx';
-import { fullName, inr, shortSymbol, tone, when, curSign } from '@/lib/format';
+import { fullName, inr, scriptTitle, tone, when, curSign } from '@/lib/format';
 import { useMutation, useQuery } from '@/lib/hooks';
 import { Icon } from './icons';
+import { PositionTradeDialog } from './OrderPanel';
+import { ScriptName } from './ScriptName';
 import { Private, usePrefs } from '@/lib/prefs';
 import { Change, Confirm, Dialog, Empty, ErrorState, Mark, Metrics, SkeletonRows, Status, useToast } from './ui';
 import { EVIDENCE_FIELDS, newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, ReceivingAccountPicker, PaymentEvidenceDetails, type PaymentEvidence } from './payment-details';
@@ -733,18 +735,16 @@ const CompactRow = memo(function CompactRow({
     <div className={`list-row ${tick}`} style={{ position: 'relative' }}>
       {withBidAsk ? (
         <Link href={href} className="grow wl-left" style={{ minWidth: 0 }}>
-          <div className="one-line w6">{name}</div>
-          <div className="one-line t3 xs">{shortSymbol(e.instrument.symbol)} · {e.instrument.category === 'FOREX' ? 'Forex' : e.instrument.exchange}</div>
+          <ScriptName i={e.instrument} size="sm" />
           <div className="row" style={{ gap: 6 }}>
             <span className="num w6">{curSign(e.instrument)}{inr(q?.ltp)}</span>
             <ChgPct q={q} />
           </div>
-          <div className="one-line t3 xs">{e.instrument.expiry ? `${new Date(e.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · ` : ''}{quoteTime(q?.ts)}</div>
+          <div className="one-line t3 xs">{quoteTime(q?.ts)}</div>
         </Link>
       ) : (
         <Link href={href} className="grow" style={{ minWidth: 0 }}>
-          <div className="w6 instrument-name">{name}</div>
-          <div className="t3">{shortSymbol(e.instrument.symbol)} · {e.instrument.category === 'FOREX' ? 'Forex' : e.instrument.exchange} · {e.instrument.segment}</div>
+          <ScriptName i={e.instrument} size="sm" />
         </Link>
       )}
       {!withBidAsk && (
@@ -796,17 +796,7 @@ const FullRow = memo(function FullRow({
       <td>
         <Link href={href} className="row" style={{ flexWrap: 'nowrap' }}>
           <Mark text={name} />
-          <span>
-            <div className="w6 row" style={{ gap: 6, alignItems: 'center' }}>
-              <span>{name}</span>
-              <LotTag i={e.instrument} />
-            </div>
-            <span className="sub" style={{ display: 'block', marginTop: 2 }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-2)' }}>{shortSymbol(e.instrument.symbol)}</span>
-              {' · '}
-              {e.instrument.category === 'FOREX' ? 'Forex' : e.instrument.exchange} · {e.instrument.segment}
-            </span>
-          </span>
+          <ScriptName i={e.instrument} size="sm" extra={<LotTag i={e.instrument} />} />
         </Link>
       </td>
       <td className="r"><span className="num w6">{curSign(e.instrument)}{inr(q?.ltp)}</span></td>
@@ -863,8 +853,7 @@ export function Movers() {
             return (
               <Link key={i.id} href={`/trader/instrument/${i.id}`} className="tile">
                 <Mark text={name} />
-                <div className="w6 instrument-name" style={{ marginTop: 'auto' }}>{name}</div>
-                <div className="t3 xs">{shortSymbol(i.symbol)}</div>
+                <div style={{ marginTop: 'auto' }}><ScriptName i={i} size="sm" /></div>
                 <div>
                   <div className="num w6">{curSign(i)}{inr(q.ltp)}</div>
                   <Change value={q.change} pct={q.changePct} size="sm" />
@@ -880,8 +869,8 @@ export function Movers() {
 
 /* ======================================================================= orders */
 export const ORDER_TYPE: Record<string, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP_LOSS: 'Stop-loss', TAKE_PROFIT: 'Take-profit' };
-export interface Order { id: string; side: 'BUY' | 'SELL'; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string; name?: string } }
-export const ORDER_FIELDS = 'id side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt filledAt instrument{ symbol name }';
+export interface Order { id: string; side: 'BUY' | 'SELL'; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string; category?: string } }
+export const ORDER_FIELDS = 'id side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt filledAt instrument{ symbol name expiry exchange category }';
 
 export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orders yet', emptyText = 'Orders you place show up here with their status.' }: { userId?: string; statuses?: string[]; canCancel?: boolean; emptyTitle?: string; emptyText?: string }) {
   const { data, loading, error, refetch } = useQuery<{ orders: Order[] }>(`query($u:ID,$s:[OrderStatus!]){ orders(userId:$u, status:$s, limit:100){ ${ORDER_FIELDS} } }`, { u: userId, s: statuses }, { pollMs: 4000 });
@@ -897,8 +886,7 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
       {data!.orders.map((o) => (
         <div key={o.id} className="list-row" style={{ alignItems: 'flex-start' }}>
           <div className="grow">
-            <div className="w6 instrument-name">{o.instrument ? fullName(o.instrument) : '—'}</div>
-            <div className="t3 xs">{o.instrument ? shortSymbol(o.instrument.symbol) : ''}</div>
+            <ScriptName i={o.instrument} size="sm" />
             <div className="t3"><span className={o.side === 'BUY' ? 'pos' : 'neg'} style={{ fontWeight: 600 }}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span> · {o.quantity} qty · {ORDER_TYPE[o.type] ?? o.type}{o.triggerPrice ? ` @ ₹${inr(o.triggerPrice)}` : ''} · {when(o.createdAt)}</div>
             {o.rejectReason && <div className="xs neg">{o.rejectReason}</div>}
           </div>
@@ -917,8 +905,8 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
           {data!.orders.map((o) => (
             <tr key={o.id}>
               <td>
-                <span className="w6 instrument-name">{o.instrument ? fullName(o.instrument) : '—'}</span>
-                <span className="sub" style={{ display: 'block' }}>{o.instrument ? shortSymbol(o.instrument.symbol) : ''} · <span className={o.side === 'BUY' ? 'pos' : 'neg'} style={{ fontWeight: 600 }}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span></span>
+                <ScriptName i={o.instrument} size="sm" />
+                <span className="sub" style={{ display: 'block' }}><span className={o.side === 'BUY' ? 'pos' : 'neg'} style={{ fontWeight: 600 }}>{o.side === 'BUY' ? 'Buy' : 'Sell'}</span></span>
               </td>
               <td className="t2">{ORDER_TYPE[o.type] ?? o.type}{o.triggerPrice && <span className="sub num" style={{ display: 'block' }}>Trigger ₹{inr(o.triggerPrice)}{o.triggeredAt ? ' · triggered' : ''}</span>}</td>
               <td className="r num">{o.quantity}</td>
@@ -934,7 +922,7 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
         </tbody>
       </table>
       {cancel && (
-        <Confirm title="Cancel this order?" lines={[['Instrument', fullName(cancel.instrument)], ['Side', cancel.side === 'BUY' ? 'Buy' : 'Sell'], ['Quantity', cancel.quantity], [cancel.triggerPrice ? 'Trigger' : 'Limit price', `₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}`]]}
+        <Confirm title="Cancel this order?" lines={[['Instrument', scriptTitle(cancel.instrument)], ['Side', cancel.side === 'BUY' ? 'Buy' : 'Sell'], ['Quantity', cancel.quantity], [cancel.triggerPrice ? 'Trigger' : 'Limit price', `₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}`]]}
           confirmLabel="Cancel order" tone="danger" pending={m.pending} error={m.error} onClose={() => setCancel(null)}
           onConfirm={async () => { if (await m.run({ id: cancel.id })) { toast('Order cancelled'); setCancel(null); void refetch(); } }} />
       )}
@@ -944,12 +932,13 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
 }
 
 /* ======================================================================= positions */
-interface Position { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; instrument?: { symbol: string; name?: string } }
+interface Position { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string; category?: string } }
 export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade?: boolean }) {
   const toast = useToast();
   const [exitBusy, setExitBusy] = useState<string | null>(null);
   const exitPending = useRef(false);
   const exitKeys = useRef(new Map<string, string>());
+  const [trade, setTrade] = useState<Position | null>(null);
   const exit = async (p: Position) => {
     if (exitPending.current) return;
     exitPending.current = true; setExitBusy(p.id);
@@ -962,11 +951,17 @@ export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade
     } catch (e) { toast((e as Error).message); }
     finally { exitPending.current = false; setExitBusy(null); void refetch(); }
   };
-  const { data, loading, error, refetch } = useQuery<{ positions: Position[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp instrument{ symbol name } } }`, { u: userId }, { pollMs: 3000 });
+  const { data, loading, error, refetch } = useQuery<{ positions: Position[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp instrument{ symbol name expiry exchange category } } }`, { u: userId }, { pollMs: 3000 });
   if (loading && !data) return <SkeletonRows />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
-  if (!data!.positions.length) return <Empty icon="briefcase" title="No positions" action={canTrade ? <Link className="btn btn-sm btn-primary" href="/trader">Explore instruments</Link> : undefined}>A position opens when a buy or sell order is executed.</Empty>;
-  const total = data!.positions.reduce((a, p) => a + Number(p.unrealizedPnl ?? 0), 0).toFixed(2);
+  // Only open positions: once a position is exited it leaves this list (its trades stay in Orders).
+  const open = data!.positions.filter((p) => p.netQty !== 0);
+  if (!open.length) return <Empty icon="briefcase" title="No open positions" action={canTrade ? <Link className="btn btn-sm btn-primary" href="/trader">Explore instruments</Link> : undefined}>A position opens when a buy or sell order is executed. Exited trades are in Orders.</Empty>;
+  const total = open.reduce((a, p) => a + Number(p.unrealizedPnl ?? 0), 0).toFixed(2);
+  // Tapping a position opens the buy / sell ticket (set to exit it), not the instrument page.
+  const name = (p: Position) => canTrade
+    ? <button type="button" className="linklike" onClick={() => setTrade(p)} title="Buy or sell"><ScriptName i={p.instrument} size="sm" /></button>
+    : <ScriptName i={p.instrument} size="sm" />;
   return (
     <>
       <div className="spread" style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)' }}>
@@ -974,11 +969,10 @@ export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade
         <span className={`num w6 ${tone(total)}`} style={{ fontSize: 18 }}>{inr(total, { sign: true })}</span>
       </div>
       <div className="list list-pad only-mob">
-        {data!.positions.map((p) => (
+        {open.map((p) => (
           <div key={p.id} className="list-row">
             <div className="grow">
-              <Link className="instrument-name" href={`/trader/instrument/${p.instrumentId}?from=positions`}>{p.instrument ? fullName(p.instrument) : '—'}</Link>
-              <div className="t3 xs">{p.instrument ? shortSymbol(p.instrument.symbol) : ''}</div>
+              {name(p)}
               <div className="t3 num">{p.netQty} qty · avg ₹{inr(p.avgPrice)} · LTP ₹{inr(p.ltp)}</div>
             </div>
             <div className="quote-cell" style={{ gap: 4 }}>
@@ -992,11 +986,11 @@ export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade
         <table className="t">
           <thead><tr><th>Instrument</th><th className="r">Qty</th><th className="r">Avg · LTP</th><th className="r">Open P&L</th><th className="r hide-sm">Booked</th>{canTrade && <th />}</tr></thead>
           <tbody>
-            {data!.positions.map((p) => (
+            {open.map((p) => (
               <tr key={p.id}>
                 <td>
-                  <Link className="instrument-name" href={`/trader/instrument/${p.instrumentId}?from=positions`}>{p.instrument ? fullName(p.instrument) : '—'}</Link>
-                  <span className="sub" style={{ display: 'block' }}>{p.instrument ? shortSymbol(p.instrument.symbol) : ''} · {p.netQty > 0 ? 'Long' : p.netQty < 0 ? 'Short' : 'Closed'}</span>
+                  {name(p)}
+                  <span className="sub" style={{ display: 'block' }}>{p.netQty > 0 ? 'Long' : p.netQty < 0 ? 'Short' : 'Closed'}</span>
                 </td>
                 <td className={`r num w6 ${p.netQty > 0 ? 'pos' : p.netQty < 0 ? 'neg' : 'flat'}`}>{p.netQty}</td>
                 <td className="r"><div className="quote-cell"><span className="num">₹{inr(p.avgPrice)}</span><span className="sub num">LTP ₹{inr(p.ltp)}</span></div></td>
@@ -1008,6 +1002,7 @@ export function PositionsTable({ userId, canTrade }: { userId?: string; canTrade
           </tbody>
         </table>
       </div>
+      {trade && <PositionTradeDialog instrumentId={trade.instrumentId} side={trade.netQty > 0 ? 'SELL' : 'BUY'} qty={String(Math.abs(trade.netQty))} onClose={() => { setTrade(null); void refetch(); }} />}
     </>
   );
 }

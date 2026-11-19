@@ -17,7 +17,8 @@ import { PushPermission } from './push-permission';
 import { canUseSystemPush } from './push';
 import { newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, ReceivingAccountPicker } from './payment-details';
 import { QuickTradeSheet } from './quick-trade';
-import { expiryLabel, fullName } from './names';
+import { expiryLabel, fullName, scriptTitle } from './names';
+import { ScriptName } from './script-name';
 import { Icon } from './icons';
 import { CTL, inr, initials, R, S, shortSymbol, toneOfValue, useTheme, when } from './theme';
 import {
@@ -125,8 +126,8 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
   if (simple) return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[3], minHeight: 96, paddingVertical: S[4], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <T w="800" numberOfLines={1}>{fullName(i).toUpperCase()}{inList ? <T v="xs" c="brand" w="800">  ✓ Added</T> : null}</T>
-        <T v="xs">{i.expiry ? `Exp: ${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' })}` : `${i.exchange} · ${i.segment}`}{lotText(i) ? ` · ${lotText(i)}` : ''}</T>
+        <ScriptName i={i} extra={inList ? <T v="xs" c="brand" w="800">✓ Added</T> : null} />
+        {!!lotText(i) && <T v="xs">{lotText(i)}</T>}
       </View>
       {toggle}
     </View>
@@ -134,7 +135,7 @@ const SearchRow = memo(function SearchRow({ i, qq, inList, onToggle, pending, si
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: S[3], borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <Pressable onPress={() => router.push(`/instrument/${i.id}`)} accessibilityRole="button" accessibilityLabel={`${sym}, ${qq?.ltp ?? ''}, open chart`} style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <T w="800" numberOfLines={1}>{sym}</T>
+        <ScriptName i={i} />
         <Row gap={6} style={{ flexWrap: 'wrap' }}><T v="num" c={toneOfValue(qq?.change) === 'neg' ? 'neg' : 'pos'}>{inr(qq?.ltp)}</T><Change value={qq?.change} pct={qq?.changePct} pctOnly /></Row>
         <Row gap={6}>{lotText(i) ? <Badge text={lotText(i)} tone={i.lotClass === 'MEGA' ? 'info' : undefined} /> : null}<T v="xs" numberOfLines={1} style={{ flexShrink: 1 }}>{expiryTime(i.expiry, qq?.ts)}</T></Row>
       </Pressable>
@@ -527,7 +528,6 @@ interface WEntry { id: string; instrument: Inst; quote?: Quote }
 /** One watchlist row. Memoised: re-renders only when its own quote changes. */
 const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: { e: WEntry; qq?: Quote; detailed: boolean; onRemove: (e: WEntry) => void; onOpen: (id: string, side?: 'BUY' | 'SELL') => void }) {
   const t = useTheme();
-  const sym = shortSymbol(e.instrument.symbol);
   const name = fullName(e.instrument).toUpperCase();
   const up = toneOfValue(qq?.change) !== 'neg';
   const market = e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange;
@@ -535,11 +535,7 @@ const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: {
   const row = detailed ? (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line }}>
       <Pressable onPress={() => onOpen(e.instrument.id)} onLongPress={() => onRemove(e)} accessibilityRole="button" accessibilityLabel={`${name}${e.instrument.expiry ? `, expiry ${expiryLabel(e.instrument.expiry)}` : ''}, ${market}, ${qq?.ltp ?? ''}`} accessibilityHint="Opens quick trade. Swipe left to remove." style={{ flex: 1, minWidth: 0, gap: 3 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 6, rowGap: 2, minWidth: 0 }}>
-          <T w="800" numberOfLines={1} style={{ flexShrink: 1, maxWidth: '100%', fontSize: 14, lineHeight: 18 }}>{name}</T>
-          {!!e.instrument.expiry && <T v="xs" c="text2" w="500" numberOfLines={1} style={{ fontSize: 10 }}>{expiryLabel(e.instrument.expiry)}</T>}
-          {!!market && <View style={{ backgroundColor: t.bg3, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}><T v="xs" c="text2" w="700" style={{ fontSize: 9, lineHeight: 12 }}>{market}</T></View>}
-        </View>
+        <ScriptName i={e.instrument} />
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
           <T v="num" c={up ? 'pos' : 'neg'} numberOfLines={1} style={{ fontSize: 15, flexShrink: 0 }}>{scriptPrice(qq?.ltp)}</T>
           <T v="xs" n c={up ? 'pos' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={{ fontSize: 10, flexShrink: 1 }}>{qq?.change ? `${Number(qq.change) < 0 ? '\u25bc' : '\u25b2'} ${inr(qq.change, true)} (${inr(qq.changePct, true)}%)` : '\u2014'}</T>
@@ -549,7 +545,7 @@ const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: {
       <BidAsk compact slim id={e.instrument.id} qq={qq} onPick={(sd) => onOpen(e.instrument.id, sd)} />
     </View>
   ) : (
-    <ListRow onPress={() => onOpen(e.instrument.id)} label={`${name}, ₹${qq?.ltp ?? ''}`} title={name} sub={[expiryLabel(e.instrument.expiry), market].filter(Boolean).join(' · ')}
+    <ListRow onPress={() => onOpen(e.instrument.id)} label={`${name}, ₹${qq?.ltp ?? ''}`} title={<ScriptName i={e.instrument} />}
       right={<View style={{ alignItems: 'flex-end', gap: 2 }}><T v="num">₹{scriptPrice(qq?.ltp)}</T><Change value={qq?.change} pct={qq?.changePct} /></View>} />
   );
   return (
@@ -642,12 +638,12 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
 
 /* ====================================================================== orders / positions / ledger */
 const OTYPE: Record<string, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP_LOSS: 'Stop-loss', TAKE_PROFIT: 'Take-profit' };
-interface Order { id: string; side: string; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; instrument?: { symbol: string } }
+interface Order { id: string; side: string; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string } }
 
 const OrderRow = memo(function OrderRow({ o, onCancel }: { o: Order; onCancel?: (o: Order) => void }) {
   return (
     <ListRow onPress={onCancel && o.status === 'OPEN' ? () => onCancel(o) : undefined} label={onCancel && o.status === 'OPEN' ? 'Cancel this order' : undefined}
-      title={o.instrument ? shortSymbol(o.instrument.symbol) : '—'}
+      title={<ScriptName i={o.instrument} />}
       sub={<View style={{ gap: 2 }}><Row gap={6}><T v="xs" c={o.side === 'BUY' ? 'pos' : 'neg'} w="600">{o.side === 'BUY' ? 'Buy' : 'Sell'}</T><T v="xs">{o.quantity} qty · {OTYPE[o.type] ?? o.type}{o.triggerPrice ? ` @ ₹${inr(o.triggerPrice)}` : ''} · {when(o.createdAt)}</T></Row>{o.rejectReason ? <T v="xs" c="neg">{o.rejectReason}</T> : null}</View>}
       right={<View style={{ alignItems: 'flex-end', gap: 4 }}><T v="num">₹{inr(o.fillPrice ?? o.limitPrice ?? o.triggerPrice)}</T><StatusBadge v={o.status} />{onCancel && o.status === 'OPEN' ? <T v="xs" c="neg" w="600">Tap to cancel</T> : null}</View>} />
   );
@@ -655,14 +651,14 @@ const OrderRow = memo(function OrderRow({ o, onCancel }: { o: Order; onCancel?: 
 
 /** Orders. With `virtual`, the list scrolls the whole screen (Screen scroll={false}) and `header` sits above it. */
 export function OrdersList({ userId, statuses, canCancel, emptyTitle = 'No orders', emptyText, virtual, header }: { userId?: string; statuses: string[]; canCancel?: boolean; emptyTitle?: string; emptyText?: string; virtual?: boolean; header?: ReactNode }) {
-  const { data, error, loading, refetch } = useQuery<{ orders: Order[] }>(`query($u:ID,$s:[OrderStatus!]){ orders(userId:$u, status:$s, limit:100){ id side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt instrument{ symbol } } }`, { u: userId, s: statuses }, 4000);
+  const { data, error, loading, refetch } = useQuery<{ orders: Order[] }>(`query($u:ID,$s:[OrderStatus!]){ orders(userId:$u, status:$s, limit:100){ id side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt instrument{ symbol name expiry exchange } } }`, { u: userId, s: statuses }, 4000);
   const [cancel, setCancel] = useState<Order | null>(null);
   const [busy, setBusy] = useState(false);
   const onCancel = useCallback((o: Order) => setCancel(o), []);
   const list = data?.orders ?? [];
   const state = loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} /> : <Empty icon="list" title={emptyTitle}>{emptyText}</Empty>;
   const sheet = (
-    <Sheet visible={!!cancel} title="Cancel this order?" sub={cancel ? `${cancel.side === 'BUY' ? 'Buy' : 'Sell'} ${cancel.quantity} ${shortSymbol(cancel.instrument?.symbol ?? '')}${cancel.triggerPrice ? ' trigger' : ''} at ₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}` : ''} onClose={() => setCancel(null)}>
+    <Sheet visible={!!cancel} title="Cancel this order?" sub={cancel ? `${cancel.side === 'BUY' ? 'Buy' : 'Sell'} ${cancel.quantity} ${scriptTitle(cancel.instrument)}${cancel.triggerPrice ? ' trigger' : ''} at ₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}` : ''} onClose={() => setCancel(null)}>
       <Row>
         <Button block title="Keep order" onPress={() => setCancel(null)} />
         <Button block kind="sell" title="Cancel order" busy={busy} onPress={async () => {
@@ -725,10 +721,12 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
   const [cfBusy, setCfBusy] = useState<string | null>(null);
   const [sqOff, setSqOff] = useState(false);
   const [sqBusy, setSqBusy] = useState(false);
+  const [trade, setTrade] = useState<Pos | null>(null);
   const rules = useQuery<{ tradingRules: { sessions: { exchange: string; isOpen: boolean; message?: string | null }[] } }>(`{ tradingRules { sessions { exchange isOpen message } } }`, undefined, 30_000, !canTrade);
   if (loading && !data) return <Skeleton />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
-  if (!data!.positions.length) return <Empty icon="briefcase" title="No positions" action={canTrade ? <Button size="sm" kind="primary" title="Find instruments" onPress={() => router.push('/search')} /> : undefined}>A position opens when a buy or sell order executes.</Empty>;
+  // Only open positions: once exited, a position leaves this list (its trades stay in Orders).
+  if (!data!.positions.some((p) => p.netQty !== 0)) return <Empty icon="briefcase" title="No open positions" action={canTrade ? <Button size="sm" kind="primary" title="Find instruments" onPress={() => router.push('/search')} /> : undefined}>A position opens when a buy or sell order executes. Exited trades are in Orders.</Empty>;
   const exit = async (p: Pos) => {
     if (exitPending.current) return;
     exitPending.current = true; setExitBusy(p.id);
@@ -750,8 +748,7 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
     } catch (e) { toast((e as Error).message, true); }
     finally { setCfBusy(null); }
   };
-  const sorted = [...data!.positions].sort((a, b) => Number(b.netQty !== 0) - Number(a.netQty !== 0));
-  const openPos = sorted.filter((p) => p.netQty !== 0);
+  const openPos = data!.positions.filter((p) => p.netQty !== 0);
   // Market closed for any open position: square off is not allowed (same as a normal order).
   const closedMsg = rules.data?.tradingRules.sessions.find((x) => !x.isOpen && openPos.some((p) => p.instrument?.exchange === x.exchange))?.message ?? null;
   const squareOffAll = async () => {
@@ -779,9 +776,8 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
           </Pressable>
         </Spread>
       )}
-      {sorted.map((p) => {
+      {openPos.map((p) => {
         const name = p.instrument ? fullName(p.instrument).toUpperCase() : '—';
-        const exp = p.instrument?.expiry ? new Date(p.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
         const open = p.netQty !== 0;
         const pnl = open ? p.unrealizedPnl : p.realizedPnl;
         const cost = Number(p.avgPrice) * Math.abs(p.netQty) * (p.instrument?.multiplier ?? 1);
@@ -790,16 +786,14 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
         const on = !!p.carriedForward;
         return (
           <View key={p.id} style={{ borderWidth: 1, borderColor: open && on ? t.brand : t.line2, borderRadius: R.lg, padding: S[3], gap: 6, backgroundColor: t.bg }}>
-            <Pressable onPress={() => router.push(`/instrument/${p.instrumentId}?from=positions`)} accessibilityRole="button" accessibilityLabel={`${name} chart`} style={{ gap: 6 }}>
+            <Pressable disabled={!canTrade} onPress={() => setTrade(p)} accessibilityRole="button" accessibilityLabel={`${name}: buy or sell`} style={{ gap: 6 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 6, rowGap: 2 }}>
-                  <T w="800" numberOfLines={1} style={{ fontSize: 14, flexShrink: 1 }}>{name}</T>
-                  {!!exp && <T v="xs" c="text2" w="600" style={{ fontSize: 10 }}>{exp}</T>}
+                <View style={{ flex: 1, minWidth: 0 }}><ScriptName i={p.instrument} extra={<>
                   {open
                     ? <View style={{ backgroundColor: p.netQty > 0 ? t.posSoft : t.negSoft, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c={p.netQty > 0 ? 'pos' : 'neg'} style={{ fontSize: 9 }}>{p.netQty > 0 ? 'BUY' : 'SELL'}</T></View>
                     : <View style={{ backgroundColor: t.bg3, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c="text2" style={{ fontSize: 9 }}>CLOSED</T></View>}
                   {open && on && <View style={{ backgroundColor: t.brandSoft, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 1 }}><T v="xs" w="700" c="brand" style={{ fontSize: 9 }}>CARRY FWD</T></View>}
-                </View>
+                </>} /></View>
                 {open && <T w="700" style={{ fontSize: 14 }}>Qty: {Math.abs(p.netQty)}</T>}
               </View>
               <View style={{ flexDirection: 'row', gap: S[2] }}>
@@ -836,7 +830,7 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
         <View style={{ gap: 6 }}>
           {openPos.map((p) => (
             <Spread key={p.id}>
-              <T w="800" numberOfLines={1} style={{ flex: 1 }}>{p.instrument ? fullName(p.instrument).toUpperCase() : '—'} <T v="xs" c={p.netQty > 0 ? 'pos' : 'neg'} w="700">{p.netQty > 0 ? 'BUY' : 'SELL'} {Math.abs(p.netQty)}</T></T>
+              <View style={{ flex: 1, minWidth: 0 }}><ScriptName i={p.instrument} extra={<T v="xs" c={p.netQty > 0 ? 'pos' : 'neg'} w="700">{p.netQty > 0 ? 'BUY' : 'SELL'} {Math.abs(p.netQty)}</T>} /></View>
               <T v="num" c={toneOfValue(p.unrealizedPnl) === 'flat' ? 'text2' : (toneOfValue(p.unrealizedPnl) as 'pos')}>{inr(p.unrealizedPnl, true)}</T>
             </Spread>
           ))}
@@ -847,13 +841,15 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
           <Button block kind="sell" title="Exit all" busy={sqBusy} onPress={() => void squareOffAll()} />
         </Row>
       </Sheet>
-      <Sheet visible={!!cf} title="Carry forward ON?" sub={cf?.instrument ? `${fullName(cf.instrument).toUpperCase()} · ${cf.netQty > 0 ? 'BUY' : 'SELL'} · Qty ${Math.abs(cf.netQty)}` : undefined} onClose={() => setCf(null)}>
+      <Sheet visible={!!cf} title="Carry forward ON?" sub={cf?.instrument ? `${scriptTitle(cf.instrument)} · ${cf.netQty > 0 ? 'BUY' : 'SELL'} · Qty ${Math.abs(cf.netQty)}` : undefined} onClose={() => setCf(null)}>
         <T c="text2" style={{ lineHeight: 21 }}>यह सौदा Next Day तक बना रहेगा और रात 11:30 बजे Auto Cut नहीं होगा। Lot size के हिसाब से CF मार्जिन आपके बैलेंस से रोका जाएगा।</T>
         <Row>
           <Button block title="Cancel" onPress={() => setCf(null)} />
           <Button block kind="primary" title="Turn ON" busy={!!cf && cfBusy === cf.id} onPress={() => cf && void setCarry(cf, true)} />
         </Row>
       </Sheet>
+      {/* Tapping a position opens the buy / sell ticket, set to exit it (Buy/Sell and quantity can be changed). */}
+      {trade && <QuickTradeSheet allowAdvanced instrumentId={trade.instrumentId} initialSide={trade.netQty > 0 ? 'SELL' : 'BUY'} initialQty={Math.abs(trade.netQty)} onClose={() => { setTrade(null); void refetch(); }} />}
     </View>
   );
 }

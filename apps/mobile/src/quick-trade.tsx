@@ -6,6 +6,8 @@
  *    tap a trade for its details and "Repeat order".
  * Every figure shown comes from the server; nothing is filled in with sample numbers.
  */
+import { scriptTitle } from './names';
+import { ScriptName } from './script-name';
 import { router } from 'expo-router';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -22,9 +24,8 @@ interface Inst { id: string; symbol: string; name: string; exchange: string; seg
 interface Rules { minQty: number; maxQtyPerOrder: number; maxQtyPerInstrument: number; brokeragePerLot?: string; brokeragePerMegaLot?: string; sessions: { exchange: string; isOpen: boolean; message?: string }[] }
 interface Extra { open?: string; close?: string; volume?: string; avgPrice?: string }
 
-/** "Gold Mini Dec 04": the instrument name with its expiry, like the reference app. */
-export const titleOf = (i: { name: string; symbol: string; expiry?: string }) =>
-  `${i.name.replace(/ — .*/, '').replace(/\s*\(.*\)\s*$/, '') || shortSymbol(i.symbol)}${i.expiry ? ` ${new Date(i.expiry).toLocaleDateString('en-IN', { month: 'short', day: '2-digit' })}` : ''}`;
+/** "GOLD MINI 04 Dec 26": the script name with its expiry, the same as in the watchlist. */
+export const titleOf = (i: { name: string; symbol: string; expiry?: string }) => scriptTitle(i);
 const clock = (d?: string | Date) => (d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : '—');
 const val = (v?: string | number | null) => (v === undefined || v === null || v === '' ? '—' : String(v));
 
@@ -92,7 +93,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
   const go = (path: string) => { onClose(); router.push(`${path}&from=${allowAdvanced ? 'positions' : 'watchlist'}` as never); };
 
   return (
-    <Sheet instrumentTitle visible title={i ? titleOf(i) : '…'} sub={i ? `${shortSymbol(i.symbol)} · ${i.category === 'FOREX' ? 'Forex' : i.exchange}${i.lotLabel ? ` · 1 lot = ${i.lotLabel}` : ''}` : undefined} onClose={onClose}>
+    <Sheet instrumentTitle visible title={i ? titleOf(i) : '…'} sub={i ? `${i.category === 'FOREX' ? 'Forex' : i.exchange}${i.lotLabel ? ` · 1 lot = ${i.lotLabel}` : ''}` : undefined} onClose={onClose}>
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
       <Spread style={{ alignItems: 'center' }}>
         <View style={{ gap: 2 }}>
@@ -191,7 +192,7 @@ const TradeRow = memo(function TradeRow({ o, onPress }: { o: Trade; onPress: (o:
   const px = o.fillPrice ?? o.limitPrice ?? o.triggerPrice;
   return (
     <Pressable onPress={() => onPress(o)} accessibilityRole="button" accessibilityLabel={`${o.side} ${o.quantity} ${o.instrument?.symbol ?? ''}`} style={({ pressed }) => ({ paddingVertical: S[3], gap: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line, backgroundColor: pressed ? t.bg2 : 'transparent' })}>
-      <Spread><T w="800" numberOfLines={1} style={{ flex: 1 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T><T v="num" c={o.side === 'BUY' ? 'pos' : 'neg'}>{inr(px)}</T></Spread>
+      <Spread><View style={{ flex: 1, minWidth: 0 }}><ScriptName i={o.instrument} /></View><T v="num" c={o.side === 'BUY' ? 'pos' : 'neg'}>{inr(px)}</T></Spread>
       <Spread>
         <Row gap={6}><Badge text={o.side} tone={o.side === 'BUY' ? 'ok' : 'bad'} /><T v="sm" c="text2">{o.quantity} lot{o.quantity > 1 ? 's' : ''}</T>{o.type !== 'MARKET' ? <T v="xs">{TYPE_LABEL[o.type]}</T> : null}</Row>
         <T v="xs">{stamp(o.filledAt ?? o.createdAt)}</T>
@@ -224,7 +225,7 @@ const TradeLine = memo(function TradeLine({ o, onPress }: { o: Trade; onPress: (
   return (
     <Pressable onPress={() => onPress(o)} accessibilityRole="button" accessibilityLabel={`${o.side} ${o.quantity} ${o.instrument?.symbol ?? ''}`} style={({ pressed }) => ({ paddingVertical: 10, gap: 3, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.line, backgroundColor: pressed ? t.bg2 : 'transparent' })}>
       <Spread>
-        <T w="800" numberOfLines={1} style={{ flex: 1, fontSize: 15 }}>{o.instrument ? titleOf(o.instrument) : '—'}</T>
+        <View style={{ flex: 1, minWidth: 0 }}><ScriptName i={o.instrument} size={15} /></View>
         <T v="num" c={sideTone} style={{ fontSize: 15 }}>{inr(px)}</T>
       </Spread>
       <Spread>

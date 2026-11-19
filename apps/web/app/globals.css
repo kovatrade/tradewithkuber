@@ -1120,3 +1120,10 @@ tr.clickable { cursor: pointer; }
 @keyframes quote-dark-up { 0% { background: #056647; color: #fff; } 40%, 75% { background: var(--pos); color: #fff; } }
 @keyframes quote-dark-down { 0% { background: #98251a; color: #fff; } 40%, 75% { background: var(--neg); color: #fff; } }
 .instrument-name, .script-name, .mb-chip-sym, .mb-sym { font-weight: 800; }
+.sn-sm .script-name { font-size: 14px; }
+.sn-lg .script-name { font-size: 22px; }
+.script-identity.sn-sm, .script-identity.sn-md { width: auto; }
+button.linklike .script-identity { cursor: pointer; }
+button.linklike { background: none; border: 0; padding: 0; color: inherit; font-family: inherit; font-size: inherit; line-height: inherit; text-align: left; cursor: pointer; }
+button.linklike:hover { color: var(--brand); }
+button.linklike:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 4px; }

@@ -8,6 +8,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { gql, newKey } from '@/api';
 import { useLiveQuotes } from '@/screens';
 import { inr, ohlcTone, R, S, shortSymbol, useTheme } from '@/theme';
+import { scriptTitle } from '@/names';
+import { ScriptName } from '@/script-name';
 import { Badge, Button, Change, Chips, Divider, Field, Lines, LotStepper, Mark, Notice, Row, Screen, Section, Sheet, Spread, T, toast, useQuery } from '@/ui';
 
 type Side = 'BUY' | 'SELL';
@@ -64,11 +66,11 @@ export default function StockScreen() {
   );
 
   return (
-    <Screen instrumentTitle back title={i ? shortSymbol(i.symbol) : ''} footer={footer}>
+    <Screen instrumentTitle back title={i ? scriptTitle(i) : ''} footer={footer}>
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
       <Row>
         <Mark text={i ? shortSymbol(i.symbol) : ''} />
-        <View style={{ flex: 1 }}><T v="h3" numberOfLines={1}>{i?.name.replace(/ — .*/, '') ?? '…'}</T><T v="xs">{i?.symbol} · {i?.exchange} {i?.segment}</T></View>
+        <View style={{ flex: 1, minWidth: 0 }}>{i ? <ScriptName i={i} size={18} /> : <T v="h3">…</T>}</View>
       </Row>
       <View style={{ gap: 2 }}>
         <T v="hero">₹{inr(q?.ltp)}</T>
@@ -261,7 +263,7 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
   const down = type === 'LIMIT' ? side === 'BUY' : firesOnFall(type, side);
   const steps = type === 'LIMIT' ? [10, 25, 50] : [1, 2, 5];
   return (
-    <Sheet visible title={review ? `Confirm ${side === 'BUY' ? 'buy' : 'sell'}` : shortSymbol(i.symbol)} sub={review ? 'Review your order' : `${side === 'BUY' ? 'Ask' : 'Bid'} ₹${inr(side === 'BUY' ? q?.ask : q?.bid)} · LTP ₹${inr(q?.ltp)}`} onClose={onClose}>
+    <Sheet visible title={review ? `Confirm ${side === 'BUY' ? 'buy' : 'sell'}` : scriptTitle(i)} sub={review ? 'Review your order' : `${side === 'BUY' ? 'Ask' : 'Bid'} ₹${inr(side === 'BUY' ? q?.ask : q?.bid)} · LTP ₹${inr(q?.ltp)}`} onClose={onClose}>
       {!review ? (
         <>
           <View style={{ flexDirection: 'row', backgroundColor: t.bg2, borderRadius: R.md, padding: 4 }} accessibilityRole="tablist">
@@ -317,7 +319,7 @@ function OrderSheet({ allowAdvanced, i, q, side, setSide, initialQty, onClose }:
         </>
       ) : preview && (
         <>
-          <Row gap={S[2]}><Badge text={side === 'BUY' ? 'Buy' : 'Sell'} tone={side === 'BUY' ? 'ok' : 'bad'} /><T w="800">{shortSymbol(i.symbol)}</T></Row>
+          <Row gap={S[2]}><Badge text={side === 'BUY' ? 'Buy' : 'Sell'} tone={side === 'BUY' ? 'ok' : 'bad'} /><View style={{ flex: 1, minWidth: 0 }}><ScriptName i={i} /></View></Row>
           <Lines lines={[['Order type', TYPE_LABEL[type]], ['Quantity', n], [type === 'MARKET' ? 'Estimated price' : type === 'LIMIT' ? 'Limit price' : 'Trigger (LTP)', `₹${inr(preview.price)}`], ['Order value', `₹${inr(preview.value)}`], ['Intraday margin', `₹${inr(preview.intradayMargin)}`], ['C/F margin', `₹${inr(preview.carryForwardMargin)}`]]} />
           {type === 'MARKET' && <Notice>{demo ? 'Market orders execute at the best simulated price, which can differ slightly from the estimate.' : 'Market orders execute at the best available price, which can differ slightly from the estimate.'}</Notice>}
           {isTrig(type) && <Notice>When triggered, this order is filled at the last traded price, which can be worse than your trigger in a fast market.</Notice>}

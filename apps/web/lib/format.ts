@@ -127,3 +127,12 @@ const num = (v: unknown) => (v == null || v === '' ? NaN : Number(String(v).repl
 const dir = (a: unknown, b: unknown) => { const x = num(a), y = num(b); return Number.isNaN(x) || Number.isNaN(y) || x === y ? undefined : x > y ? 'pos' : 'neg'; };
 export const ohlcTone = (k: string, v: unknown, ltp: unknown, close: unknown): 'pos' | 'neg' | undefined =>
   k === 'High' ? 'pos' : k === 'Low' ? 'neg' : k === 'Open' ? dir(v, close) : dir(ltp, close);
+
+/** Expiry next to a script name, e.g. 04 Dec 26 (IST). */
+export const expiryLabel = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' }) : '');
+/** The market badge next to a script name: MCX, NSE, FOREX, CRYPTO ... */
+export const marketOf = (i?: { exchange?: string; category?: string } | null) =>
+  !i ? '' : i.category === 'CRYPTO' ? 'CRYPTO' : i.category === 'FOREX' ? 'FOREX' : i.exchange ?? '';
+/** One-line text form of a script (dialog titles, toasts): "GOLD MINI 04 Dec 26". */
+export const scriptTitle = (i?: { symbol?: string; name?: string; expiry?: string | null } | null) =>
+  !i ? '—' : [fullName(i).toUpperCase(), expiryLabel(i.expiry)].filter(Boolean).join(' ');

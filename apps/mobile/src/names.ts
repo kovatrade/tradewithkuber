@@ -85,3 +85,11 @@ export function fullName(inst?: { symbol?: string; name?: string } | null): stri
 
 /** Expiry as shown next to a script name, e.g. 24 Nov 26 (IST). */
 export const expiryLabel = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit', timeZone: 'Asia/Kolkata' }) : '');
+
+/** The market badge next to a script name: MCX, NSE, FOREX, CRYPTO ... */
+export const marketOf = (i?: { exchange?: string; category?: string } | null) =>
+  !i ? '' : i.category === 'CRYPTO' ? 'CRYPTO' : i.category === 'FOREX' ? 'FOREX' : i.exchange ?? '';
+
+/** One-line text form of a script (for sheet titles, toasts): "GOLD MINI 04 Dec 26". */
+export const scriptTitle = (i?: { symbol?: string; name?: string; expiry?: string | null } | null) =>
+  !i ? '—' : [fullName(i).toUpperCase(), expiryLabel(i.expiry)].filter(Boolean).join(' ');
