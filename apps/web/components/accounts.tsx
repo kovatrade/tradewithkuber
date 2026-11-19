@@ -29,7 +29,7 @@ export function Person({ u, href }: { u: Pick<UserRow, 'displayName' | 'username
 }
 
 /** Create a broker or trader. Accounts start PENDING until a Super Admin approves them. */
-export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: ('BROKER' | 'TRADER' | 'DEVELOPER')[]; brokers?: { id: string; username: string }[]; onClose: () => void; onDone: () => void }) {
+export function CreateUserDialog({ roles, brokers, onClose, onDone }: { roles: ('BROKER' | 'TRADER' | 'DEVELOPER' | 'SUPER_ADMIN')[]; brokers?: { id: string; username: string }[]; onClose: () => void; onDone: () => void }) {
   const [f, setF] = useState({ username: '', displayName: '', role: roles[0], phone: '', email: '', brokerId: '', tempPassword: '', commMini: '', commMega: '', openingAmount: '' });
   const [showPw, setShowPw] = useState(false);
   const [step, setStep] = useState(0);

@@ -83,7 +83,7 @@ export const users = pgTable(
     createdAt: ts('created_at').notNull().defaultNow(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('users_role_status_idx').on(t.role, t.status), index('users_broker_idx').on(t.brokerId), uniqueIndex('users_one_active_super_admin').on(t.role).where(sql`${t.role} = 'SUPER_ADMIN' AND ${t.status} = 'ACTIVE'`)],
+  (t) => [index('users_role_status_idx').on(t.role, t.status), index('users_broker_idx').on(t.brokerId)],
 );
 
 export const sessions = pgTable(

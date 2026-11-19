@@ -305,6 +305,68 @@ export class OrdersService implements OnModuleInit {
     return result.order;
   }
 
+  /**
+   * Change a pending (OPEN) limit / stop-loss / take-profit order before it fills: its price and, optionally, its
+   * quantity. The type and side stay the same. The same checks as a new order apply (tick size, market open, a trigger
+   * that is already reached, lot limits, margin for a larger entry). A new limit price that crosses the market fills on
+   * the next price tick, like any resting limit order.
+   */
+  async modify(actor: Actor, orderId: string, change: { limitPriceMinor?: bigint; triggerPriceMinor?: bigint; quantity?: number }, ip: string) {
+    if (actor.role !== 'TRADER') throw new AppError('FORBIDDEN', 'Only traders can change their own orders.');
+    if (change.quantity !== undefined && (!Number.isSafeInteger(change.quantity) || change.quantity <= 0)) throw badInput('Quantity must be a positive whole number.');
+    const [cfgMin, cfgMax, cfgMaxPos, rates] = await Promise.all([
+      this.config.get('trading.minQty'), this.config.get('trading.maxQtyPerOrder'), this.config.get('trading.maxQtyPerInstrument'), this.intradayRates(),
+    ]);
+    const o = await this.dbs.serializable(async (tx) => {
+      const [cur] = await tx.select().from(orders).where(eq(orders.id, orderId)).for('update');
+      if (!cur || cur.userId !== actor.userId) throw notFound('Order');
+      if (cur.status !== 'OPEN') throw badInput(`Order is already ${cur.status.toLowerCase()}.`);
+      if (cur.type === 'MARKET') throw badInput('A market order cannot be changed.');
+      const inst = this.market.instrument(cur.instrumentId);
+      if (!inst) throw notFound('Instrument');
+      const closed = await this.closedReason(inst.exchange);
+      if (closed) throw badInput(closed);
+      const trig = isTrigger(cur.type);
+      if (trig ? change.limitPriceMinor !== undefined : change.triggerPriceMinor !== undefined)
+        throw badInput(trig ? 'Change the trigger price of a stop-loss / take-profit order.' : 'Change the limit price of a limit order.');
+      const limit = cur.type === 'LIMIT' ? change.limitPriceMinor ?? cur.limitPriceMinor! : null;
+      const trigger = trig ? change.triggerPriceMinor ?? cur.triggerPriceMinor! : null;
+      const quantity = change.quantity ?? cur.quantity;
+      const px = limit ?? trigger!;
+      if (px <= 0n) throw badInput('Enter a price above zero.');
+      if (px % BigInt(inst.tickMinor) !== 0n) throw badInput(`Price must be a multiple of the tick size (${Number(inst.tickMinor) / 100}).`);
+      if (limit === cur.limitPriceMinor && trigger === cur.triggerPriceMinor && quantity === cur.quantity) return cur; // nothing changed
+      const q = this.market.quote(inst.id);
+      if (trig && q && triggerHit(cur.type, cur.side, trigger!, q.ltpMinor))
+        throw badInput(`Trigger ${(Number(trigger) / 100).toFixed(2)} is already reached (LTP ${(Number(q.ltpMinor) / 100).toFixed(2)}). Choose a trigger the price has not reached yet.`);
+      if (quantity !== cur.quantity) {
+        if (quantity < cfgMin) throw badInput(`Minimum quantity is ${cfgMin}.`);
+        if (quantity > cfgMax) throw badInput(`Maximum ${cfgMax} per order.`);
+        const [pos] = await tx.select().from(positions).where(and(eq(positions.userId, cur.userId), eq(positions.instrumentId, cur.instrumentId), eq(positions.mode, 'SIMULATED')));
+        const net = pos?.netQty ?? 0;
+        const signed = cur.side === 'BUY' ? quantity : -quantity;
+        if (cur.reduceOnly && (net * signed >= 0 || quantity > abs(net))) throw badInput(`This exit order can be at most ${abs(net)} lot${abs(net) === 1 ? "" : "s"}, the size of the open position.`);
+        if (abs(net + signed) > cfgMaxPos) throw badInput(`Position limit is ${cfgMaxPos} for this instrument.`);
+        if (!cur.reduceOnly && quantity > cur.quantity) {
+          // A resting entry reserves its full margin: a bigger order needs the extra lots to fit in free funds.
+          const cash = await this.ledger.cashAccount(tx, cur.userId, 'SIMULATED');
+          await this.ledger.lock(tx, cash);
+          const extra = intradayMargin(quantity, inst.lotClass, rates.mini, rates.mega) - intradayMargin(cur.quantity, inst.lotClass, rates.mini, rates.mega);
+          const free = (await this.ledger.balance(tx, cash)) - (await this.marginUsed(tx, cur.userId, rates));
+          if (extra > free) throw badInput('Insufficient margin for the bigger order.');
+        }
+      }
+      const [m] = await tx.update(orders).set({ limitPriceMinor: limit, triggerPriceMinor: trigger, quantity, requestedQuantity: quantity, updatedAt: new Date() }).where(eq(orders.id, cur.id)).returning();
+      await this.audit.record(tx, {
+        actor, action: 'order.modified', entityType: 'order', entityId: cur.id, outcome: 'SUCCESS', ip,
+        metadata: { symbol: inst.symbol, type: cur.type, side: cur.side, from: { limit: cur.limitPriceMinor, trigger: cur.triggerPriceMinor, qty: cur.quantity }, to: { limit, trigger, qty: quantity } },
+      });
+      return m;
+    });
+    void pubsub.publish(TOPIC.orderUpdate(actor.userId), { orderUpdated: o });
+    return o;
+  }
+
   async cancel(actor: Actor, orderId: string, ip: string) {
     const o = await this.dbs.serializable(async (tx) => {
       const [o] = await tx.select().from(orders).where(eq(orders.id, orderId)).for('update');

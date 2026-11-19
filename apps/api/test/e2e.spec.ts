@@ -817,6 +817,41 @@ describe('stop-loss / take-profit orders', () => {
     await gql(`mutation($o:ID!){ cancelOrder(orderId:$o){ status } }`, { o: tp.data.placeOrder.id }, { token: t.accessToken });
   });
 
+  it('modifies a pending limit and stop-loss order (price and lots) before it fills, with the same checks as a new order', async () => {
+    const t = await login('trader.one');
+    const MOD = `mutation($o:ID!,$l:String,$tr:String,$q:Int){ modifyOrder(orderId:$o, limitPrice:$l, triggerPrice:$tr, quantity:$q){ id status quantity limitPrice triggerPrice } }`;
+    market.setPrice(instrumentId, 250000n); // ₹2500
+    // A buy limit well below the market rests; move it, then make it 2 lots.
+    const lim = (await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'LIMIT', quantity: 1, limitPrice: '2300.00', idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    expect(lim.status).toBe('OPEN');
+    expect((await gql(MOD, { o: lim.id, l: '2350.00' }, { token: t.accessToken })).data.modifyOrder).toMatchObject({ status: 'OPEN', limitPrice: '2350.00', quantity: 1 });
+    expect((await gql(MOD, { o: lim.id, q: 2 }, { token: t.accessToken })).data.modifyOrder).toMatchObject({ limitPrice: '2350.00', quantity: 2 });
+    expect(code(await gql(MOD, { o: lim.id, tr: '2350.00' }, { token: t.accessToken }))).toBe('BAD_USER_INPUT'); // a limit order has no trigger
+    expect(code(await gql(MOD, { o: lim.id, l: '2350.03' }, { token: t.accessToken }))).toBe('BAD_USER_INPUT'); // off the tick
+    // Someone else cannot change it.
+    const other = await login('trader.two');
+    expect(code(await gql(MOD, { o: lim.id, l: '2340.00' }, { token: other.accessToken }))).toBe('NOT_FOUND');
+    // A stop-loss on a 1-lot position: move the trigger; one that is already reached, or more lots than held, is refused.
+    expect((await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder.status).toBe('FILLED');
+    const sl = (await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'STOP_LOSS', quantity: 1, triggerPrice: '2400.00', idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    expect(sl.status).toBe('OPEN');
+    expect((await gql(MOD, { o: sl.id, tr: '2450.00' }, { token: t.accessToken })).data.modifyOrder).toMatchObject({ status: 'OPEN', triggerPrice: '2450.00' });
+    const reached = await gql(MOD, { o: sl.id, tr: '2550.00' }, { token: t.accessToken });
+    expect(code(reached)).toBe('BAD_USER_INPUT');
+    expect(reached.errors?.[0].message).toMatch(/already reached/);
+    expect(code(await gql(MOD, { o: sl.id, q: 3 }, { token: t.accessToken }))).toBe('BAD_USER_INPUT');
+    const { rows } = await pg.query(`SELECT action FROM audit_events WHERE entity_id = $1 ORDER BY seq`, [lim.id]);
+    expect(rows.map((r) => r.action)).toEqual(['order.placed', 'order.modified', 'order.modified']);
+    // The moved stop fires at its new trigger.
+    market.setPrice(instrumentId, 244000n);
+    await new Promise((res) => setTimeout(res, 1500));
+    const o = (await gql(`{ orders(status:[FILLED, OPEN, CANCELLED]){ id status } }`, {}, { token: t.accessToken })).data.orders;
+    expect(o.find((x: { id: string }) => x.id === sl.id).status).toBe('FILLED');
+    expect(code(await gql(MOD, { o: sl.id, tr: '2300.00' }, { token: t.accessToken }))).toBe('BAD_USER_INPUT'); // filled: no longer changeable
+    await gql(`mutation($o:ID!){ cancelOrder(orderId:$o){ status } }`, { o: lim.id }, { token: t.accessToken });
+    market.setPrice(instrumentId, 250000n);
+  });
+
   it('lets a trader sell first and buy to cover, charging both sides and realising short P&L', async () => {
     const t = await login('trader.one');
     const minor = (v: string) => BigInt(v.replace('.', ''));
@@ -1872,5 +1907,24 @@ describe('Developer administration', () => {
     expect(code(await gql(`mutation{beginDhanConnection}`, {}, { token: admin.token }))).toBe('FORBIDDEN');
     // Without configured credentials a Developer gets setup guidance, not an authorization/MFA rejection.
     expect(code(await gql(`mutation{beginDhanConnection}`, {}, { token: developer.accessToken }))).toBe('BAD_USER_INPUT');
+
+    // Only a Developer can create a Super Admin; several can be active.
+    const C = `mutation($i:CreateUserInput!){createUser(input:$i){id role status}}`;
+    const byAdmin = await gql(C, { i: { username: 'superadmin.two', displayName: 'Second Admin', role: 'SUPER_ADMIN', phone: '+919011113333', tempPassword: PW } }, { token: admin.token, stepUp: await stepUp(admin.token, 'admin') });
+    expect(code(byAdmin)).toBe('FORBIDDEN');
+    const byDev = await gql(C, { i: { username: 'superadmin.two', displayName: 'Second Admin', role: 'SUPER_ADMIN', phone: '+919011113333', tempPassword: PW } }, { token: developer.accessToken });
+    expect(byDev.errors).toBeUndefined();
+    expect(byDev.data.createUser.role).toBe('SUPER_ADMIN');
+    expect(byDev.data.createUser.status).toBe('ACTIVE');
+    // Two Super Admins are active together now.
+    const { rows } = await pg.query(`SELECT count(*)::int AS n FROM users WHERE role = 'SUPER_ADMIN' AND status = 'ACTIVE'`);
+    expect(rows[0].n).toBeGreaterThanOrEqual(2);
+    // Only a Developer can suspend a Super Admin.
+    const S = `mutation($u:ID!,$s:UserStatus!,$r:String!){ setUserStatus(userId:$u, status:$s, reason:$r){ status } }`;
+    const id = byDev.data.createUser.id;
+    expect(code(await gql(S, { u: id, s: 'SUSPENDED', r: 'Not needed now' }, { token: admin.token, stepUp: await stepUp(admin.token, 'admin') }))).toBe('FORBIDDEN');
+    const off = await gql(S, { u: id, s: 'SUSPENDED', r: 'Not needed now' }, { token: developer.accessToken, stepUp: await stepUp(developer.accessToken, 'developer.test') });
+    expect(off.errors).toBeUndefined();
+    expect(off.data.setUserStatus.status).toBe('SUSPENDED');
   });
 });

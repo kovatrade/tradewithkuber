@@ -129,6 +129,19 @@ export class TradingResolver {
     return toOrder(await this.orderSvc.exitPosition(a, id, key, c.ip));
   }
 
+  @Mutation(() => Order, { description: 'Change a pending limit / stop-loss / take-profit order: its price (limitPrice for LIMIT, triggerPrice for SL/TP) and, optionally, its lots.' })
+  async modifyOrder(
+    @CurrentActor() a: Actor,
+    @Args('orderId', { type: () => ID }) id: string,
+    @Ctx() c: GqlContext,
+    @Args('limitPrice', { nullable: true }) limitPrice?: string,
+    @Args('triggerPrice', { nullable: true }) triggerPrice?: string,
+    @Args('quantity', { type: () => Int, nullable: true }) quantity?: number,
+  ) {
+    for (const v of [limitPrice, triggerPrice]) if (v !== undefined && v !== null && !RX.money.test(v)) throw badInput('Enter a price with up to 2 decimals.');
+    return toOrder(await this.orderSvc.modify(a, id, { limitPriceMinor: parsePrice(limitPrice), triggerPriceMinor: parsePrice(triggerPrice), quantity: quantity ?? undefined }, c.ip));
+  }
+
   @Mutation(() => Order)
   async cancelOrder(@CurrentActor() a: Actor, @Args('orderId', { type: () => ID }) id: string, @Ctx() c: GqlContext) {
     return toOrder(await this.orderSvc.cancel(a, id, c.ip));

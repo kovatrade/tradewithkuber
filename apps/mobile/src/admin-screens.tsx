@@ -88,7 +88,7 @@ export function AdminUsersScreen() {
 
 /** New account. A broker uses it to ask for a trader account (with the opening amount); a Super Admin approves it. */
 export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: string; username: string }[]; onClose: () => void; onDone: () => void }) {
-  const [f, setF] = useState({ username: '', displayName: '', role: 'TRADER' as 'TRADER' | 'BROKER' | 'DEVELOPER', phone: '', brokerId: '', tempPassword: '', commMini: '', commMega: '', openingAmount: '' });
+  const [f, setF] = useState({ username: '', displayName: '', role: 'TRADER' as 'TRADER' | 'BROKER' | 'DEVELOPER' | 'SUPER_ADMIN', phone: '', brokerId: '', tempPassword: '', commMini: '', commMega: '', openingAmount: '' });
   const sole = useSoleAdmin();
   const { me, settings } = useAuth();
   const asBroker = me?.role === 'BROKER';
@@ -115,7 +115,7 @@ export function CreateUserSheet({ brokers, onClose, onDone }: { brokers: { id: s
   return (
     <Sheet visible title={asBroker ? 'Add trader' : 'New account'} sub={needsPayment ? `Step ${step + 1} of 3 · ${['Account details', 'Super Admin receiving account', 'Payment reference and proof'][step]}` : sole ? 'It can sign in straight away.' : 'It can sign in after a Super Admin approves it.'} onClose={onClose}>
       {step === 0 && <>
-      {!asBroker && <Chips value={f.role} onChange={(role) => setF({ ...f, role })} items={[{ k: 'TRADER', label: 'Trader' }, { k: 'BROKER', label: 'Broker' }, { k: 'DEVELOPER', label: 'Developer' }]} />}
+      {!asBroker && <Chips value={f.role} onChange={(role) => setF({ ...f, role })} items={[{ k: 'TRADER', label: 'Trader' }, { k: 'BROKER', label: 'Broker' }, { k: 'DEVELOPER', label: 'Developer' }, ...(me?.role === 'DEVELOPER' ? [{ k: 'SUPER_ADMIN' as const, label: 'Super Admin' }] : [])]} />}
       <Field label="Full name" value={f.displayName} maxLength={120} onChangeText={(v) => setF({ ...f, displayName: v })} error={e('displayName')} />
       <Field label="Username" autoCapitalize="none" autoCorrect={false} value={f.username} onChangeText={(v) => setF({ ...f, username: v.toLowerCase() })} error={e('username')} />
       <Field label="Mobile number" keyboardType="phone-pad" maxLength={10} value={f.phone} onChangeText={(v) => setF({ ...f, phone: v.replace(/\D/g, '') })} error={e('phone')} />

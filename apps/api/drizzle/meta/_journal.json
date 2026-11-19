@@ -281,6 +281,13 @@
       "when": 1795000000002,
       "tag": "0039_linked_mini",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1795000000003,
+      "tag": "0040_multiple_super_admins",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,7 @@ import { useMutation, useQuery } from '@/lib/hooks';
 import { Icon } from './icons';
 import { PositionTradeDialog } from './OrderPanel';
 import { ScriptName } from './ScriptName';
+import { ModifyOrderDialog } from './ModifyOrder';
 import { Private, usePrefs } from '@/lib/prefs';
 import { Change, Confirm, Dialog, Empty, ErrorState, Mark, Metrics, SkeletonRows, Status, useToast } from './ui';
 import { EVIDENCE_FIELDS, newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, ReceivingAccountPicker, PaymentEvidenceDetails, type PaymentEvidence } from './payment-details';
@@ -918,14 +919,22 @@ export function Movers() {
 
 /* ======================================================================= orders */
 export const ORDER_TYPE: Record<string, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP_LOSS: 'Stop-loss', TAKE_PROFIT: 'Take-profit' };
-export interface Order { id: string; side: 'BUY' | 'SELL'; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string; category?: string } }
-export const ORDER_FIELDS = 'id side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt filledAt instrument{ symbol name expiry exchange category }';
+export interface Order { id: string; instrumentId?: string; side: 'BUY' | 'SELL'; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; filledAt?: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string; category?: string } }
+export const ORDER_FIELDS = 'id instrumentId side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt filledAt instrument{ symbol name expiry exchange category }';
 
 export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orders yet', emptyText = 'Orders you place show up here with their status.' }: { userId?: string; statuses?: string[]; canCancel?: boolean; emptyTitle?: string; emptyText?: string }) {
   const { data, loading, error, refetch } = useQuery<{ orders: Order[] }>(`query($u:ID,$s:[OrderStatus!]){ orders(userId:$u, status:$s, limit:100){ ${ORDER_FIELDS} } }`, { u: userId, s: statuses }, { pollMs: 4000 });
   const [cancel, setCancel] = useState<Order | null>(null);
+  const [modify, setModify] = useState<Order | null>(null);
   const m = useMutation(`mutation($id:ID!){ cancelOrder(orderId:$id){ id status } }`);
   const toast = useToast();
+  // A waiting limit / stop-loss order can be modified (price, lots) or cancelled; a market order can only be cancelled.
+  const actions = (o: Order) => o.status !== 'OPEN' ? null : (
+    <span className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+      {o.type !== 'MARKET' && <button className="btn btn-sm" onClick={() => setModify(o)}>Modify</button>}
+      <button className="btn btn-sm btn-danger" onClick={() => { m.setError(null); setCancel(o); }}>Cancel</button>
+    </span>
+  );
   if (loading && !data) return <SkeletonRows />;
   if (error && !data) return <ErrorState error={error} retry={refetch} />;
   if (!data!.orders.length) return <Empty icon="list" title={emptyTitle}>{emptyText}</Empty>;
@@ -942,7 +951,7 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
           <div className="quote-cell" style={{ gap: 4 }}>
             <span className="num w6">₹{inr(o.fillPrice ?? o.limitPrice ?? o.triggerPrice)}</span>
             <Status value={o.status} />
-            {canCancel && o.status === 'OPEN' && <button className="btn btn-sm btn-danger" onClick={() => { m.setError(null); setCancel(o); }}>Cancel</button>}
+            {canCancel && actions(o)}
           </div>
         </div>
       ))}
@@ -965,17 +974,18 @@ export function OrdersTable({ userId, statuses, canCancel, emptyTitle = 'No orde
                 {o.rejectReason && <span className="sub neg" style={{ display: 'block' }}>{o.rejectReason}</span>}
               </td>
               <td className="num t2 sm hide-sm">{when(o.createdAt)}</td>
-              {canCancel && <td className="r">{o.status === 'OPEN' && <button className="btn btn-sm btn-danger" onClick={() => { m.setError(null); setCancel(o); }}>Cancel</button>}</td>}
+              {canCancel && <td className="r">{actions(o)}</td>}
             </tr>
           ))}
         </tbody>
       </table>
-      {cancel && (
-        <Confirm title="Cancel this order?" lines={[['Instrument', scriptTitle(cancel.instrument)], ['Side', cancel.side === 'BUY' ? 'Buy' : 'Sell'], ['Quantity', cancel.quantity], [cancel.triggerPrice ? 'Trigger' : 'Limit price', `₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}`]]}
-          confirmLabel="Cancel order" tone="danger" pending={m.pending} error={m.error} onClose={() => setCancel(null)}
-          onConfirm={async () => { if (await m.run({ id: cancel.id })) { toast('Order cancelled'); setCancel(null); void refetch(); } }} />
-      )}
     </div>
+    {cancel && (
+      <Confirm title="Cancel this order?" lines={[['Instrument', scriptTitle(cancel.instrument)], ['Side', cancel.side === 'BUY' ? 'Buy' : 'Sell'], ['Quantity', cancel.quantity], [cancel.triggerPrice ? 'Trigger' : 'Limit price', `₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}`]]}
+        confirmLabel="Cancel order" tone="danger" pending={m.pending} error={m.error} onClose={() => setCancel(null)}
+        onConfirm={async () => { if (await m.run({ id: cancel.id })) { toast('Order cancelled'); setCancel(null); void refetch(); } }} />
+    )}
+    {modify && <ModifyOrderDialog o={modify} onClose={() => setModify(null)} onDone={() => { setModify(null); void refetch(); }} />}
     </>
   );
 }

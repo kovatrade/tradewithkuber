@@ -90,7 +90,8 @@ export class UsersService {
     if (!isPlatformAdmin(actor.role) && actor.role !== 'BROKER') throw forbidden();
     const username = input.username.trim().toLowerCase();
     if (!USERNAME_RE.test(username)) throw badInput('Username: 4–40 characters, starting with a letter; letters, digits and _ . - @ # only.');
-    if (input.role === 'SUPER_ADMIN') throw forbidden('Super Admin accounts are provisioned by operations, not via the API.');
+    // Only a Developer can create a Super Admin (it still needs approval like any new account).
+    if (input.role === 'SUPER_ADMIN' && actor.role !== 'DEVELOPER') throw forbidden('Only a Developer can create Super Admin accounts.');
     if (actor.role === 'BROKER' && input.role !== 'TRADER') throw forbidden('Brokers can only create trader accounts.');
     if (!input.phone?.trim()) throw badInput('Mobile number is required when creating an account.');
     if (actor.role === 'BROKER' && !input.payment) throw badInput('Enter the trader’s payment details before sending the account for approval.');
@@ -188,7 +189,8 @@ export class UsersService {
     return this.dbs.serializable(async (tx) => {
       const [u] = await tx.select().from(users).where(eq(users.id, userId)).for('update');
       if (!u) throw notFound('Account');
-      if (u.role === 'SUPER_ADMIN') throw forbidden('Super Admin status is managed by operations.');
+      // Several Super Admins can exist; only a Developer can suspend or re-enable one.
+      if (u.role === 'SUPER_ADMIN' && actor.role !== 'DEVELOPER') throw forbidden('Only a Developer can change a Super Admin account.');
       if (!isPlatformAdmin(actor.role) && !(actor.role === 'BROKER' && u.role === 'TRADER' && u.brokerId === actor.userId && u.resetDisabledAt && status === 'ACTIVE')) throw forbidden('Only the assigned broker can re-enable a reset-disabled trader.');
       if (u.status === 'PENDING' || u.status === 'REJECTED') throw badInput('Only approved accounts can be enabled or disabled.');
       const [r] = await tx.update(users).set({ status, updatedAt: new Date(), ...(status === 'ACTIVE' && u.resetDisabledAt ? { resetDisabledAt: null, dataSince: sql`now()`, riskState: 'OK' } : {}) }).where(eq(users.id, userId)).returning();
@@ -223,7 +225,7 @@ export class UsersService {
   async adminResetPassword(actor: Actor, userId: string, tempPassword: string, ip: string) {
     const [u] = await this.dbs.db.select().from(users).where(eq(users.id, userId));
     if (!u) throw notFound('Account');
-    if (u.role === 'SUPER_ADMIN') throw forbidden('Super Admin credentials are reset by operations.');
+    if (u.role === 'SUPER_ADMIN' && actor.role !== 'DEVELOPER') throw forbidden('Only a Developer can reset a Super Admin password.');
     this.passwords.assertStrong(tempPassword, u.username);
     const hash = await this.passwords.hash(tempPassword);
     await this.dbs.db.transaction(async (tx) => {

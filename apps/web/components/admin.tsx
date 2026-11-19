@@ -144,7 +144,9 @@ export function useUserActions(onDone: () => void) {
 }
 
 export function UserActionButtons({ u, open }: { u: UserRow; open: (k: Kind, u: UserRow) => void }) {
-  if (u.role === 'SUPER_ADMIN') return <span className="t3">Managed by operations</span>;
+  const { me } = useAuth();
+  // Super Admin accounts are changed only by a Developer (who creates them).
+  if (u.role === 'SUPER_ADMIN' && me?.role !== 'DEVELOPER') return <span className="t3">Managed by a Developer</span>;
   const more: RowMenuItem[] = [
     ...(u.role === 'TRADER' ? [{ label: 'Change broker', icon: 'swap' as const, onClick: () => open('assign', u) }] : []),
     ...(u.role === 'BROKER' ? [{ label: 'Change commission', icon: 'percent' as const, onClick: () => open('commission', u) }] : []),

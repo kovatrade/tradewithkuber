@@ -19,6 +19,7 @@ import { newPaymentDraft, paymentError, paymentInput, PaymentReferenceFields, Re
 import { QuickTradeSheet } from './quick-trade';
 import { expiryLabel, fullName, scriptTitle } from './names';
 import { ScriptName } from './script-name';
+import { ModifyOrderSheet } from './modify-order';
 import { Icon } from './icons';
 import { CTL, inr, initials, R, S, shortSymbol, toneOfValue, useTheme, when } from './theme';
 import {
@@ -716,37 +717,26 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
 
 /* ====================================================================== orders / positions / ledger */
 const OTYPE: Record<string, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP_LOSS: 'Stop-loss', TAKE_PROFIT: 'Take-profit' };
-interface Order { id: string; side: string; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string } }
+interface Order { id: string; instrumentId?: string; side: string; type: string; quantity: number; limitPrice?: string; triggerPrice?: string; triggeredAt?: string; fillPrice?: string; status: string; venue: string; rejectReason?: string; createdAt: string; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string } }
 
 const OrderRow = memo(function OrderRow({ o, onCancel }: { o: Order; onCancel?: (o: Order) => void }) {
   return (
-    <ListRow onPress={onCancel && o.status === 'OPEN' ? () => onCancel(o) : undefined} label={onCancel && o.status === 'OPEN' ? 'Cancel this order' : undefined}
+    <ListRow onPress={onCancel && o.status === 'OPEN' ? () => onCancel(o) : undefined} label={onCancel && o.status === 'OPEN' ? 'Modify or cancel this order' : undefined}
       title={<ScriptName i={o.instrument} />}
       sub={<View style={{ gap: 2 }}><Row gap={6}><T v="xs" c={o.side === 'BUY' ? 'pos' : 'neg'} w="600">{o.side === 'BUY' ? 'Buy' : 'Sell'}</T><T v="xs">{o.quantity} qty · {OTYPE[o.type] ?? o.type}{o.triggerPrice ? ` @ ₹${inr(o.triggerPrice)}` : ''} · {when(o.createdAt)}</T></Row>{o.rejectReason ? <T v="xs" c="neg">{o.rejectReason}</T> : null}</View>}
-      right={<View style={{ alignItems: 'flex-end', gap: 4 }}><T v="num">₹{inr(o.fillPrice ?? o.limitPrice ?? o.triggerPrice)}</T><StatusBadge v={o.status} />{onCancel && o.status === 'OPEN' ? <T v="xs" c="neg" w="600">Tap to cancel</T> : null}</View>} />
+      right={<View style={{ alignItems: 'flex-end', gap: 4 }}><T v="num">₹{inr(o.fillPrice ?? o.limitPrice ?? o.triggerPrice)}</T><StatusBadge v={o.status} />{onCancel && o.status === 'OPEN' ? <T v="xs" c="brand" w="600">Tap to modify</T> : null}</View>} />
   );
 });
 
 /** Orders. With `virtual`, the list scrolls the whole screen (Screen scroll={false}) and `header` sits above it. */
 export function OrdersList({ userId, statuses, canCancel, emptyTitle = 'No orders', emptyText, virtual, header }: { userId?: string; statuses: string[]; canCancel?: boolean; emptyTitle?: string; emptyText?: string; virtual?: boolean; header?: ReactNode }) {
-  const { data, error, loading, refetch } = useQuery<{ orders: Order[] }>(`query($u:ID,$s:[OrderStatus!]){ orders(userId:$u, status:$s, limit:100){ id side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt instrument{ symbol name expiry exchange } } }`, { u: userId, s: statuses }, 4000);
+  const { data, error, loading, refetch } = useQuery<{ orders: Order[] }>(`query($u:ID,$s:[OrderStatus!]){ orders(userId:$u, status:$s, limit:100){ id instrumentId side type quantity limitPrice triggerPrice triggeredAt fillPrice status venue rejectReason createdAt instrument{ symbol name expiry exchange } } }`, { u: userId, s: statuses }, 4000);
   const [cancel, setCancel] = useState<Order | null>(null);
-  const [busy, setBusy] = useState(false);
   const onCancel = useCallback((o: Order) => setCancel(o), []);
   const list = data?.orders ?? [];
   const state = loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} /> : <Empty icon="list" title={emptyTitle}>{emptyText}</Empty>;
-  const sheet = (
-    <Sheet visible={!!cancel} title="Cancel this order?" sub={cancel ? `${cancel.side === 'BUY' ? 'Buy' : 'Sell'} ${cancel.quantity} ${scriptTitle(cancel.instrument)}${cancel.triggerPrice ? ' trigger' : ''} at ₹${inr(cancel.limitPrice ?? cancel.triggerPrice)}` : ''} onClose={() => setCancel(null)}>
-      <Row>
-        <Button block title="Keep order" onPress={() => setCancel(null)} />
-        <Button block kind="sell" title="Cancel order" busy={busy} onPress={async () => {
-          if (!cancel) return; setBusy(true);
-          try { await gql(`mutation($id:ID!){ cancelOrder(orderId:$id){ id } }`, { id: cancel.id }); toast('Order cancelled'); } catch (e) { toast((e as Error).message, true); }
-          setBusy(false); setCancel(null); void refetch();
-        }} />
-      </Row>
-    </Sheet>
-  );
+  // Tapping a waiting order opens Modify: change its price / lots, or cancel it.
+  const sheet = cancel ? <ModifyOrderSheet o={cancel} onClose={() => setCancel(null)} onDone={() => { setCancel(null); void refetch(); }} /> : null;
   const render = (o: Order) => <OrderRow o={o} onCancel={canCancel ? onCancel : undefined} />;
   if (virtual) return <><VList data={list} keyOf={(o) => o.id} header={header} empty={state} render={render} />{sheet}</>;
   return <View>{header}{!list.length ? state : list.map((o) => <OrderRow key={o.id} o={o} onCancel={canCancel ? onCancel : undefined} />)}{sheet}</View>;

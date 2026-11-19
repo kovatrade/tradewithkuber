@@ -7,12 +7,14 @@ import { Icon } from '@/components/icons';
 import { Chips, Empty, ErrorState, PageHead, Pager, SkeletonRows, Status, Tabs } from '@/components/ui';
 import { inr, when } from '@/lib/format';
 import { useQuery } from '@/lib/hooks';
+import { useAuth } from '@/lib/auth';
 
 const SIZE = 25;
 type R = '' | 'BROKER' | 'TRADER' | 'SUPER_ADMIN' | 'DEVELOPER';
 type S = '' | 'PENDING' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED' | 'REJECTED';
 
 function Users() {
+  const { me } = useAuth();
   const sp = useSearchParams();
   const [role, setRole] = useState<R>('');
   const [status, setStatus] = useState<S>((sp.get('status') as S) ?? '');
@@ -62,7 +64,8 @@ function Users() {
           </>
         )}
       </section>
-      {creating && <CreateUserDialog roles={['BROKER', 'TRADER', 'DEVELOPER']} brokers={brokers} onClose={() => setCreating(false)} onDone={refetch} />}
+      {/* A Developer can also create Super Admin accounts. */}
+      {creating && <CreateUserDialog roles={me?.role === 'DEVELOPER' ? ['BROKER', 'TRADER', 'DEVELOPER', 'SUPER_ADMIN'] : ['BROKER', 'TRADER', 'DEVELOPER']} brokers={brokers} onClose={() => setCreating(false)} onDone={refetch} />}
       {node}
     </>
   );

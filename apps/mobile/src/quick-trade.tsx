@@ -8,6 +8,7 @@
  */
 import { scriptTitle } from './names';
 import { ScriptName } from './script-name';
+import { ModifyOrderSheet } from './modify-order';
 import { router } from 'expo-router';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -254,6 +255,7 @@ export function TradeList() {
   const { data, error, loading, refetch } = useQuery<{ orders: Trade[] }>(`query($s:[OrderStatus!]){ orders(status:$s, limit:300){ ${TRADE_FIELDS} } }`, { s: ['FILLED', 'OPEN'] }, 5000);
   const [open, setOpen] = useState<Trade | null>(null);
   const [repeat, setRepeat] = useState<Trade | null>(null);
+  const [modify, setModify] = useState<Trade | null>(null);
   const all = data?.orders ?? [];
   const exchanges = useMemo(() => [...new Set(all.map((o) => o.instrument?.exchange).filter(Boolean) as string[])].sort(), [all]);
   const scripts = useMemo(() => [...new Set(all.filter((o) => !draft?.exchange || o.instrument?.exchange === draft.exchange).map((o) => shortSymbol(o.instrument?.symbol ?? '')).filter(Boolean))].sort(), [all, draft?.exchange]);
@@ -301,7 +303,8 @@ export function TradeList() {
           </Row>
         </Sheet>
       )}
-      {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} />}
+      {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} onModify={() => { setModify(open); setOpen(null); }} />}
+      {modify && <ModifyOrderSheet o={modify} onClose={() => setModify(null)} onDone={() => { setModify(null); void refetch(); }} />}
       {repeat && <QuickTradeSheet allowAdvanced instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
     </>
   );
@@ -314,6 +317,7 @@ export function TradeBook({ header }: { header?: React.ReactNode }) {
   const { data, error, loading, refetch } = useQuery<{ orders: Trade[] }>(`query($s:[OrderStatus!]){ orders(status:$s, limit:200){ ${TRADE_FIELDS} } }`, { s: BOOK[tab].s }, tab === 'pending' ? 3000 : 8000);
   const [open, setOpen] = useState<Trade | null>(null);
   const [repeat, setRepeat] = useState<Trade | null>(null);
+  const [modify, setModify] = useState<Trade | null>(null);
   const list = useMemo(() => (data?.orders ?? []).filter((o) => (!side || o.side === side) && (!q.trim() || `${o.instrument?.symbol ?? ''} ${o.instrument?.name ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()))), [data, q, side]);
   const top = (
     <View style={{ gap: S[3] }}>
@@ -328,13 +332,14 @@ export function TradeBook({ header }: { header?: React.ReactNode }) {
   return (
     <>
       <VList data={list} keyOf={(o) => o.id} header={top} empty={empty} render={(o) => <TradeRow o={o} onPress={setOpen} />} />
-      {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} />}
+      {open && <TradeDetail o={open} onClose={() => setOpen(null)} onRepeat={() => { setRepeat(open); setOpen(null); }} onCancelled={() => { setOpen(null); void refetch(); }} onModify={() => { setModify(open); setOpen(null); }} />}
+      {modify && <ModifyOrderSheet o={modify} onClose={() => setModify(null)} onDone={() => { setModify(null); void refetch(); }} />}
       {repeat && <QuickTradeSheet allowAdvanced instrumentId={repeat.instrumentId} initialSide={repeat.side} initialQty={repeat.quantity} onClose={() => { setRepeat(null); void refetch(); }} />}
     </>
   );
 }
 
-function TradeDetail({ o, onClose, onRepeat, onCancelled }: { o: Trade; onClose: () => void; onRepeat: () => void; onCancelled: () => void }) {
+function TradeDetail({ o, onClose, onRepeat, onCancelled, onModify }: { o: Trade; onClose: () => void; onRepeat: () => void; onCancelled: () => void; onModify: () => void }) {
   const [busy, setBusy] = useState(false);
   const cancel = async () => {
     setBusy(true);
@@ -359,7 +364,8 @@ function TradeDetail({ o, onClose, onRepeat, onCancelled }: { o: Trade; onClose:
   return (
     <Sheet visible title={o.instrument ? titleOf(o.instrument) : 'Order'} sub={`${o.side} ${o.quantity} · ${stamp(o.filledAt ?? o.createdAt)}`} onClose={onClose}>
       <Button block size="lg" kind="buy" title="Repeat order" onPress={onRepeat} />
-      {o.status === 'OPEN' ? <Button block kind="sell" title="Cancel order" busy={busy} onPress={() => void cancel()} /> : null}
+      {o.status === 'OPEN' && o.type !== 'MARKET' ? <Row><Button block kind="sell" title="Cancel order" busy={busy} onPress={() => void cancel()} /><Button block kind="primary" title="Modify order" onPress={onModify} /></Row>
+        : o.status === 'OPEN' ? <Button block kind="sell" title="Cancel order" busy={busy} onPress={() => void cancel()} /> : null}
       <View>
         {rows.map(([k, v], idx) => (
           <Spread key={k} style={{ paddingVertical: S[2], paddingHorizontal: S[2], backgroundColor: idx % 2 ? 'transparent' : t.bg2, borderRadius: R.sm }}>
