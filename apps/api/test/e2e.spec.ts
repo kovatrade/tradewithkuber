@@ -378,17 +378,22 @@ describe('paper trading', () => {
     await pg.query(`INSERT INTO instruments (symbol, name, exchange, segment, expiry, lot_size, lot_class, ref_price_minor)
       VALUES ('GOLD-05Feb2027-FUT', 'GOLD FEB FUT', 'MCX', 'FUT', '2027-02-05T18:00:00Z', 1, 'MEGA', 12145000)`);
     await pg.query(`UPDATE instruments SET lot_class = 'MINI' WHERE symbol = 'GOLD26NOVFUT'`);
+    // SILVER100 is a different, smaller contract that expires sooner: it must not stand in for SILVER (30 kg).
+    await pg.query(`INSERT INTO instruments (symbol, name, exchange, segment, expiry, lot_size, lot_class, ref_price_minor)
+      VALUES ('SILVER100-20Nov2026-FUT', 'SILVER100 NOV FUT', 'MCX', 'FUT', '2026-11-20T18:00:00Z', 1, 'MEGA', 14830000)`);
     try {
       const mega = (await gql(Q, { l: 'MEGA' }, { token: t.accessToken })).data.searchInstruments.map((i: { symbol: string }) => i.symbol);
       expect(mega).toContain('GOLD26NOVFUT');
       expect(mega).not.toContain('GOLD-05Feb2027-FUT');
       expect(mega).not.toContain('GOLDM26NOVFUT');
+      expect(mega).toContain('SILVER26NOVFUT');
+      expect(mega).not.toContain('SILVER100-20Nov2026-FUT');
       const mini = (await gql(Q, { l: 'MINI' }, { token: t.accessToken })).data.searchInstruments.map((i: { symbol: string }) => i.symbol);
       expect(mini).toContain('GOLDM26NOVFUT');
       expect(mini).not.toContain('GOLD26NOVFUT');
     } finally {
       await pg.query(`UPDATE instruments SET lot_class = 'MEGA' WHERE symbol = 'GOLD26NOVFUT'`);
-      await pg.query(`DELETE FROM instruments WHERE symbol = 'GOLD-05Feb2027-FUT'`);
+      await pg.query(`DELETE FROM instruments WHERE symbol IN ('GOLD-05Feb2027-FUT', 'SILVER100-20Nov2026-FUT')`);
     }
   });
 

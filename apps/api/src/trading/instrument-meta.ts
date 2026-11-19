@@ -39,7 +39,13 @@ export function categoryOf(exchange: string, segment: string, symbol?: string): 
 }
 
 /** The underlying: the leading letters of the symbol (GOLDM-05Dec2026-FUT, GOLDM26NOVFUT → GOLDM). */
-export const baseSymbol = (symbol: string) => (/^[A-Z&]+/.exec(symbol.toUpperCase())?.[0] ?? symbol.toUpperCase());
+export const baseSymbol = (symbol: string) => {
+  const u = symbol.toUpperCase();
+  // Dhan names a separate contract with digits before the dash (SILVER100-30Nov2026-FUT is not SILVER), so keep them.
+  const head = u.split('-')[0];
+  if (u.includes('-') && /^[A-Z&]+\d+$/.test(head)) return head;
+  return /^[A-Z&]+/.exec(u)?.[0] ?? u;
+};
 
 /**
  * The MCX scripts listed under "MCX" in Add script: 7 commodities, each as its full-size (Mega) and mini contract.
