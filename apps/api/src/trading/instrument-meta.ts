@@ -64,7 +64,7 @@ const MCX_ORDER = ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'LEAD', 'ZINC', 'NATU
  * Mini scripts are priced from the Mega contract (the trader's choice: one rate for both). For each listed Mega
  * contract a linked Mini row exists (symbol `<MINI>-<ddMonyyyy>-LNK`), and the real MCX mini contracts are not listed.
  */
-export const MINI_OF: Record<string, string> = { GOLD: 'GOLDM', SILVER: 'SILVERM', CRUDEOIL: 'CRUDEOILM', NATURALGAS: 'NATGASMINI', LEAD: 'LEADMINI', ZINC: 'ZINCMINI' };
+export const MINI_OF: Record<string, string> = { GOLD: 'GOLDM', SILVER: 'SILVERM', CRUDEOIL: 'CRUDEOILM', NATURALGAS: 'NATGASMINI', COPPER: 'COPPERM', LEAD: 'LEADMINI', ZINC: 'ZINCMINI' };
 export function linkedMiniSymbol(megaSymbol: string, expiry: Date): string | null {
   const mini = MINI_OF[baseSymbol(megaSymbol)];
   if (!mini) return null;
@@ -104,7 +104,7 @@ const LOT_LABEL: Record<string, string> = {
   SILVER: '30 kg', SILVERM: '5 kg', SILVERMIC: '1 kg',
   CRUDEOIL: '100 barrels', CRUDEOILM: '10 barrels',
   NATURALGAS: '1,250 mmBtu', NATGASMINI: '250 mmBtu',
-  COPPER: '2,500 kg', LEAD: '5 tonnes', ZINC: '5 tonnes',
+  COPPER: '2,500 kg', COPPERM: '250 kg', LEAD: '5 tonnes', ZINC: '5 tonnes',
   ZINCMINI: '1 tonne', LEADMINI: '1 tonne', ALUMINI: '1 tonne',
   USDINR: '1,000 USD', EURINR: '1,000 EUR', GBPINR: '1,000 GBP', JPYINR: '1,00,000 JPY',
   BTCUSD: '1 BTC', ETHUSD: '1 ETH', SOLUSD: '1 SOL',
@@ -125,7 +125,7 @@ const MCX_MULTIPLIER: Record<string, number> = {
   SILVER: 30, SILVERM: 5, SILVERMIC: 1,
   CRUDEOIL: 100, CRUDEOILM: 10,
   NATURALGAS: 1250, NATGASMINI: 250,
-  COPPER: 2500, LEAD: 5000, LEADMINI: 1000, ZINC: 5000, ZINCMINI: 1000, ALUMINIUM: 5000, ALUMINI: 1000,
+  COPPER: 2500, COPPERM: 250, LEAD: 5000, LEADMINI: 1000, ZINC: 5000, ZINCMINI: 1000, ALUMINIUM: 5000, ALUMINI: 1000,
 };
 export function priceMultiplier(exchange: string | null | undefined, symbol: string | null | undefined): number {
   if (exchange !== 'MCX' || !symbol) return 1;

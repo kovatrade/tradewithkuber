@@ -419,6 +419,24 @@ describe('paper trading', () => {
     expect(await order()).toEqual([c, g, s]);
   });
 
+  it('lists a Copper Mini (250 kg, Mega rate) next to Copper', async () => {
+    const t = await login('trader.three');
+    await pg.query(`INSERT INTO instruments (symbol, name, exchange, segment, expiry, lot_size, lot_class, ref_price_minor, tick_minor)
+      VALUES ('COPPER-24Nov2026-FUT', 'COPPER NOV FUT', 'MCX', 'COMM', '2026-11-24T10:00:00Z', 1, 'MEGA', 120000, 5)`);
+    try {
+      await app.get(MarketDataService).reload();
+      const Q = `query($l:String){ searchInstruments(query:"", category:"MCX", lotClass:$l){ symbol lotLabel multiplier } }`;
+      const mini = (await gql(Q, { l: 'MINI' }, { token: t.accessToken })).data.searchInstruments;
+      expect(mini.find((i: { symbol: string }) => i.symbol === 'COPPERM-24Nov2026-LNK')).toMatchObject({ lotLabel: '250 kg', multiplier: 250 });
+      const mega = (await gql(Q, { l: 'MEGA' }, { token: t.accessToken })).data.searchInstruments;
+      expect(mega.find((i: { symbol: string }) => i.symbol === 'COPPER-24Nov2026-FUT')).toMatchObject({ multiplier: 2500 });
+    } finally {
+      await pg.query(`DELETE FROM instruments WHERE symbol = 'COPPERM-24Nov2026-LNK'`);
+      await pg.query(`DELETE FROM instruments WHERE symbol = 'COPPER-24Nov2026-FUT'`);
+      await app.get(MarketDataService).reload();
+    }
+  });
+
   it('lists the nearest MCX contract under Mega and Mini, whatever lot class a row was saved with', async () => {
     const t = await login('trader.two');
     const Q = `query($l:String){ searchInstruments(query:"", category:"MCX", lotClass:$l){ symbol lotClass } }`;
