@@ -150,7 +150,8 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
         q.lowMinor = ltpMinor;
       }
 
-      if (tick.lastTradeAt && tick.lastTradeAt.getUTCFullYear() >= 2000) q.lastTradeAt = tick.lastTradeAt;
+      // Never keep a trade time from the future: it would make every later REST price look older than this one.
+      if (tick.lastTradeAt && tick.lastTradeAt.getUTCFullYear() >= 2000 && tick.lastTradeAt.getTime() <= Date.now() + 300_000) q.lastTradeAt = tick.lastTradeAt;
       q.ts = tick.timestamp;
       q.source = 'DHAN';
 

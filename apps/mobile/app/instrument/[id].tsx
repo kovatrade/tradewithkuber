@@ -18,7 +18,6 @@ interface I { id: string; symbol: string; name: string; exchange: string; segmen
 
 /** Groww-style stock screen: price, live chart, performance, details, sticky Buy/Sell bar. */
 export default function StockScreen() {
-  const demo = useAuth().me?.isDemo === true;
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { id, side: s0, qty: q0, view, from } = useLocalSearchParams<{ id: string; side?: string; qty?: string; view?: string; from?: string }>();
@@ -45,7 +44,7 @@ export default function StockScreen() {
   const lowVal = q?.low;
   const rules = useQuery<{ tradingRules: { minQty: number; maxQtyPerOrder: number; maxQtyPerInstrument: number; sessions: { exchange: string; open: string; close: string; isOpen: boolean; message?: string }[] } }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument sessions { exchange open close isOpen message } } }`, undefined, 15000);
   const rl = rules.data?.tradingRules;
-  const margin = useQuery<{ orderPreview: { intradayMargin: string; brokerage: string }; sell: { brokerage: string } }>(`query($i:ID!){ orderPreview(instrumentId:$i, side:BUY, quantity:1){ intradayMargin brokerage } sell: orderPreview(instrumentId:$i, side:SELL, quantity:1){ brokerage } }`, { i: id }, 15000);
+  const margin = useQuery<{ orderPreview: { intradayMargin: string; carryForwardMargin: string; brokerage: string }; sell: { brokerage: string } }>(`query($i:ID!){ orderPreview(instrumentId:$i, side:BUY, quantity:1){ intradayMargin carryForwardMargin brokerage } sell: orderPreview(instrumentId:$i, side:SELL, quantity:1){ brokerage } }`, { i: id }, 15000);
   const allowTrade = i && rl ? (rl.sessions.find((x) => x.exchange === i.exchange)?.isOpen ?? true) : undefined;
   const dash = (v?: string | number | null) => (v === undefined || v === null || v === '' ? '—' : String(v));
 
@@ -170,22 +169,21 @@ export default function StockScreen() {
 
       {tab === 'Market Details' && (
         <Section title="Market Details">
+          {/* Only what a trader needs to place an order: no feed or system details. */}
           <Lines lines={[
-            ['Script', i?.name.replace(/ — .*/, '') ?? '—'],
-            ['Expiry', i?.expiry ? new Date(i.expiry).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' }) : '—'],
+            ['Script', i ? scriptTitle(i) : '—'],
+            ['Expiry', i?.expiry ? new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—'],
             ['Lot size', i ? (i.lotLabel ?? String(i.lotSize)) : '—'],
+            ['Lot type', i ? (i.lotClass === 'MEGA' ? 'Mega' : 'Mini') : '—'],
+            ['Trade margin (1 lot)', margin.data ? `₹${inr(margin.data.orderPreview.intradayMargin)}` : '—'],
+            ['Carry forward margin (1 lot)', margin.data ? `₹${inr(margin.data.orderPreview.carryForwardMargin)}` : '—'],
             ['BRK Buy (1 lot)', margin.data ? `₹${inr(margin.data.orderPreview.brokerage)}` : '—'],
             ['BRK Sell (1 lot)', margin.data ? `₹${inr(margin.data.sell.brokerage)}` : '—'],
-            ['Trade margin (1 lot)', margin.data ? `₹${inr(margin.data.orderPreview.intradayMargin)}` : '—'],
-            ['Allow trade', allowTrade === undefined ? '—' : allowTrade ? 'Yes' : 'No (market closed)'],
-            ['Max lots (open)', dash(rl?.maxQtyPerInstrument)],
+            ['Min lots per order', dash(rl?.minQty)],
             ['Max lots per order', dash(rl?.maxQtyPerOrder)],
-            ['Min lots', dash(rl?.minQty)],
-            ['Lot step', '1'],
+            ['Max open lots', dash(rl?.maxQtyPerInstrument)],
             ['Tick size', i ? `₹${i.tickSize}` : '—'],
-            ['Exchange', `${i?.exchange} · ${i?.segment}`],
-            ['Lot type', i?.lotClass === 'MEGA' ? 'Mega lot' : 'Mini lot'],
-            ['Price source', q?.source === 'SIMULATED' ? (demo ? 'Simulated feed' : 'Practice feed') : q?.source ?? '—'],
+            ...(allowTrade === false ? [['Trading', 'Market closed'] as [string, string]] : []),
           ]} />
           <T v="xs" c="text2">BRK is charged per lot on each buy and sell fill.</T>
         </Section>

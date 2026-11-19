@@ -21,6 +21,17 @@ export interface DhanTick {
   lastTradeAt?: Date;
 }
 
+/**
+ * Dhan's live feed sends the last trade time as epoch seconds of the *IST wall clock* (13:28 IST arrives as
+ * 13:28 UTC). Read as UTC it lands 5½ hours in the future, which showed times like 18:58 at 13:28 and made every
+ * later REST price look older than the stuck stream price. Shift it back to real UTC; drop anything still ahead.
+ */
+export function dhanFeedTime(epochSeconds: number, now = Date.now()): Date | undefined {
+  if (!epochSeconds) return undefined;
+  const d = new Date((epochSeconds - 19_800) * 1000);
+  return d.getUTCFullYear() >= 2000 && d.getTime() <= now + 300_000 ? d : undefined;
+}
+
 export const DHAN_SEGMENT_MAP: Record<number, string> = {
   0: 'IDX_I',
   1: 'NSE_EQ',
@@ -217,7 +228,7 @@ export class DhanFeedService implements OnModuleDestroy {
           segmentCode,
           ltp,
           timestamp: new Date(),
-          lastTradeAt: new Date(buf.readUInt32LE(12) * 1000),
+          lastTradeAt: dhanFeedTime(buf.readUInt32LE(12)),
         };
         if (Number.isFinite(ltp) && ltp > 0) {this.lastTickAt = tick.timestamp.toISOString();this.feedError = undefined;}
         this.tickListener?.(tick);
@@ -263,7 +274,7 @@ export class DhanFeedService implements OnModuleDestroy {
           bid: responseCode === 8 ? buf.readFloatLE(74) : undefined,
           ask: responseCode === 8 ? buf.readFloatLE(78) : undefined,
           timestamp: new Date(),
-          lastTradeAt: new Date(buf.readUInt32LE(14) * 1000),
+          lastTradeAt: dhanFeedTime(buf.readUInt32LE(14)),
         };
         if (Number.isFinite(ltp) && ltp > 0) {this.lastTickAt = tick.timestamp.toISOString();this.feedError = undefined;}
         this.tickListener?.(tick);

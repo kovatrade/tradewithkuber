@@ -1,5 +1,4 @@
 'use client';
-import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
@@ -7,7 +6,7 @@ import { CandleChart } from '@/components/CandleChart';
 import { Icon } from '@/components/icons';
 import { QUOTE_FIELDS, useLiveQuotes, type Instrument } from '@/components/trading';
 import { Change, ErrorState, Mark, SkeletonRows } from '@/components/ui';
-import { fullName, inr, ohlcTone, curSign } from '@/lib/format';
+import { fullName, inr, ohlcTone, curSign, scriptTitle } from '@/lib/format';
 import { useQuery } from '@/lib/hooks';
 import { usePrefs } from '@/lib/prefs';
 import { OrderPanel } from '@/components/OrderPanel';
@@ -16,7 +15,6 @@ import { ScriptName } from '@/components/ScriptName';
 type Side = 'BUY' | 'SELL';
 
 function StockPage() {
-  const demo = useAuth().me?.isDemo === true;
   const { id } = useParams<{ id: string }>();
   const sp = useSearchParams();
   const inst = useQuery<{ instrument: Instrument }>(`query($id:ID!){ instrument(id:$id){ id symbol name exchange segment expiry lotSize tickSize lotClass lotLabel category quote{ ${QUOTE_FIELDS} } } }`, { id });
@@ -26,8 +24,8 @@ function StockPage() {
   // Focus mode hides the order panel so the chart can use the full width. Remembered in this browser.
   const [focus, setFocusState] = useState(false);
   const [tab, setTab] = useState<'chart' | 'depth' | 'details'>('chart');
-  const details = useQuery<{ buy: { brokerage: string; intradayMargin: string }; sell: { brokerage: string } }>(
-    `query($i:ID!){ buy:orderPreview(instrumentId:$i,side:BUY,quantity:1){ brokerage intradayMargin } sell:orderPreview(instrumentId:$i,side:SELL,quantity:1){ brokerage } }`,
+  const details = useQuery<{ buy: { brokerage: string; intradayMargin: string; carryForwardMargin: string }; sell: { brokerage: string }; tradingRules: { minQty: number; maxQtyPerOrder: number; maxQtyPerInstrument: number; sessions: { exchange: string; isOpen: boolean }[] } }>(
+    `query($i:ID!){ buy:orderPreview(instrumentId:$i,side:BUY,quantity:1){ brokerage intradayMargin carryForwardMargin } sell:orderPreview(instrumentId:$i,side:SELL,quantity:1){ brokerage } tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument sessions { exchange isOpen } } }`,
     { i: id }, { skip: tab !== 'details', pollMs: 15000 });
   // The candle chart loads only when the trader asks for it (Show chart), not on every page open.
   const [chartOn, setChartOn] = useState(false);
@@ -182,24 +180,28 @@ function StockPage() {
           {tab === 'details' && (
             /* Market Details Tab (Screenshot 1) */
             <div className="market-details-card">
-              <div className="details-row"><span className="k">Script</span><span className="v">{fullName(i)}</span></div>
-              <div className="details-row zebra"><span className="k">Expiry</span><span className="v">{i.expiry ? `${new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} 12:00:00 AM` : '—'}</span></div>
-              <div className="details-row"><span className="k">Lotsize</span><span className="v">{i.lotSize}</span></div>
-              <div className="details-row zebra"><span className="k">Trade margin (1 lot)</span><span className="v">{details.data ? `₹${inr(details.data.buy.intradayMargin)}` : '—'}</span></div>
-              <div className="details-row"><span className="k">BRK Buy (1 lot)</span><span className="v">{details.data ? `₹${inr(details.data.buy.brokerage)}` : '—'}</span></div>
-              <div className="details-row zebra"><span className="k">BRK Sell (1 lot)</span><span className="v">{details.data ? `₹${inr(details.data.sell.brokerage)}` : '—'}</span></div>
+              {/* Only what a trader needs to place an order: no feed or system details. */}
+              {(() => {
+                const d = details.data, r = d?.tradingRules, money = (v?: string) => (v ? `₹${inr(v)}` : '—');
+                const closed = r?.sessions.find((x) => x.exchange === i.exchange)?.isOpen === false;
+                const rows: [string, string][] = [
+                  ['Script', scriptTitle(i)],
+                  ['Expiry', i.expiry ? new Date(i.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—'],
+                  ['Lot size', i.lotLabel ?? String(i.lotSize)],
+                  ['Lot type', i.lotClass === 'MEGA' ? 'Mega' : 'Mini'],
+                  ['Trade margin (1 lot)', money(d?.buy.intradayMargin)],
+                  ['Carry forward margin (1 lot)', money(d?.buy.carryForwardMargin)],
+                  ['BRK Buy (1 lot)', money(d?.buy.brokerage)],
+                  ['BRK Sell (1 lot)', money(d?.sell.brokerage)],
+                  ['Min lots per order', r ? String(r.minQty) : '—'],
+                  ['Max lots per order', r ? String(r.maxQtyPerOrder) : '—'],
+                  ['Max open lots', r ? String(r.maxQtyPerInstrument) : '—'],
+                  ['Tick size', `${curSign(i)}${i.tickSize}`],
+                  ...(closed ? [['Trading', 'Market closed'] as [string, string]] : []),
+                ];
+                return rows.map(([k, v], n) => <div key={k} className={`details-row${n % 2 ? ' zebra' : ''}`}><span className="k">{k}</span><span className="v">{v}</span></div>);
+              })()}
               <p className="t3 sm">BRK is charged per lot on each buy and sell fill.</p>
-              <div className="details-row"><span className="k">Allow Trade</span><span className="v" style={{ color: 'var(--pos)' }}>Yes</span></div>
-              <div className="details-row zebra"><span className="k">Max Qty</span><span className="v">500</span></div>
-              <div className="details-row"><span className="k">Breakup Qty</span><span className="v">200</span></div>
-              <div className="details-row zebra"><span className="k">Max Lot</span><span className="v">10</span></div>
-              <div className="details-row"><span className="k">BreakUp Lot</span><span className="v">5</span></div>
-              <div className="details-row zebra"><span className="k">Min. Volume</span><span className="v">1.0</span></div>
-              <div className="details-row"><span className="k">Volume Step</span><span className="v">1.0</span></div>
-              <div className="details-row zebra"><span className="k">Tick Size</span><span className="v">{curSign(i)}{i.tickSize}</span></div>
-              <div className="details-row"><span className="k">Exchange</span><span className="v">{i.exchange} · {i.segment}</span></div>
-              <div className="details-row zebra"><span className="k">Lot Type</span><span className="v">{i.lotClass === 'MEGA' ? 'Mega lot' : 'Mini lot'}</span></div>
-              <div className="details-row"><span className="k">Price Source</span><span className="v">{q?.source === 'SIMULATED' ? (demo ? 'Simulated feed' : 'Practice feed') : q?.source ?? '—'}</span></div>
             </div>
           )}
         </section>

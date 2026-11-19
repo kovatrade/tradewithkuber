@@ -179,12 +179,20 @@ export function SwipeRow({ children, action, actionLabel }: { children: ReactNod
   const W = 96;
   const x = useRef(new Animated.Value(0)).current;
   const open = useRef(false);
-  const settle = (to: number) => { open.current = to !== 0; Animated.spring(x, { toValue: to, useNativeDriver: true, bounciness: 0, speed: 18 }).start(); };
+  // Re-render when it opens or closes, so the row underneath can be shielded while Remove is showing.
+  const [isOpen, setIsOpen] = useState(false);
+  const swipedAt = useRef(0);
+  const [swiping, setSwiping] = useState(false);
+  const settle = (to: number) => { open.current = to !== 0; setIsOpen(to !== 0); Animated.spring(x, { toValue: to, useNativeDriver: true, bounciness: 0, speed: 18 }).start(); };
   const pan = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
-    onPanResponderMove: (_e, g) => x.setValue(Math.max(-W * 1.3, Math.min(0, (open.current ? -W : 0) + g.dx))),
-    onPanResponderRelease: (_e, g) => { const cur = (open.current ? -W : 0) + g.dx; if (cur < -W / 2 || g.vx < -0.5) { settle(-W); tap('select'); } else settle(0); },
-    onPanResponderTerminate: () => settle(open.current ? -W : 0),
+    // Claim a sideways swipe before the row's own button does, so lifting the finger cannot also press the row.
+    onMoveShouldSetPanResponderCapture: (_e, g) => Math.abs(g.dx) > 10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.6,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => setSwiping(true),
+    onPanResponderMove: (_e, g) => { swipedAt.current = Date.now(); x.setValue(Math.max(-W * 1.3, Math.min(0, (open.current ? -W : 0) + g.dx))); },
+    onPanResponderRelease: (_e, g) => { swipedAt.current = Date.now(); setTimeout(() => setSwiping(false), 400); const cur = (open.current ? -W : 0) + g.dx; if (cur < -W / 2 || g.vx < -0.5) { settle(-W); tap('select'); } else settle(0); },
+    onPanResponderTerminate: () => { setSwiping(false); settle(open.current ? -W : 0); },
   }), [x]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <View style={{ overflow: 'hidden' }}>
@@ -192,8 +200,13 @@ export function SwipeRow({ children, action, actionLabel }: { children: ReactNod
         style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: W, backgroundColor: t.neg, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ color: '#fff', fontWeight: '600' }}>{actionLabel}</Text>
       </Pressable>
-      <Animated.View style={{ transform: [{ translateX: x }], backgroundColor: t.bg }} {...pan.panHandlers} onTouchEnd={() => { if (open.current) settle(0); }}>
+      {/* Stays open until Remove is pressed, the row is tapped (closes it) or swiped back. The finger lifting at the
+          end of the swipe itself no longer closes it straight away. */}
+      <Animated.View style={{ transform: [{ translateX: x }], backgroundColor: t.bg }} {...pan.panHandlers}>
         {children}
+        {/* While swiping, and while Remove shows, a cover over the row takes the touch: lifting the finger at the end
+            of a swipe cannot press the row (open the trade sheet), and a later tap just closes Remove. */}
+        {(isOpen || swiping) && <Pressable onPress={() => { if (Date.now() - swipedAt.current > 400) settle(0); }} accessibilityRole="button" accessibilityLabel="Close" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }} />}
       </Animated.View>
     </View>
   );

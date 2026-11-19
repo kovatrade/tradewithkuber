@@ -5,6 +5,15 @@ import { DhanFeedService } from '../src/market/dhan-feed.service';
 import WebSocket from 'ws';
 
 describe('Dhan binary packet decoding', () => {
+  it('reads the feed trade time as IST wall clock, so 13:28 IST shows as 13:28 and never in the future', async () => {
+    const { dhanFeedTime } = await import('../src/market/dhan-feed.service');
+    const real = Date.UTC(2026, 10, 19, 7, 58, 12); // 13:28:12 IST
+    const sent = Math.floor(real / 1000) + 19800;    // what Dhan sends: 13:28:12 written as if it were UTC
+    expect(dhanFeedTime(sent, real + 1000)?.getTime()).toBe(real);
+    expect(new Date(dhanFeedTime(sent, real + 1000)!).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })).toBe('13:28:12');
+    expect(dhanFeedTime(sent + 3600, real)).toBeUndefined(); // an hour ahead of now: dropped
+    expect(dhanFeedTime(0)).toBeUndefined();
+  });
   it.each([DhanFeedService, DhanGlobalFeedService])('safely cancels a connecting %p socket during reconnect', async (Feed) => {
     const feed = new Feed();
     const socket = new WebSocket('ws://127.0.0.1:1');
@@ -34,7 +43,8 @@ describe('Dhan binary packet decoding', () => {
     b.writeUInt32LE(999999,34); // OI, not the open price
     for(const [offset,value] of [[46,98],[50,97],[54,102],[58,96],[74,100.4],[78,100.6]]) b.writeFloatLE(value,offset);
     (feed as any).parseBinaryMessage(b);
-    expect(received).toHaveBeenCalledWith(expect.objectContaining({ ltp:100.5,open:98,close:97,high:102,low:96,volume:777,lastTradeAt:new Date(1794476000000) }));
+    // Dhan's time is IST wall-clock epoch: 5h30m is taken off to get the real instant.
+    expect(received).toHaveBeenCalledWith(expect.objectContaining({ ltp:100.5,open:98,close:97,high:102,low:96,volume:777,lastTradeAt:new Date((1794476000 - 19800) * 1000) }));
     expect(received.mock.calls[0][0].bid).toBeCloseTo(100.4,3);
     expect(received.mock.calls[0][0].ask).toBeCloseTo(100.6,3);
     expect(feed.status().lastTickAt).toBeDefined();
