@@ -10,7 +10,7 @@ import { env } from '../config/env';
 import { DhanFeedService, DHAN_SEGMENT_MAP } from './dhan-feed.service';
 import { DhanGlobalFeedService } from './dhan-global-feed.service';
 import { CandleStore, type Bar, type CandleInterval } from './candles';
-import { baseSymbol, defaultLotLabel, linkedMiniSymbol } from '../trading/instrument-meta';
+import { baseSymbol, defaultLotClass, defaultLotLabel, linkedMiniSymbol, MCX_LISTED } from '../trading/instrument-meta';
 
 export interface Quote {
   instrumentId: string;
@@ -241,6 +241,8 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
   /** Load instrument metadata; candle history exists only in this process. */
   async reload() {
     let rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
+    const fixed = await this.fixMcxLots(rows).catch((e) => { this.log.warn(`Could not correct MCX lot details: ${(e as Error).message}`); return false; });
+    if (fixed) rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
     const linkedChanged = await this.syncLinkedMinis(rows).catch((e) => { this.log.warn(`Could not update linked Mini scripts: ${(e as Error).message}`); return false; });
     if (linkedChanged) rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
     await this.moveWatchlistsToLinkedMinis(rows).catch((e) => this.log.warn(`Could not move watchlists to linked Mini scripts: ${(e as Error).message}`));
@@ -361,6 +363,24 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     const orphans = rows.filter((r) => r.priceSourceId && !active.has(r.priceSourceId)).map((r) => r.id);
     if (orphans.length) {
       await this.dbs.db.update(instruments).set({ active: false }).where(inArray(instruments.id, orphans));
+      changed = true;
+    }
+    return changed;
+  }
+
+  /**
+   * The 7 MCX scripts carry their exchange lot: Mega or Mini by contract (COPPER = Mega, 2,500 kg; COPPERM = Mini,
+   * 250 kg) and its size. Rows saved earlier with another lot type or size (COPPER as "Mini · 250 kg") are corrected,
+   * since lot type also sets margin and brokerage. Returns true when anything changed.
+   */
+  private async fixMcxLots(rows: InstrumentRow[]): Promise<boolean> {
+    let changed = false;
+    for (const r of rows) {
+      if (r.exchange !== 'MCX' || !MCX_LISTED[baseSymbol(r.symbol)]) continue;
+      const lotClass = defaultLotClass('MCX', r.symbol), lotLabel = defaultLotLabel(r.symbol) ?? r.lotLabel;
+      if (r.lotClass === lotClass && r.lotLabel === lotLabel) continue;
+      await this.dbs.db.update(instruments).set({ lotClass, lotLabel }).where(eq(instruments.id, r.id));
+      this.log.log(`MCX lot corrected: ${r.symbol} ${r.lotClass}/${r.lotLabel ?? '-'} -> ${lotClass}/${lotLabel ?? '-'}`);
       changed = true;
     }
     return changed;
