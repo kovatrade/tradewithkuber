@@ -402,6 +402,23 @@ describe('paper trading', () => {
     expect(syms).not.toContain('SILVERM26NOVFUT');
   });
 
+  it('saves a dragged watchlist order and refuses an order that does not match the list', async () => {
+    const t = await login('trader.three');
+    const id = async (sym: string) => (await pg.query(`SELECT id FROM instruments WHERE symbol = $1`, [sym])).rows[0].id as string;
+    const ADD = `mutation($l:Int!,$i:ID!){ addToWatchlist(listIndex:$l, instrumentId:$i) }`;
+    const [g, s, c] = [await id('GOLD26NOVFUT'), await id('SILVER26NOVFUT'), await id('CRUDEOIL26NOVFUT')];
+    for (const i of [g, s, c]) await gql(ADD, { l: 2, i }, { token: t.accessToken });
+    const W = `query{ watchlist(listIndex:2){ instrument{ id } } }`;
+    const order = async () => (await gql(W, {}, { token: t.accessToken })).data.watchlist.map((w: { instrument: { id: string } }) => w.instrument.id);
+    expect(await order()).toEqual([g, s, c]);
+    const R = `mutation($l:Int!,$ids:[ID!]!){ reorderWatchlist(listIndex:$l, instrumentIds:$ids) }`;
+    expect((await gql(R, { l: 2, ids: [c, g, s] }, { token: t.accessToken })).data.reorderWatchlist).toBe(true);
+    expect(await order()).toEqual([c, g, s]);
+    expect(code(await gql(R, { l: 2, ids: [c, g] }, { token: t.accessToken }))).toBe('BAD_USER_INPUT'); // one missing
+    expect(code(await gql(R, { l: 2, ids: [c, g, await id('ABB26NOVFUT')] }, { token: t.accessToken }))).toBe('BAD_USER_INPUT'); // not in this list
+    expect(await order()).toEqual([c, g, s]);
+  });
+
   it('lists the nearest MCX contract under Mega and Mini, whatever lot class a row was saved with', async () => {
     const t = await login('trader.two');
     const Q = `query($l:String){ searchInstruments(query:"", category:"MCX", lotClass:$l){ symbol lotClass } }`;

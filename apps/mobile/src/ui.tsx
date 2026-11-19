@@ -151,7 +151,7 @@ export const tap = (kind: 'light' | 'select' | 'heavy' = 'light') => {
  * Virtualised list that scrolls the whole screen (use inside <Screen scroll={false}>): only rows near the
  * viewport are mounted. `header` sits above the rows; pull-to-refresh comes from the screen.
  */
-export function VList<T>({ data, render, keyOf, header, empty, footer }: { data: T[]; render: (item: T, index: number) => ReactElement; keyOf: (item: T) => string; header?: ReactNode; empty?: ReactElement | null; footer?: ReactElement | null }) {
+export function VList<T>({ data, render, keyOf, header, empty, footer, scrollEnabled = true }: { data: T[]; render: (item: T, index: number) => ReactElement; keyOf: (item: T) => string; header?: ReactNode; empty?: ReactElement | null; footer?: ReactElement | null; scrollEnabled?: boolean }) {
   const control = useRefreshControl();
   return (
     <FlatList
@@ -164,6 +164,7 @@ export function VList<T>({ data, render, keyOf, header, empty, footer }: { data:
       contentContainerStyle={{ paddingHorizontal: S[4], paddingTop: S[4], paddingBottom: S[8] }}
       refreshControl={control}
       keyboardShouldPersistTaps="handled"
+      scrollEnabled={scrollEnabled}
       initialNumToRender={12}
       maxToRenderPerBatch={10}
       windowSize={7}
@@ -215,7 +216,7 @@ export function PriceBox({ value, high, low, bg, border, style, children }: { va
     setUp(move.up); setBlinking(true);
     o.stopAnimation(); o.setValue(1);
     // Hold the solid colour so the move is easy to see, then fade back.
-    Animated.sequence([Animated.delay(650), Animated.timing(o, { toValue: 0, duration: 250, useNativeDriver: false })]).start(({ finished }) => { if (finished) setBlinking(false); });
+    Animated.sequence([Animated.delay(750), Animated.timing(o, { toValue: 0, duration: 120, useNativeDriver: false })]).start(({ finished }) => { if (finished) setBlinking(false); });
   }, [value, high, low, o]);
   const flash = up ? t.flashUp : t.flashDown;
   return (

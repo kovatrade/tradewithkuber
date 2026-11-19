@@ -278,6 +278,20 @@ export class MarketResolver {
     return true;
   }
 
+  @Mutation(() => Boolean, { description: 'Save the order of a watchlist (drag and drop): every script of that list, top first.' })
+  async reorderWatchlist(@CurrentActor() a: Actor, @Args('listIndex', { type: () => Int }) listIndex: number, @Args('instrumentIds', { type: () => [ID] }) ids: string[]) {
+    if (listIndex < 0 || listIndex >= MAX_LISTS) throw badInput('Invalid watchlist.');
+    if (ids.length > MAX_PER_LIST || new Set(ids).size !== ids.length) throw badInput('Invalid order.');
+    await this.dbs.serializable(async (tx) => {
+      const rows = await tx.select({ id: watchlistItems.id, instrumentId: watchlistItems.instrumentId }).from(watchlistItems)
+        .where(and(eq(watchlistItems.userId, a.userId), eq(watchlistItems.listIndex, listIndex), isNull(watchlistItems.archivedAt)));
+      // The new order must name exactly the scripts in this list (none missing, none from elsewhere).
+      if (rows.length !== ids.length || rows.some((r) => !ids.includes(r.instrumentId))) throw badInput('The watchlist changed. Refresh and try again.');
+      for (const r of rows) await tx.update(watchlistItems).set({ sortOrder: ids.indexOf(r.instrumentId) }).where(eq(watchlistItems.id, r.id));
+    });
+    return true;
+  }
+
   @Mutation(() => Boolean)
   async removeFromWatchlist(@CurrentActor() a: Actor, @Args('listIndex', { type: () => Int }) listIndex: number, @Args('instrumentId', { type: () => ID }) instrumentId: string) {
     await this.dbs.db

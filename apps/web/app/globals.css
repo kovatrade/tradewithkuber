@@ -877,8 +877,8 @@ tr.clickable { cursor: pointer; }
 /* Bid / ask boxes blink with the market: solid green when the price rises, solid red when it falls */
 .ba-box a.tick-up { animation: ba-up 0.9s linear; }
 .ba-box a.tick-down { animation: ba-down 0.9s linear; }
-@keyframes ba-up { from, 72% { background: var(--pos-flash); border-color: var(--pos-flash); color: #fff; } }
-@keyframes ba-down { from, 72% { background: var(--neg-flash); border-color: var(--neg-flash); color: #fff; } }
+@keyframes ba-up { from, 86% { background: var(--pos-flash); border-color: var(--pos-flash); color: #fff; } }
+@keyframes ba-down { from, 86% { background: var(--neg-flash); border-color: var(--neg-flash); color: #fff; } }
 
 /* Instrument rows: single-line text, compact add button, chips that scroll instead of wrapping */
 .one-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -973,6 +973,10 @@ tr.clickable { cursor: pointer; }
 .script-table-head > :not(:first-child) { text-align: center; }
 .script-row { align-items: center; border-bottom: 1px solid var(--line); }
 .script-row:last-child { border-bottom: 0; }
+.script-grip { border: 0; background: transparent; color: var(--text-3); display: grid; place-items: center; width: 22px; height: 28px; margin-left: -6px; cursor: grab; border-radius: 6px; touch-action: none; }
+.script-grip:hover { color: var(--text-2); background: var(--bg-3); }
+.script-grip:active { cursor: grabbing; }
+.script-row.is-dragging { opacity: .45; background: var(--bg-2); }
 .script-info { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .script-identity { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; width: 100%; min-width: 0; }
 .script-name { font-size: 17px; font-weight: 700; text-transform: uppercase; overflow-wrap: anywhere; }
@@ -1125,8 +1129,8 @@ tr.clickable { cursor: pointer; }
 .ba-box a.tick-dark-up, .script-price.tick-dark-up { animation: quote-dark-up .9s linear; }
 .tick-dark-down { animation: quote-dark-down .7s ease-out; }
 .ba-box a.tick-dark-down, .script-price.tick-dark-down { animation: quote-dark-down .9s linear; }
-@keyframes quote-dark-up { 0%, 72% { background: var(--pos-flash); border-color: var(--pos-flash); color: #fff; } }
-@keyframes quote-dark-down { 0%, 72% { background: var(--neg-flash); border-color: var(--neg-flash); color: #fff; } }
+@keyframes quote-dark-up { 0%, 86% { background: var(--pos-flash); border-color: var(--pos-flash); color: #fff; } }
+@keyframes quote-dark-down { 0%, 86% { background: var(--neg-flash); border-color: var(--neg-flash); color: #fff; } }
 .instrument-name, .script-name, .mb-chip-sym, .mb-sym { font-weight: 800; }
 .sn-sm .script-name { font-size: 14px; }
 .sn-lg .script-name { font-size: 22px; }

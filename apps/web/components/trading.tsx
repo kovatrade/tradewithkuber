@@ -420,7 +420,16 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
   const counts = useQuery<{ watchlistCounts: { listIndex: number; count: number }[] }>(`{ watchlistCounts { listIndex count } }`, undefined, { skip: !tabs });
   const countOf = (i: number) => (i === list && data ? data.watchlist.length : counts.data?.watchlistCounts.find((c) => c.listIndex === i)?.count ?? 0);
   const { data: countsData } = useQuery<{ instrumentCategoryCounts: { category: string; count: number }[] }>(CAT_COUNTS_Q);
-  const entries = data?.watchlist ?? [];
+  // Drag and drop order: kept locally while dragging and until the saved list comes back.
+  const [orderIds, setOrderIds] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  useEffect(() => { setOrderIds(null); }, [data]);
+  const entries = useMemo(() => {
+    const all = data?.watchlist ?? [];
+    if (!orderIds) return all;
+    const by = new Map(all.map((x) => [x.instrument.id, x]));
+    return orderIds.map((id) => by.get(id)).filter((x): x is WEntry => !!x);
+  }, [data, orderIds]);
   const entryIds = useMemo(() => entries.map((e) => e.instrument.id), [entries]);
   const live = useLiveQuotes(entryIds);
   const toast = useToast();
@@ -502,6 +511,36 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
     }
   };
 
+  const saveOrder = (ids: string[]) => {
+    gql(`mutation($l:Int!,$ids:[ID!]!){ reorderWatchlist(listIndex:$l, instrumentIds:$ids) }`, { l: list, ids })
+      .catch((x) => { toast((x as Error).message, true); setOrderIds(null); void refetch(); });
+  };
+  const startOrder = useRef<string[]>([]);
+  const dragApi = useMemo(() => ({
+    start: (id: string) => { startOrder.current = entryIds; setDragId(id); },
+    // Moving over another row puts the dragged script in its place straight away.
+    over: (id: string) => setOrderIds((cur) => {
+      const ids = [...(cur ?? entryIds)];
+      if (!dragId || id === dragId) return cur;
+      const from = ids.indexOf(dragId), to = ids.indexOf(id);
+      if (from < 0 || to < 0) return cur;
+      ids.splice(from, 1); ids.splice(to, 0, dragId);
+      return ids;
+    }),
+    end: () => {
+      setDragId(null);
+      const now = orderIds ?? entryIds;
+      if (now.join() !== startOrder.current.join()) saveOrder(now);
+    },
+    // Keyboard: Arrow Up / Arrow Down on the grip moves the script one place.
+    step: (id: string, dir: -1 | 1) => {
+      const ids = [...entryIds], from = ids.indexOf(id), to = from + dir;
+      if (from < 0 || to < 0 || to >= ids.length) return;
+      ids.splice(from, 1); ids.splice(to, 0, id);
+      setOrderIds(ids); saveOrder(ids);
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [entryIds, dragId, orderIds, list]);
   const remove = async (instId: string, sym: string) => {
     try {
       await gql(`mutation($l:Int!,$i:ID!){ removeFromWatchlist(listIndex:$l, instrumentId:$i) }`, { l: list, i: instId });
@@ -680,7 +719,7 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
         compact ? <div className="list list-pad">{entries.map((e) => <CompactRow key={e.id} e={e} q={live[e.instrument.id] ?? e.quote ?? e.instrument.quote} inList onToggle={() => void remove(e.instrument.id, e.instrument.symbol)} />)}</div> :
         <div className="script-table" role="table" aria-label="Watchlist scripts">
           <div className="script-table-head" role="row"><span role="columnheader">Instrument · LTP · Chg%</span><span role="columnheader" className="neg">Bid</span><span role="columnheader" className="pos">Ask</span></div>
-          {entries.map((e) => <ScriptRow key={e.id} e={e} q={live[e.instrument.id] ?? e.quote ?? e.instrument.quote} onRemove={() => void remove(e.instrument.id, e.instrument.symbol)} />)}
+          {entries.map((e) => <ScriptRow key={e.id} e={e} q={live[e.instrument.id] ?? e.quote ?? e.instrument.quote} onRemove={() => void remove(e.instrument.id, e.instrument.symbol)} drag={dragApi} dragging={dragId === e.instrument.id} />)}
         </div>
       ) : tabs && data ? (
         <Empty icon="list" title={`Watchlist ${list + 1} is empty`}>Use Add script to put scripts here.</Empty>
@@ -692,13 +731,23 @@ export function Watchlist({ compact, mode = 'list', showAddButton = true, tabs, 
 const scriptPrice = (value?: string) => inr(value).replace(/\.00$/, '');
 
 /** Same three-column quote layout on desktop and phones. */
-const ScriptRow = memo(function ScriptRow({ e, q, onRemove }: { e: WEntry; q?: Quote; onRemove: () => void }) {
+type DragApi = { start: (id: string) => void; over: (id: string) => void; end: () => void; step: (id: string, dir: -1 | 1) => void };
+const ScriptRow = memo(function ScriptRow({ e, q, onRemove, drag, dragging }: { e: WEntry; q?: Quote; onRemove: () => void; drag?: DragApi; dragging?: boolean }) {
   const href = `/trader/instrument/${e.instrument.id}`;
   const name = fullName(e.instrument);
+  const id = e.instrument.id;
   const bidTick = useTick(q?.bid, q?.high, q?.low), askTick = useTick(q?.ask, q?.high, q?.low);
-  return <div className="script-row" role="row">
+  return <div className={`script-row${dragging ? ' is-dragging' : ''}`} role="row"
+    onDragOver={drag ? (ev) => { ev.preventDefault(); drag.over(id); } : undefined} onDrop={drag ? (ev) => ev.preventDefault() : undefined}>
     <div className="script-info" role="cell">
-      <div className="script-identity"><Link className="script-name" href={href}>{name}</Link>{e.instrument.expiry && <span className="script-expiry">{expiryText(e.instrument.expiry)}</span>}<span className="script-market">{e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange}</span><button className="script-remove" onClick={onRemove} aria-label={`Remove ${name} from watchlist`} title="Remove from watchlist"><Icon name="x" size={14} /></button></div>
+      <div className="script-identity">{drag && (
+        <button type="button" className="script-grip" draggable aria-label={`Move ${name}: drag, or use the up and down arrow keys`} title="Drag to move"
+          onDragStart={(ev) => { const row = (ev.currentTarget as HTMLElement).closest('.script-row') as HTMLElement | null; if (row) ev.dataTransfer.setDragImage(row, 24, 24); ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id); drag.start(id); }}
+          onDragEnd={() => drag.end()}
+          onKeyDown={(ev) => { if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') { ev.preventDefault(); drag.step(id, ev.key === 'ArrowUp' ? -1 : 1); } }}>
+          <Icon name="grip" size={16} strokeWidth={3} />
+        </button>
+      )}<Link className="script-name" href={href}>{name}</Link>{e.instrument.expiry && <span className="script-expiry">{expiryText(e.instrument.expiry)}</span>}<span className="script-market">{e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange}</span><button className="script-remove" onClick={onRemove} aria-label={`Remove ${name} from watchlist`} title="Remove from watchlist"><Icon name="x" size={14} /></button></div>
       <Link className={`script-ltp num ${tone(q?.change)}`} href={href}>{scriptPrice(q?.ltp)}</Link>
       <div className="script-change"><Change value={q?.change} pct={q?.changePct} size="sm" /><time className="script-time" dateTime={q?.ts}>{quoteTime(q?.ts)}</time></div>
     </div>

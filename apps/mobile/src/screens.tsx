@@ -5,7 +5,7 @@ import { ReenableResetTrader } from './resets';
 import { useSoleAdmin } from './sole-admin';
 import { router, useFocusEffect } from 'expo-router';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, Linking, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Linking, PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { API_URL, gql, newKey, subscribe } from './api';
 import { useActive } from './active';
@@ -525,8 +525,19 @@ export function Movers() {
 interface WEntry { id: string; instrument: Inst; quote?: Quote }
 
 /** One watchlist row. Memoised: re-renders only when its own quote changes. */
-const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: { e: WEntry; qq?: Quote; detailed: boolean; onRemove: (e: WEntry) => void; onOpen: (id: string, side?: 'BUY' | 'SELL') => void }) {
+type DragApi = { start: (e: WEntry, row: View | null) => void; move: (dy: number) => void; end: (cancelled?: boolean) => void };
+const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen, drag, shift = 0, hidden }: { e: WEntry; qq?: Quote; detailed: boolean; onRemove: (e: WEntry) => void; onOpen: (id: string, side?: 'BUY' | 'SELL') => void; /** Drag and drop: hold the grip and move up or down. */ drag?: DragApi; shift?: number; hidden?: boolean }) {
   const t = useTheme();
+  const rowRef = useRef<View>(null);
+  const grip = useMemo(() => !drag ? null : PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => { tap('select'); drag.start(e, rowRef.current); },
+    onPanResponderMove: (_ev, g) => drag.move(g.dy),
+    onPanResponderRelease: () => drag.end(),
+    onPanResponderTerminate: () => drag.end(true),
+  }), [drag, e]);
   const name = fullName(e.instrument).toUpperCase();
   const up = toneOfValue(qq?.change) !== 'neg';
   const market = e.instrument.category === 'CRYPTO' ? 'CRYPTO' : e.instrument.category === 'FOREX' ? 'FOREX' : e.instrument.exchange;
@@ -547,11 +558,21 @@ const WatchRow = memo(function WatchRow({ e, qq, detailed, onRemove, onOpen }: {
     <ListRow onPress={() => onOpen(e.instrument.id)} label={`${name}, ₹${qq?.ltp ?? ''}`} title={<ScriptName i={e.instrument} />}
       right={<View style={{ alignItems: 'flex-end', gap: 2 }}><T v="num">₹{scriptPrice(qq?.ltp)}</T><Change value={qq?.change} pct={qq?.changePct} /></View>} />
   );
+  const body = detailed ? row : <Flash value={qq?.ltp}>{row}</Flash>;
   return (
-    <SwipeRow action={() => onRemove(e)} actionLabel="Remove">
-      {/* Only the bid and ask boxes flash when prices move; the row itself stays still. */}
-      {detailed ? row : <Flash value={qq?.ltp}>{row}</Flash>}
-    </SwipeRow>
+    <View ref={rowRef} collapsable={false} style={{ opacity: hidden ? 0 : 1, transform: [{ translateY: shift }] }}>
+      <SwipeRow action={() => onRemove(e)} actionLabel="Remove">
+        {/* Only the bid and ask boxes flash when prices move; the row itself stays still. */}
+        {grip ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View {...grip.panHandlers} accessibilityRole="adjustable" accessibilityLabel={`Move ${fullName(e.instrument)} up or down`} hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }} style={{ width: 22, alignSelf: 'stretch', alignItems: 'flex-start', justifyContent: 'center' }}>
+              <Icon name="grip" size={18} color={t.text3} strokeWidth={3} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>{body}</View>
+          </View>
+        ) : body}
+      </SwipeRow>
+    </View>
   );
 });
 
@@ -571,7 +592,15 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
   const seen = useRef(false);
   const refetchCounts = counts.refetch;
   useFocusEffect(useCallback(() => { if (seen.current) { void refetch(); void refetchCounts(); } seen.current = true; }, [refetch, refetchCounts]));
-  const entries = useMemo(() => (data?.watchlist ?? []).slice(0, limit ?? 100), [data, limit]);
+  // Drag and drop (full Watchlist tab only): local order while dragging and until the server copy comes back.
+  const [orderIds, setOrderIds] = useState<string[] | null>(null);
+  useEffect(() => { setOrderIds(null); }, [data]);
+  const entries = useMemo(() => {
+    const all = (data?.watchlist ?? []).slice(0, limit ?? 100);
+    if (!orderIds) return all;
+    const by = new Map(all.map((x) => [x.instrument.id, x]));
+    return orderIds.map((id) => by.get(id)).filter((x): x is WEntry => !!x);
+  }, [data, limit, orderIds]);
   const count = (data?.watchlist ?? []).length;
   const q = useLiveQuotes(entries.map((e) => e.instrument.id));
   const [removing, setRemoving] = useState<WEntry | null>(null);
@@ -584,6 +613,49 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
     void refetch(); void counts.refetch();
   };
   const addScript = () => router.push(`/search?mode=add&list=${list}` as never);
+  // --- drag and drop: hold the grip on the left of a row and move it up or down.
+  const box = useRef<View>(null);
+  const dy = useRef(new Animated.Value(0)).current;
+  const [dragging, setDragging] = useState<{ id: string; from: number; h: number; top: number; left: number; width: number } | null>(null);
+  const [target, setTarget] = useState(0);
+  const st = useRef({ dragging, target, entries, list });
+  st.current = { dragging, target, entries, list };
+  const dragApi = useMemo<DragApi>(() => ({
+    start: (e, row) => {
+      const from = st.current.entries.findIndex((x) => x.id === e.id);
+      if (from < 0 || !row || !box.current) return;
+      row.measureInWindow((x, y, w, h) => box.current?.measureInWindow((bx, by) => {
+        dy.setValue(0); setTarget(from);
+        setDragging({ id: e.id, from, h, top: y - by, left: x - bx, width: w });
+      }));
+    },
+    move: (d) => {
+      const g = st.current.dragging;
+      if (!g) return;
+      dy.setValue(d);
+      const to = Math.max(0, Math.min(st.current.entries.length - 1, g.from + Math.round(d / g.h)));
+      if (to !== st.current.target) { setTarget(to); tap('select'); }
+    },
+    end: (cancelled) => {
+      const g = st.current.dragging, to = st.current.target, all = st.current.entries;
+      setDragging(null); dy.setValue(0);
+      if (!g || cancelled || to === g.from) return;
+      const ids = all.map((x) => x.instrument.id);
+      const [moved] = ids.splice(g.from, 1);
+      ids.splice(to, 0, moved);
+      setOrderIds(ids);
+      gql(`mutation($l:Int!,$ids:[ID!]!){ reorderWatchlist(listIndex:$l, instrumentIds:$ids) }`, { l: st.current.list, ids })
+        .catch((err) => { toast((err as Error).message, true); setOrderIds(null); void refetch(); });
+    },
+  }), [dy, refetch]);
+  const shiftOf = (i: number) => {
+    if (!dragging) return 0;
+    const { from, h } = dragging;
+    if (from < target && i > from && i <= target) return -h;
+    if (target < from && i >= target && i < from) return h;
+    return 0;
+  };
+  const ghost = dragging ? entries.find((x) => x.id === dragging.id) : undefined;
   const listTab = (i: 0 | 1) => {
     const on = list === i;
     return (
@@ -615,7 +687,7 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
   );
   const state = loading && !data ? <Skeleton /> : error && !data ? <ErrorState error={error} retry={refetch} />
     : null;
-  const hint = entries.length ? <T v="xs" style={{ textAlign: 'center', marginTop: S[3] }}>{detailed ? 'Tap a row or a price to trade. Swipe a row left to remove it.' : 'Tap a row to trade. Swipe a row left to remove it.'}</T> : null;
+  const hint = entries.length ? <T v="xs" style={{ textAlign: 'center', marginTop: S[3] }}>{`${detailed ? 'Tap a row or a price to trade.' : 'Tap a row to trade.'}${limit ? '' : ' Hold ⠿ and drag to move a row.'} Swipe left to remove.`}</T> : null;
   const sheet = (
     <Sheet visible={!!removing} title={removing ? `Remove ${shortSymbol(removing.instrument.symbol)}?` : ''} sub={removing?.instrument.name} onClose={() => setRemoving(null)}>
       <Row>
@@ -625,12 +697,19 @@ export function WatchlistBlock({ limit, header }: { limit?: number; header?: Rea
     </Sheet>
   );
   return (
-    <>
-      <VList data={entries} keyOf={(e) => e.id} header={top} empty={state} footer={hint}
-        render={(e) => <WatchRow e={e} qq={q[e.instrument.id] ?? e.quote} detailed={detailed} onRemove={onRemove} onOpen={onOpen} />} />
+    <View ref={box} collapsable={false} style={[{ flex: 1 }, dragging ? ({ userSelect: 'none' } as object) : null]}>
+      <VList data={entries} keyOf={(e) => e.id} header={top} empty={state} footer={hint} scrollEnabled={!dragging}
+        render={(e, i) => <WatchRow e={e} qq={q[e.instrument.id] ?? e.quote} detailed={detailed} onRemove={onRemove} onOpen={onOpen}
+          drag={limit ? undefined : dragApi} shift={shiftOf(i)} hidden={dragging?.id === e.id} />} />
+      {/* The row being dragged, lifted above the list. */}
+      {dragging && ghost && (
+        <Animated.View pointerEvents="none" style={{ position: 'absolute', top: dragging.top, left: dragging.left, width: dragging.width, transform: [{ translateY: dy }], backgroundColor: t.bg, borderRadius: R.md, elevation: 8, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, zIndex: 20 }}>
+          <WatchRow e={ghost} qq={q[ghost.instrument.id] ?? ghost.quote} detailed={detailed} onRemove={onRemove} onOpen={onOpen} drag={dragApi} />
+        </Animated.View>
+      )}
       {sheet}
       {quick && <QuickTradeSheet instrumentId={quick.id} initialSide={quick.side} onClose={() => setQuick(null)} />}
-    </>
+    </View>
   );
 }
 
