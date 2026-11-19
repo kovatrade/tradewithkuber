@@ -352,6 +352,46 @@ describe('paper trading', () => {
     await gql(`mutation($ids:[ID!]!,$c:String!){ setInstrumentLotClass(instrumentIds:$ids, lotClass:$c){ lotClass } }`, { ids: [gold.id], c: 'MEGA' }, { token: admin.token });
   });
 
+  it('values MCX orders and P/L as price × contract multiplier × lots (GOLD 100, GOLDM 10, SILVER 30, SILVERM 5)', async () => {
+    const t = await login('trader.one');
+    const id = async (sym: string) => (await pg.query(`SELECT id FROM instruments WHERE symbol = $1`, [sym])).rows[0].id as string;
+    const PV = `query($i:ID!,$q:Int!){ orderPreview(instrumentId:$i, side:BUY, quantity:$q){ price value } }`;
+    for (const [sym, q, mult] of [['GOLD26NOVFUT', 2, 100], ['GOLDM26NOVFUT', 3, 10], ['SILVER26NOVFUT', 1, 30], ['SILVERM26NOVFUT', 2, 5], ['ABB26NOVFUT', 4, 1]] as const) {
+      const pv = (await gql(PV, { i: await id(sym), q }, { token: t.accessToken })).data.orderPreview;
+      expect(Number(pv.value)).toBeCloseTo(Number(pv.price) * q * mult, 2);
+    }
+    const gold = await id('GOLD26NOVFUT');
+    const ORD = `query{ orders(limit:5){ id fillPrice realizedPnl } }`;
+    const buy = (await gql(PLACE, { i: { instrumentId: gold, side: 'BUY', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    expect(buy.status).toBe('FILLED');
+    const pos = (await gql(`{ positions { instrumentId netQty avgPrice unrealizedPnl ltp instrument { multiplier } } }`, {}, { token: t.accessToken })).data.positions.find((p: { instrumentId: string }) => p.instrumentId === gold);
+    expect(pos.instrument.multiplier).toBe(100);
+    const sell = (await gql(PLACE, { i: { instrumentId: gold, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken })).data.placeOrder;
+    const row = (await gql(ORD, {}, { token: t.accessToken })).data.orders.find((o: { id: string }) => o.id === sell.id);
+    expect(Number(row.realizedPnl)).toBeCloseTo((Number(sell.fillPrice) - Number(buy.fillPrice)) * 100, 2);
+  });
+
+  it('lists the nearest MCX contract under Mega and Mini, whatever lot class a row was saved with', async () => {
+    const t = await login('trader.two');
+    const Q = `query($l:String){ searchInstruments(query:"", category:"MCX", lotClass:$l){ symbol lotClass } }`;
+    // A later GOLD contract saved as MEGA, and the nearest one wrongly saved as MINI.
+    await pg.query(`INSERT INTO instruments (symbol, name, exchange, segment, expiry, lot_size, lot_class, ref_price_minor)
+      VALUES ('GOLD-05Feb2027-FUT', 'GOLD FEB FUT', 'MCX', 'FUT', '2027-02-05T18:00:00Z', 1, 'MEGA', 12145000)`);
+    await pg.query(`UPDATE instruments SET lot_class = 'MINI' WHERE symbol = 'GOLD26NOVFUT'`);
+    try {
+      const mega = (await gql(Q, { l: 'MEGA' }, { token: t.accessToken })).data.searchInstruments.map((i: { symbol: string }) => i.symbol);
+      expect(mega).toContain('GOLD26NOVFUT');
+      expect(mega).not.toContain('GOLD-05Feb2027-FUT');
+      expect(mega).not.toContain('GOLDM26NOVFUT');
+      const mini = (await gql(Q, { l: 'MINI' }, { token: t.accessToken })).data.searchInstruments.map((i: { symbol: string }) => i.symbol);
+      expect(mini).toContain('GOLDM26NOVFUT');
+      expect(mini).not.toContain('GOLD26NOVFUT');
+    } finally {
+      await pg.query(`UPDATE instruments SET lot_class = 'MEGA' WHERE symbol = 'GOLD26NOVFUT'`);
+      await pg.query(`DELETE FROM instruments WHERE symbol = 'GOLD-05Feb2027-FUT'`);
+    }
+  });
+
   it('refuses an idempotency key reused for a different order instead of replaying the first one', async () => {
     const t = await login('trader.two');
     const key = randomUUID();

@@ -1,3 +1,4 @@
+import { priceMultiplier } from './instrument-meta';
 import { isPlatformAdmin } from '../common/roles';
 import { accountText } from '../common/account-text';
 import { IsEnum, IsInt, IsOptional, IsUUID, Matches, Max, Min } from 'class-validator';
@@ -199,6 +200,7 @@ export class TradingResolver {
     return rows.map((p) => {
       const q = this.market.quote(p.instrumentId);
       const mark = q ? (p.netQty > 0 ? q.bidMinor : q.askMinor) : undefined;
+      const inst = this.market.instrument(p.instrumentId);
       return {
         id: p.id,
         instrumentId: p.instrumentId,
@@ -206,7 +208,7 @@ export class TradingResolver {
         netQty: p.netQty,
         avgPrice: formatMoney(p.avgPriceMinor),
         realizedPnl: formatMoney(p.realizedPnlMinor),
-        unrealizedPnl: mark !== undefined && p.netQty !== 0 ? formatMoney((mark - p.avgPriceMinor) * BigInt(p.netQty)) : '0.00',
+        unrealizedPnl: mark !== undefined && p.netQty !== 0 ? formatMoney((mark - p.avgPriceMinor) * BigInt(p.netQty) * BigInt(priceMultiplier(inst?.exchange, inst?.symbol))) : '0.00',
         ltp: q ? formatMoney(q.ltpMinor) : undefined,
         carriedForward: p.netQty !== 0 && p.cfDate === istDay(),
       };

@@ -92,6 +92,7 @@ export class Instrument {
   @Field({ description: 'MINI or MEGA: decides the brokerage per lot (₹250 or ₹2,500 by default).' }) lotClass: string;
   @Field({ nullable: true, description: 'What one lot is, in words, e.g. "100 g", "5 kg", "10 barrels".' }) lotLabel?: string;
   @Field({ description: 'FUTURES, MCX, OPTIONS, FOREX, CRYPTO, US_STOCK, COMEX or US_INDEX: the category the instrument is listed under.' }) category: string;
+  @Field(() => Int, { description: 'Price × this × lots = order value and P/L (MCX GOLD 100, GOLDM 10, SILVER 30, SILVERM 5; 1 elsewhere).' }) multiplier: number;
   @Field(() => Quote, { nullable: true }) quote?: Quote;
 }
 

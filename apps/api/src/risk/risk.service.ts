@@ -1,3 +1,4 @@
+import { priceMultiplier } from '../trading/instrument-meta';
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
@@ -99,7 +100,8 @@ export class RiskService implements OnModuleInit, OnModuleDestroy {
         const q = this.market.quote(p.instrumentId);
         if (!q) continue;
         const mark = p.netQty > 0 ? q.bidMinor : q.askMinor;
-        open += (mark - p.avgPriceMinor) * BigInt(p.netQty);
+        const i = this.market.instrument(p.instrumentId);
+        open += (mark - p.avgPriceMinor) * BigInt(p.netQty) * BigInt(priceMultiplier(i?.exchange, i?.symbol));
       }
       const traded = BigInt(r.traded);
       const funds = BigInt(r.bal) - traded; // balance without what trading added or took away

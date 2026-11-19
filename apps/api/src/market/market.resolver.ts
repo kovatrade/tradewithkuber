@@ -131,7 +131,8 @@ export class MarketResolver {
       : category === 'OPTIONS' ? sql`(${instruments.segment} IN ('OPT', 'OPTIONS', 'CE', 'PE') OR (${instruments.segment} != 'EQ' AND (${instruments.symbol} ILIKE '%CE' OR ${instruments.symbol} ILIKE '%PE') AND ${instruments.symbol} ~* '[0-9]+(CE|PE)$'))`
       : category === 'FUTURES' ? and(eq(instruments.exchange, 'NSE'), sql`${instruments.segment} NOT IN ('OPT', 'OPTIONS', 'CE', 'PE', 'CUR') AND (${instruments.segment} = 'EQ' OR (${instruments.symbol} NOT ILIKE '%CE' AND ${instruments.symbol} NOT ILIKE '%PE') OR ${instruments.symbol} !~* '[0-9]+(CE|PE)$')`)
       : category ? sql`false` : undefined;
-    const cls = lotClass === 'MINI' || lotClass === 'MEGA' ? eq(instruments.lotClass, lotClass) : undefined;
+    // MCX: Mini/Mega is decided per contract in uniqueMcx below, not by the stored lot class.
+    const cls = category !== 'MCX' && (lotClass === 'MINI' || lotClass === 'MEGA') ? eq(instruments.lotClass, lotClass) : undefined;
     // Only contracts that can still be traded: no expiry (stocks, indices) or expiring today or later (IST).
     const notExpired = sql`(${instruments.expiry} IS NULL OR (${instruments.expiry} AT TIME ZONE 'Asia/Kolkata')::date >= (now() AT TIME ZONE 'Asia/Kolkata')::date)`;
     const rows = await this.dbs.db
@@ -141,7 +142,7 @@ export class MarketResolver {
       .orderBy(asc(sql`coalesce(${instruments.expiry}, '9999-12-31')`), asc(instruments.symbol))
       .limit(category === 'MCX' ? 5000 : clampLimit(limit, 50, 500));
     // MCX: only the 7 listed commodities, one contract each (per lot class), nearest expiry.
-    const list = category === 'MCX' ? uniqueMcx(rows) : rows;
+    const list = category === 'MCX' ? uniqueMcx(rows, lotClass) : rows;
     return list.map((r) => toInstrument(r, this.market.quote(r.id)));
   }
 

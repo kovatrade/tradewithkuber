@@ -1,3 +1,4 @@
+import { priceMultiplier } from '../trading/instrument-meta';
 import { Injectable } from '@nestjs/common';
 import { and, count, desc, eq, gte, inArray, sql, sum } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -147,7 +148,7 @@ export class AlgoService {
     const { bars, startIndex } = await this.history(s.instrumentId, interval, fromMs, warmup(rules));
     if (bars.length - startIndex < 10) throw badInput('Not enough candle history for that period at this timeframe. Try a shorter period or a larger timeframe.');
     const fr = await feeRule(this.config);
-    const result: BacktestResult = backtest(bars, rules, s.quantity, { perLot: Number(perLotMinor(fr, this.market.instrument(s.instrumentId)?.lotClass)), bps: fr.bps }, startIndex);
+    const result: BacktestResult = backtest(bars, rules, s.quantity, { perLot: Number(perLotMinor(fr, this.market.instrument(s.instrumentId)?.lotClass)), bps: fr.bps }, startIndex, priceMultiplier(this.market.instrument(s.instrumentId)?.exchange, this.market.instrument(s.instrumentId)?.symbol));
     const [run] = await this.dbs.db
       .insert(strategyRuns)
       .values({

@@ -692,7 +692,7 @@ export function OrdersTabs({ virtual, header, initial = 'open' }: { virtual?: bo
   return <OrdersList key={tab} virtual={virtual} header={<>{header}{tabs}</>} statuses={[...tb.s]} canCancel={tab === 'open'} emptyTitle={tb.title} emptyText={tb.text} />;
 }
 
-interface Pos { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; carriedForward?: boolean; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string } }
+interface Pos { id: string; instrumentId: string; netQty: number; avgPrice: string; realizedPnl: string; unrealizedPnl?: string; ltp?: string; carriedForward?: boolean; instrument?: { symbol: string; name?: string; expiry?: string; exchange?: string; multiplier?: number } }
 /** Positions page top: Balance, Live P/L and Booked in three tiles. */
 export function PositionsSummary() {
   const t = useTheme();
@@ -719,7 +719,7 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
   const [exitBusy, setExitBusy] = useState<string | null>(null);
   const exitPending = useRef(false);
   const exitKeys = useRef(new Map<string, string>());
-  const { data, error, loading, refetch } = useQuery<{ positions: Pos[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp carriedForward instrument{ symbol name expiry exchange } } }`, { u: userId }, 3000);
+  const { data, error, loading, refetch } = useQuery<{ positions: Pos[] }>(`query($u:ID){ positions(userId:$u){ id instrumentId netQty avgPrice realizedPnl unrealizedPnl ltp carriedForward instrument{ symbol name expiry exchange multiplier } } }`, { u: userId }, 3000);
   const t = useTheme();
   const [cf, setCf] = useState<Pos | null>(null);
   const [cfBusy, setCfBusy] = useState<string | null>(null);
@@ -784,7 +784,7 @@ export function PositionsList({ userId, canTrade }: { userId?: string; canTrade?
         const exp = p.instrument?.expiry ? new Date(p.instrument.expiry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
         const open = p.netQty !== 0;
         const pnl = open ? p.unrealizedPnl : p.realizedPnl;
-        const cost = Number(p.avgPrice) * Math.abs(p.netQty);
+        const cost = Number(p.avgPrice) * Math.abs(p.netQty) * (p.instrument?.multiplier ?? 1);
         const pct = open && cost > 0 ? ((Number(p.unrealizedPnl ?? 0) / cost) * 100).toFixed(2) : null;
         const pc = toneOfValue(pnl) === 'flat' ? 'text2' : (toneOfValue(pnl) as 'pos');
         const on = !!p.carriedForward;

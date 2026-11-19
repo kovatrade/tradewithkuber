@@ -383,7 +383,7 @@ function Live({ s }: { s: Strategy }) {
   const t = useTheme();
   const ev = useQuery<{ strategyEvents: { id: string; at: string; kind: string; message: string; pnl?: string }[] }>(`query($id:ID!){ strategyEvents(strategyId:$id, limit:50){ id at kind message pnl } }`, { id: s.id }, s.status === 'RUNNING' ? 5000 : undefined);
   const quote = useLiveQuotes(s.position !== 0 ? [s.instrumentId] : [])[s.instrumentId];
-  const openPnl = s.position !== 0 && s.entryPrice && quote ? ((Number(quote.ltp) - Number(s.entryPrice)) * s.position).toFixed(2) : null;
+  const openPnl = s.position !== 0 && s.entryPrice && quote ? ((Number(quote.ltp) - Number(s.entryPrice)) * s.position * (s.instrument?.multiplier ?? 1)).toFixed(2) : null;
   const pnl = s.today?.pnl ?? '0.00';
   const loss = -Math.min(0, Number(pnl));
   const used = Math.min(100, (loss / Math.max(1, Number(s.maxDailyLoss))) * 100);

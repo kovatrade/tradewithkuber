@@ -1,3 +1,4 @@
+import { priceMultiplier } from '../trading/instrument-meta';
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -201,9 +202,11 @@ export class AlgoRunnerService implements OnModuleInit, OnModuleDestroy {
     const o = await this.orders.place(this.actor(s), { instrumentId: s.instrumentId, side, type: 'MARKET', quantity: qty, reduceOnly: true, idempotencyKey: `algo-${s.id}-${entryKey}-out${s.rejectStreak}` }, 'algo', { strategyId: s.id });
     if (o.status !== 'FILLED' || o.fillPriceMinor === null) return this.rejected(s, `Exit ${side} ${qty} not filled (${label}): ${o.rejectReason ?? o.status}. Will retry.`, o.id);
     const fr = await feeRule(this.config);
-    const cls = this.market.instrument(s.instrumentId)?.lotClass;
-    const fees = brokerageMinor(fr, s.entryPriceMinor, qty, cls) + brokerageMinor(fr, o.fillPriceMinor, qty, cls);
-    const pnl = (o.fillPriceMinor - s.entryPriceMinor) * BigInt(s.posQty) - fees;
+    const inst = this.market.instrument(s.instrumentId);
+    const cls = inst?.lotClass;
+    const mult = BigInt(priceMultiplier(inst?.exchange, inst?.symbol));
+    const fees = brokerageMinor(fr, s.entryPriceMinor, qty, cls, mult) + brokerageMinor(fr, o.fillPriceMinor, qty, cls, mult);
+    const pnl = (o.fillPriceMinor - s.entryPriceMinor) * BigInt(s.posQty) * mult - fees;
     // Only the caller that actually closes this position records the trade (a tick and a candle can race;
     // the shared idempotency key already stops a second order).
     const [row] = await this.dbs.db

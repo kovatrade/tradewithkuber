@@ -162,11 +162,12 @@ export interface BacktestResult {
  * - Brokerage is charged per side like the platform's own fills: `fee.perLot` × quantity plus `fee.bps` of turnover.
  * - A position still open at the end is closed at the last close and marked "END".
  */
-export function backtest(bars: Bar[], rules: Rules, quantity: number, feeRule: { perLot: number; bps: number }, startIndex = 0): BacktestResult {
+export function backtest(bars: Bar[], rules: Rules, quantity: number, feeRule: { perLot: number; bps: number }, startIndex = 0, mult = 1): BacktestResult {
+  const units = quantity * mult; // price × multiplier × lots (MCX GOLD 100 ...)
   const ind = new Indicators(bars);
   const long = rules.side === 'LONG';
   const dir = long ? 1 : -1;
-  const fee = (px: number) => feeRule.perLot * quantity + Math.round((px * quantity * feeRule.bps) / 10_000);
+  const fee = (px: number) => feeRule.perLot * quantity + Math.round((px * units * feeRule.bps) / 10_000);
   const trades: BacktestTrade[] = [];
   const equity: [number, number][] = [];
   let realized = 0;
@@ -179,7 +180,7 @@ export function backtest(bars: Bar[], rules: Rules, quantity: number, feeRule: {
   const close = (i: number, price: number, at: number, reason: BacktestTrade['reason']) => {
     const p = pos!;
     const fees = p.feeIn + fee(price);
-    const pnl = dir * (price - p.entryPrice) * quantity - fees;
+    const pnl = dir * (price - p.entryPrice) * units - fees;
     realized += pnl;
     trades.push({ side: rules.side, entryAt: p.entryAt, entryPrice: p.entryPrice, exitAt: at, exitPrice: price, reason, pnl, fees, bars: i - p.entryIdx + 1 });
     pos = null;
@@ -207,7 +208,7 @@ export function backtest(bars: Bar[], rules: Rules, quantity: number, feeRule: {
     if (pos) pendingExit = exitSignal(ind, rules, i);
     else pendingEntry = i < bars.length - 1 && entrySignal(ind, rules, i);
     // mark-to-market equity
-    const open = pos ? dir * (b.c - pos.entryPrice) * quantity - pos.feeIn : 0;
+    const open = pos ? dir * (b.c - pos.entryPrice) * units - pos.feeIn : 0;
     const eq = realized + open;
     peak = Math.max(peak, eq);
     maxDd = Math.max(maxDd, peak - eq);
@@ -251,7 +252,7 @@ export function backtest(bars: Bar[], rules: Rules, quantity: number, feeRule: {
       maxConsecutiveLosses: maxStreak,
       fees: trades.reduce((a, t) => a + t.fees, 0),
       exposurePct: (inPosBars / counted) * 100,
-      buyHoldPnl: first && last ? (last.c - first.o) * quantity : 0,
+      buyHoldPnl: first && last ? (last.c - first.o) * units : 0,
       sharpePerTrade: sd > 0 ? (mean / sd) * Math.sqrt(trades.length) : null,
       candles: counted,
     },

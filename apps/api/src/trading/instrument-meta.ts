@@ -54,15 +54,17 @@ const MCX_ORDER = ['SILVER', 'GOLD', 'CRUDEOIL', 'COPPER', 'LEAD', 'ZINC', 'NATU
  * One contract per listed MCX script and lot class: the nearest expiry that is still open (rows must come sorted by
  * expiry, then symbol). Other MCX contracts are left out of the MCX list.
  */
-export function uniqueMcx<T extends { symbol: string; lotClass?: string | null }>(rows: T[]): T[] {
+export function uniqueMcx<T extends { symbol: string }>(rows: T[], lotClass?: string | null): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const r of rows) {
     const base = baseSymbol(r.symbol);
     if (!MCX_LISTED[base]) continue;
-    const key = `${base}|${r.lotClass ?? ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    // Mini or Mega comes from the contract itself (GOLD = Mega, GOLDM = Mini), not from a per-row setting, so the
+    // nearest GOLD contract is always the one listed under Mega.
+    if ((lotClass === 'MINI' || lotClass === 'MEGA') && defaultLotClass('MCX', base) !== lotClass) continue;
+    if (seen.has(base)) continue;
+    seen.add(base);
     out.push(r);
   }
   return out.sort((a, b) => MCX_ORDER.indexOf(MCX_LISTED[baseSymbol(a.symbol)]) - MCX_ORDER.indexOf(MCX_LISTED[baseSymbol(b.symbol)]));
@@ -81,7 +83,7 @@ const LOT_LABEL: Record<string, string> = {
   SILVER: '30 kg', SILVERM: '5 kg', SILVERMIC: '1 kg',
   CRUDEOIL: '100 barrels', CRUDEOILM: '10 barrels',
   NATURALGAS: '1,250 mmBtu', NATGASMINI: '250 mmBtu',
-  COPPER: '2,500 kg',
+  COPPER: '2,500 kg', LEAD: '5 tonnes', ZINC: '5 tonnes',
   ZINCMINI: '1 tonne', LEADMINI: '1 tonne', ALUMINI: '1 tonne',
   USDINR: '1,000 USD', EURINR: '1,000 EUR', GBPINR: '1,000 GBP', JPYINR: '1,00,000 JPY',
   BTCUSD: '1 BTC', ETHUSD: '1 ETH', SOLUSD: '1 SOL',
@@ -90,4 +92,21 @@ const LOT_LABEL: Record<string, string> = {
 };
 export function defaultLotLabel(symbol: string): string | null {
   return LOT_LABEL[baseSymbol(symbol)] ?? null;
+}
+
+/**
+ * MCX prices are quoted per unit (gold per 10 g, silver per kg, crude per barrel ...), while one lot is bigger, so
+ * order value and P/L = price × multiplier × lots. GOLD (Mega, 1 kg, quoted per 10 g) = 100; GOLDM (Mini, 100 g) = 10;
+ * SILVER (Mega, 30 kg, per kg) = 30; SILVERM (Mini, 5 kg) = 5. Everything else (non-MCX, unknown) = 1.
+ */
+const MCX_MULTIPLIER: Record<string, number> = {
+  GOLD: 100, GOLDM: 10, GOLDGUINEA: 1, GOLDPETAL: 1, GOLDTEN: 1,
+  SILVER: 30, SILVERM: 5, SILVERMIC: 1,
+  CRUDEOIL: 100, CRUDEOILM: 10,
+  NATURALGAS: 1250, NATGASMINI: 250,
+  COPPER: 2500, LEAD: 5000, LEADMINI: 1000, ZINC: 5000, ZINCMINI: 1000, ALUMINIUM: 5000, ALUMINI: 1000,
+};
+export function priceMultiplier(exchange: string | null | undefined, symbol: string | null | undefined): number {
+  if (exchange !== 'MCX' || !symbol) return 1;
+  return MCX_MULTIPLIER[baseSymbol(symbol)] ?? 1;
 }

@@ -1,3 +1,4 @@
+import { priceMultiplier } from '../trading/instrument-meta';
 import { isPlatformAdmin } from '../common/roles';
 import { emailColumns, emailIndex, normalizeEmail, normalizePhone, phoneColumns, phoneIndex } from '../common/pii';
 import { soleAdminMayApprove } from '../common/maker-checker';
@@ -263,7 +264,8 @@ export class UsersService {
       const q = this.market.quote(p.instrumentId);
       if (!q) continue;
       const mark = p.netQty > 0 ? q.bidMinor : q.askMinor;
-      unrealized += (mark - p.avgPriceMinor) * BigInt(p.netQty);
+      const i = this.market.instrument(p.instrumentId);
+      unrealized += (mark - p.avgPriceMinor) * BigInt(p.netQty) * BigInt(priceMultiplier(i?.exchange, i?.symbol));
     }
     const [{ openOrders }] = await this.dbs.db
       .select({ openOrders: sql<number>`count(*)::int` })
@@ -296,10 +298,16 @@ export class UsersService {
       .innerJoin(journalEntries, eq(journalEntries.id, ledgerPostings.journalId))
       .where(and(eq(ledgerPostings.accountId, cash), gte(ledgerPostings.createdAt, from), sql`${ledgerPostings.createdAt} < ${to}`, afterWipeFor(actor, ledgerPostings.createdAt, userId)))
       .groupBy(journalEntries.kind);
-    const [vol] = await this.dbs.db
-      .select({ v: sql<string>`COALESCE(SUM(${orders.fillPriceMinor} * ${orders.quantity}),0)::text`, n: sql<number>`count(*)::int` })
+    // Turnover per instrument, then × its price multiplier (MCX GOLD 100 ...).
+    const volRows = await this.dbs.db
+      .select({ id: orders.instrumentId, v: sql<string>`COALESCE(SUM(${orders.fillPriceMinor} * ${orders.quantity}),0)::text`, n: sql<number>`count(*)::int` })
       .from(orders)
-      .where(and(eq(orders.userId, userId), eq(orders.status, 'FILLED'), gte(orders.filledAt, from), sql`${orders.filledAt} < ${to}`, afterWipeFor(actor, orders.createdAt, userId)));
+      .where(and(eq(orders.userId, userId), eq(orders.status, 'FILLED'), gte(orders.filledAt, from), sql`${orders.filledAt} < ${to}`, afterWipeFor(actor, orders.createdAt, userId)))
+      .groupBy(orders.instrumentId);
+    const vol = volRows.reduce((a, r) => {
+      const i = this.market.instrument(r.id);
+      return { v: a.v + BigInt(r.v) * BigInt(priceMultiplier(i?.exchange, i?.symbol)), n: a.n + r.n };
+    }, { v: 0n, n: 0 });
     const g = (k: string) => rows.find((r) => r.kind === k);
     return {
       realizedPnlMinor: BigInt(g('TRADE_PNL')?.s ?? '0'),

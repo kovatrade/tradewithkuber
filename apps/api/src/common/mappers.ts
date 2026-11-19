@@ -1,7 +1,7 @@
 import type { InstrumentRow, OrderRow, PaymentRow } from '../db/schema';
 import type { Quote as QuoteData } from '../market/market-data.service';
 import { formatMoney } from './money';
-import { categoryOf } from '../trading/instrument-meta';
+import { categoryOf, priceMultiplier } from '../trading/instrument-meta';
 import { m, type Instrument, type Order, type PaymentRequest, type Quote } from './gql-types';
 
 export function toInstrument(r: InstrumentRow, q?: QuoteData | null): Instrument {
@@ -17,6 +17,7 @@ export function toInstrument(r: InstrumentRow, q?: QuoteData | null): Instrument
     lotClass: r.lotClass === 'MEGA' ? 'MEGA' : 'MINI',
     lotLabel: r.lotLabel ?? undefined,
     category: categoryOf(r.exchange, r.segment, r.symbol),
+    multiplier: priceMultiplier(r.exchange, r.symbol),
     quote: q && typeof q === 'object' && 'ltpMinor' in q ? toQuote(q) : undefined,
   };
 }

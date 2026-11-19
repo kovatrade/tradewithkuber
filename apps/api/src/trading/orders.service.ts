@@ -20,6 +20,7 @@ import { ConsentService } from '../consent/consent.service';
 import { sessionStatus, type Sessions } from './market-hours';
 import { DhanGlobalFeedService } from '../market/dhan-global-feed.service';
 import { afterWipeFor } from '../wipe/visibility';
+import { priceMultiplier } from './instrument-meta';
 
 /** Today's date in India (YYYY-MM-DD). */
 export const istDay = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
@@ -89,16 +90,22 @@ export class OrdersService implements OnModuleInit {
     return { mini, mega };
   }
 
-  private async positionMargin(p: HeldPosition | undefined, lotClass: string, rates: { mini: number; mega: number }) {
+  /** Price × this = value of one lot (MCX GOLD 100, GOLDM 10, SILVER 30 ...; 1 elsewhere). */
+  private mult(instrumentId: string): bigint {
+    const i = this.market.instrument(instrumentId);
+    return BigInt(priceMultiplier(i?.exchange, i?.symbol));
+  }
+
+  private async positionMargin(p: HeldPosition | undefined, lotClass: string, rates: { mini: number; mega: number }, mult = 1n) {
     if (!p?.netQty) return 0n;
     if (p.cfDate !== istDay()) return intradayMargin(p.netQty, lotClass, rates.mini, rates.mega);
     const [bps, mini, mega] = await Promise.all([this.config.get('trading.carryForwardMarginBps'), this.config.get('trading.carryForwardMarginPerMiniLot'), this.config.get('trading.carryForwardMarginPerMegaLot')]);
-    return carryForwardMargin(BigInt(abs(p.netQty)) * p.avgPriceMinor, p.netQty, lotClass, bps, mini, mega);
+    return carryForwardMargin(BigInt(abs(p.netQty)) * p.avgPriceMinor * mult, p.netQty, lotClass, bps, mini, mega);
   }
 
-  private closingPnl(p: HeldPosition | undefined, signed: number, price: bigint) {
+  private closingPnl(p: HeldPosition | undefined, signed: number, price: bigint, mult = 1n) {
     if (!p?.netQty || Math.sign(p.netQty) === Math.sign(signed)) return 0n;
-    return (price - p.avgPriceMinor) * BigInt(Math.min(abs(p.netQty), abs(signed))) * (p.netQty > 0 ? 1n : -1n);
+    return (price - p.avgPriceMinor) * BigInt(Math.min(abs(p.netQty), abs(signed))) * (p.netQty > 0 ? 1n : -1n) * mult;
   }
 
   async marginUsed(tx: Tx, userId: string, rates?: { mini: number; mega: number }): Promise<bigint> {
@@ -106,7 +113,7 @@ export class OrdersService implements OnModuleInit {
     const [cfBps, miniCf, megaCf] = await Promise.all([this.config.get('trading.carryForwardMarginBps'), this.config.get('trading.carryForwardMarginPerMiniLot'), this.config.get('trading.carryForwardMarginPerMegaLot')]);
     const today = istDay();
     const pos = await tx
-      .select({ q: positions.netQty, p: positions.avgPriceMinor, cf: positions.cfDate, lotClass: instruments.lotClass })
+      .select({ q: positions.netQty, p: positions.avgPriceMinor, cf: positions.cfDate, lotClass: instruments.lotClass, ex: instruments.exchange, sym: instruments.symbol })
       .from(positions)
       .innerJoin(instruments, eq(instruments.id, positions.instrumentId))
       .where(and(eq(positions.userId, userId), eq(positions.mode, 'SIMULATED')));
@@ -117,7 +124,7 @@ export class OrdersService implements OnModuleInit {
       .where(and(eq(orders.userId, userId), eq(orders.status, 'OPEN'), eq(orders.reduceOnly, false)));
     let used = 0n;
     // A position carried forward today holds the carry-forward margin instead of the intraday one.
-    for (const r of pos) { const value = BigInt(abs(r.q)) * r.p; used += r.cf === today ? carryForwardMargin(value, r.q, r.lotClass, cfBps, miniCf, megaCf) : intradayMargin(r.q, r.lotClass, rates.mini, rates.mega); }
+    for (const r of pos) { const value = BigInt(abs(r.q)) * r.p * BigInt(priceMultiplier(r.ex, r.sym)); used += r.cf === today ? carryForwardMargin(value, r.q, r.lotClass, cfBps, miniCf, megaCf) : intradayMargin(r.q, r.lotClass, rates.mini, rates.mega); }
     for (const r of open) used += intradayMargin(r.q, r.lotClass, rates.mini, rates.mega);
     return used;
   }
@@ -155,13 +162,14 @@ export class OrdersService implements OnModuleInit {
     if(env().MARKET_FEED==='dhan' && (!q || q.source!=='DHAN' || (!closed && Date.now()-q.ts.getTime()>60000)))throw badInput(closed ? 'Market is closed as per timing rules.' : 'Live prices are updating. Please try again.');
     if (!q) throw notFound('Instrument');
     const price = limitPriceMinor ?? triggerPriceMinor ?? (closed && (side === 'BUY' ? q.askMinor : q.bidMinor) <= 0n ? q.ltpMinor : this.venue.marketFillPrice(side, q));
-    const value = price * BigInt(quantity);
+    const mult = this.mult(instrumentId);
+    const value = price * BigInt(quantity) * mult;
     return {
       priceMinor: price,
       valueMinor: value,
       intradayMarginMinor: intradayMargin(quantity, inst?.lotClass, await this.config.get('trading.intradayMarginPerMiniLot'), await this.config.get('trading.intradayMarginPerMegaLot')),
       carryForwardMarginMinor: carryForwardMargin(value, quantity, this.market.instrument(instrumentId)?.lotClass, await this.config.get('trading.carryForwardMarginBps'), await this.config.get('trading.carryForwardMarginPerMiniLot'), await this.config.get('trading.carryForwardMarginPerMegaLot')),
-      brokerageMinor: brokerageMinor(await feeRule(this.config), price, quantity, this.market.instrument(instrumentId)?.lotClass),
+      brokerageMinor: brokerageMinor(await feeRule(this.config), price, quantity, this.market.instrument(instrumentId)?.lotClass, mult),
     };
   }
 
@@ -246,9 +254,9 @@ export class OrdersService implements OnModuleInit {
       // Immediate fills replace current collateral; resting entries reserve their full size.
       if (!reject && (opening || (fillPrice === null && !reduceOnly))) {
         const delta = fillPrice === null ? intradayMargin(input.quantity, inst.lotClass, rates.mini, rates.mega)
-          : intradayMargin(after, inst.lotClass, rates.mini, rates.mega) - await this.positionMargin(pos, inst.lotClass, rates);
-        const need = delta + brokerageMinor(fees, refPrice, input.quantity, inst.lotClass)
-          - (fillPrice === null ? 0n : this.closingPnl(pos, signed, refPrice));
+          : intradayMargin(after, inst.lotClass, rates.mini, rates.mega) - await this.positionMargin(pos, inst.lotClass, rates, this.mult(inst.id));
+        const need = delta + brokerageMinor(fees, refPrice, input.quantity, inst.lotClass, this.mult(inst.id))
+          - (fillPrice === null ? 0n : this.closingPnl(pos, signed, refPrice, this.mult(inst.id)));
         const balance = await this.ledger.balance(tx, cash);
         const free = balance - (await this.marginUsed(tx, u.id, rates));
         if (need > free) reject = 'Insufficient margin.';
@@ -346,7 +354,7 @@ export class OrdersService implements OnModuleInit {
       avg = (avg * BigInt(abs(net)) + price * BigInt(abs(signed))) / BigInt(abs(newNet));
     } else {
       const closed = Math.min(abs(net), abs(signed));
-      realized = (price - avg) * BigInt(closed) * (net > 0 ? 1n : -1n);
+      realized = (price - avg) * BigInt(closed) * (net > 0 ? 1n : -1n) * this.mult(o.instrumentId);
       if (newNet === 0) avg = 0n;
       else if (Math.sign(newNet) !== Math.sign(net)) avg = price; // flipped: remainder opens at fill price
     }
@@ -378,7 +386,7 @@ export class OrdersService implements OnModuleInit {
         refId: o.id,
       });
     }
-    const fee = brokerageMinor(fees, price, o.quantity, this.market.instrument(o.instrumentId)?.lotClass);
+    const fee = brokerageMinor(fees, price, o.quantity, this.market.instrument(o.instrumentId)?.lotClass, this.mult(o.instrumentId));
     if (fee > 0n) {
       const feeAcct = await this.ledger.systemAccount(tx, 'FEE_INCOME', 'SIMULATED');
       await this.ledger.post(tx, {
@@ -455,9 +463,9 @@ export class OrdersService implements OnModuleInit {
               else if (abs(net + signed) > maxPosition) reject = `Position limit is ${maxPosition} for this instrument.`;
               else {
                 const reserved = cur.reduceOnly ? 0n : intradayMargin(cur.quantity, inst.lotClass, rates.mini, rates.mega);
-                const required = await this.marginUsed(tx, o.userId, rates) - reserved - await this.positionMargin(p, inst.lotClass, rates)
-                  + intradayMargin(net + signed, inst.lotClass, rates.mini, rates.mega) + brokerageMinor(fees, px, quantity, inst.lotClass);
-                if (required > await this.ledger.balance(tx, cash) + this.closingPnl(p, signed, px)) reject = 'Insufficient margin.';
+                const required = await this.marginUsed(tx, o.userId, rates) - reserved - await this.positionMargin(p, inst.lotClass, rates, this.mult(inst.id))
+                  + intradayMargin(net + signed, inst.lotClass, rates.mini, rates.mega) + brokerageMinor(fees, px, quantity, inst.lotClass, this.mult(inst.id));
+                if (required > await this.ledger.balance(tx, cash) + this.closingPnl(p, signed, px, this.mult(inst.id))) reject = 'Insufficient margin.';
               }
             }
             if (reject) {
@@ -515,7 +523,7 @@ export class OrdersService implements OnModuleInit {
       if (p.cfDate === today) return { position: p, marginMinor: 0n };
       await tx.select({ id: users.id }).from(users).where(eq(users.id, p.userId)).for('update'); // one margin check at a time per trader
       const [rates, cfBps] = await Promise.all([this.intradayRates(), this.config.get('trading.carryForwardMarginBps')]);
-      const value = p.avgPriceMinor * BigInt(abs(p.netQty));
+      const value = p.avgPriceMinor * BigInt(abs(p.netQty)) * this.mult(p.instrumentId);
       const cfMargin = carryForwardMargin(value, p.netQty, this.market.instrument(p.instrumentId)?.lotClass, cfBps, await this.config.get('trading.carryForwardMarginPerMiniLot'), await this.config.get('trading.carryForwardMarginPerMegaLot'));
       const extra = cfMargin - intradayMargin(p.netQty, this.market.instrument(p.instrumentId)?.lotClass, rates.mini, rates.mega);
       const free = (await this.ledger.balance(tx, cash)) - (await this.marginUsed(tx, p.userId, rates));
@@ -591,7 +599,7 @@ export class OrdersService implements OnModuleInit {
       if (p.cfDate === istDay() && p.netQty !== 0) {
         const [rates, cfBps, miniCf, megaCf] = await Promise.all([this.intradayRates(), this.config.get('trading.carryForwardMarginBps'), this.config.get('trading.carryForwardMarginPerMiniLot'), this.config.get('trading.carryForwardMarginPerMegaLot')]);
         const lotClass = this.market.instrument(p.instrumentId)?.lotClass;
-        const extra = intradayMargin(p.netQty, lotClass, rates.mini, rates.mega) - carryForwardMargin(p.avgPriceMinor * BigInt(abs(p.netQty)), p.netQty, lotClass, cfBps, miniCf, megaCf);
+        const extra = intradayMargin(p.netQty, lotClass, rates.mini, rates.mega) - carryForwardMargin(p.avgPriceMinor * BigInt(abs(p.netQty)) * this.mult(p.instrumentId), p.netQty, lotClass, cfBps, miniCf, megaCf);
         if (extra > 0n) {
           const free = await this.ledger.balance(tx, cash) - await this.marginUsed(tx, actor.userId, rates);
           if (extra > free) throw badInput('Insufficient funds for intraday margin. Add funds or exit the position before turning carry forward off.');

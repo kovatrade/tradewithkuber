@@ -15,10 +15,10 @@ export interface Strategy {
   id: string; name: string; instrumentId: string; interval: Interval; rules: string; quantity: number; version: number;
   status: 'DRAFT' | 'RUNNING' | 'STOPPED'; maxDailyLoss: string; maxOrdersPerDay: number; position: number; entryPrice?: string;
   entryAt?: string; startedAt?: string; stoppedAt?: string; stopReason?: string; updatedAt: string;
-  instrument?: { id: string; symbol: string; name: string; exchange: string; segment: string; lotSize: number; tickSize: string } | null;
+  instrument?: { id: string; symbol: string; name: string; exchange: string; segment: string; lotSize: number; tickSize: string; multiplier?: number } | null;
   today?: { pnl: string; orders: number };
 }
-export const STRATEGY_FIELDS = 'id name instrumentId interval rules quantity version status maxDailyLoss maxOrdersPerDay position entryPrice entryAt startedAt stoppedAt stopReason updatedAt instrument { id symbol name exchange segment lotSize tickSize } today { pnl orders }';
+export const STRATEGY_FIELDS = 'id name instrumentId interval rules quantity version status maxDailyLoss maxOrdersPerDay position entryPrice entryAt startedAt stoppedAt stopReason updatedAt instrument { id symbol name exchange segment lotSize tickSize multiplier } today { pnl orders }';
 
 export interface Metrics {
   trades: number; wins: number; losses: number; winRate: number; netPnl: number; grossProfit: number; grossLoss: number; profitFactor: number | null;

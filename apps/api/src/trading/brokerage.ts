@@ -20,8 +20,9 @@ export function perLotMinor(rule: FeeRule, cls?: string | null): bigint {
   return lotClassOf(cls) === 'MEGA' ? rule.megaPerLotMinor : rule.perLotMinor;
 }
 
-export function brokerageMinor(rule: FeeRule, priceMinor: bigint, lots: number, cls?: string | null): bigint {
-  return perLotMinor(rule, cls) * BigInt(lots) + applyBps(priceMinor * BigInt(lots), rule.bps);
+/** `mult`: price multiplier of the contract (MCX GOLD 100 ...), so the bps part is charged on the real turnover. */
+export function brokerageMinor(rule: FeeRule, priceMinor: bigint, lots: number, cls?: string | null, mult = 1n): bigint {
+  return perLotMinor(rule, cls) * BigInt(lots) + applyBps(priceMinor * BigInt(lots) * mult, rule.bps);
 }
 
 export async function feeRule(config: ConfigService): Promise<FeeRule> {
