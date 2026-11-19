@@ -34,7 +34,8 @@ export function T({ v = 'body', c, w, style, children, n, ...p }: { v?: TV; c?: 
     num: { fontSize: FS.md, fontVariant: ['tabular-nums'], fontWeight: '600' },
     numLg: { fontSize: FS.x2, fontVariant: ['tabular-nums'], fontWeight: '600' },
   };
-  const color = t[c ?? (v === 'xs' ? 'text3' : 'text')];
+  const key = c ?? (v === 'xs' ? 'text3' : 'text');
+  const color = key === 'pos' ? t.posText : key === 'neg' ? t.negText : t[key];
   const lh = (style?.lineHeight as number | undefined) ?? (base[v].lineHeight as number | undefined);
   const numStyle: TextStyle | null = numeric ? { fontSize: ((style?.fontSize as number | undefined) ?? (base[v].fontSize as number)) * k, ...(lh ? { lineHeight: lh * k } : null), ...(prefs.boldNumbers ? { fontWeight: '700' } : null) } : null;
   return <Text {...p} style={[base[v], { color }, w ? { fontWeight: w } : null, style, numStyle]} accessibilityRole={p.accessibilityRole ?? (v === 'h1' || v === 'h2' ? 'header' : undefined)}>{children}</Text>;
@@ -194,6 +195,33 @@ export function SwipeRow({ children, action, actionLabel }: { children: ReactNod
         {children}
       </Animated.View>
     </View>
+  );
+}
+
+/**
+ * A bid / ask price box that blinks when its price moves: solid green when it rises, solid red when it falls, holds
+ * for a moment, then fades back to its own colour `bg`. While it blinks, `children(true)` should draw the figure in white.
+ */
+export function PriceBox({ value, high, low, bg, border, style, children }: { value?: string; high?: string; low?: string; bg: string; border?: string; style?: ViewStyle; children: (blinking: boolean) => ReactNode }) {
+  const t = useTheme();
+  const o = useRef(new Animated.Value(0)).current;
+  const prev = useRef({ value, high, low });
+  const [up, setUp] = useState(true);
+  const [blinking, setBlinking] = useState(false);
+  useEffect(() => {
+    const move = quoteMove(prev.current, { value, high, low });
+    prev.current = { value, high, low };
+    if (!move) return;
+    setUp(move.up); setBlinking(true);
+    o.stopAnimation(); o.setValue(1);
+    // Hold the solid colour so the move is easy to see, then fade back.
+    Animated.sequence([Animated.delay(650), Animated.timing(o, { toValue: 0, duration: 250, useNativeDriver: false })]).start(({ finished }) => { if (finished) setBlinking(false); });
+  }, [value, high, low, o]);
+  const flash = up ? t.flashUp : t.flashDown;
+  return (
+    <Animated.View style={[style, border ? { borderWidth: 1, borderColor: blinking ? flash : border } : null, { backgroundColor: o.interpolate({ inputRange: [0, 1], outputRange: [bg, flash] }) }]}>
+      {children(blinking)}
+    </Animated.View>
   );
 }
 
@@ -463,7 +491,7 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | '
 }
 
 /* ============================================================== sheets */
-export function Sheet({ visible, title, sub, onClose, children, dismissable = true, instrumentTitle = false }: { instrumentTitle?: boolean; visible: boolean; title: string; sub?: string; onClose: () => void; children: ReactNode; dismissable?: boolean }) {
+export function Sheet({ visible, title, titleNode, sub, onClose, children, dismissable = true, instrumentTitle = false }: { instrumentTitle?: boolean; visible: boolean; title: string; /** Shown instead of the title text (e.g. a script name with expiry and market badge); `title` stays the accessible name. */ titleNode?: ReactNode; sub?: string; onClose: () => void; children: ReactNode; dismissable?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
@@ -529,7 +557,7 @@ export function Sheet({ visible, title, sub, onClose, children, dismissable = tr
           <View {...pan.panHandlers} style={{ paddingTop: S[3], gap: S[3] }}>
             <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: t.line2 }} />
             <Spread>
-              <View style={{ flex: 1 }}><T v="h2" w={instrumentTitle ? '800' : undefined}>{title}</T>{sub ? <T v="sm" c="text2" style={{ marginTop: 2 }}>{sub}</T> : null}</View>
+              <View style={{ flex: 1 }} accessibilityLabel={titleNode ? title : undefined}>{titleNode ?? <T v="h2" w={instrumentTitle ? '800' : undefined}>{title}</T>}{sub ? <T v="sm" c="text2" style={{ marginTop: 2 }}>{sub}</T> : null}</View>
               {dismissable && <IconButton icon="x" label="Close" onPress={close} />}
             </Spread>
           </View>

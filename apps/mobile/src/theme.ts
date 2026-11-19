@@ -9,6 +9,10 @@ const light = {
   text: '#262a35', text2: '#697080', text3: '#9a9fac',
   brand: '#08a77b', brandPressed: '#06956d', brandInk: '#ffffff', brandSoft: '#e7f6f0',
   posDark: '#056647', negDark: '#98251a', pos: '#08a77b', posSoft: '#e7f6f0', neg: '#e14f3b', negSoft: '#fdecea',
+  /** Plus / minus figures (prices, change, P/L): dark green and dark red. */
+  posText: '#04704c', negText: '#b3261e',
+  /** Bid / ask box blink when the price rises / falls (solid, white figure). */
+  flashUp: '#0a8a2a', flashDown: '#d62828',
   warn: '#b97300', warnSoft: '#fff4de', info: '#3a66d1', infoSoft: '#eaf0fd',
   overlay: 'rgba(15,18,24,0.45)',
 };
@@ -17,6 +21,9 @@ const dark: typeof light = {
   text: '#e9ebef', text2: '#a3a9b6', text3: '#767c89',
   brand: '#22b98b', brandPressed: '#2cc897', brandInk: '#06140f', brandSoft: '#0f2a21',
   posDark: '#08734f', negDark: '#a92d20', pos: '#2ec293', posSoft: '#0f2a21', neg: '#ff6b57', negSoft: '#3a1a16',
+  // On a dark screen the deep shades would be unreadable, so plus / minus text keeps the bright ones.
+  posText: '#2ec293', negText: '#ff6b57',
+  flashUp: '#0f9a3a', flashDown: '#d93a2b',
   warn: '#f0b545', warnSoft: '#33270e', info: '#7c9df0', infoSoft: '#18223a',
   overlay: 'rgba(0,0,0,0.6)',
 };
@@ -45,7 +52,7 @@ export function inr(v?: string | null, sign = false) {
 }
 export type Tone = 'pos' | 'neg' | 'flat';
 export const toneOfValue = (v?: string | null): Tone => (!v || v === '0.00' || v === '0' ? 'flat' : v.startsWith('-') ? 'neg' : 'pos');
-export const toneColor = (t: Theme, v?: string | null) => ({ pos: t.pos, neg: t.neg, flat: t.text2 })[toneOfValue(v)];
+export const toneColor = (t: Theme, v?: string | null) => ({ pos: t.posText, neg: t.negText, flat: t.text2 })[toneOfValue(v)];
 /** @deprecated use toneColor */
 export const toneOf = toneColor;
 export const shortSymbol = (s: string) => s.replace(/\d{2}[A-Z]{3}FUT$/, '');

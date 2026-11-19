@@ -4,13 +4,13 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@ne
 import { eq, inArray } from 'drizzle-orm';
 import { roundToTick } from '../common/money';
 import { DbService } from '../db/db';
-import { instruments, type InstrumentRow } from '../db/schema';
+import { instruments, watchlistItems, type InstrumentRow } from '../db/schema';
 import { pubsub, TOPIC } from '../notifications/notifications.service';
 import { env } from '../config/env';
 import { DhanFeedService, DHAN_SEGMENT_MAP } from './dhan-feed.service';
 import { DhanGlobalFeedService } from './dhan-global-feed.service';
 import { CandleStore, type Bar, type CandleInterval } from './candles';
-import { defaultLotLabel, linkedMiniSymbol } from '../trading/instrument-meta';
+import { baseSymbol, defaultLotLabel, linkedMiniSymbol } from '../trading/instrument-meta';
 
 export interface Quote {
   instrumentId: string;
@@ -242,6 +242,7 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
     let rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
     const linkedChanged = await this.syncLinkedMinis(rows).catch((e) => { this.log.warn(`Could not update linked Mini scripts: ${(e as Error).message}`); return false; });
     if (linkedChanged) rows = await this.dbs.db.select().from(instruments).where(eq(instruments.active, true));
+    await this.moveWatchlistsToLinkedMinis(rows).catch((e) => this.log.warn(`Could not move watchlists to linked Mini scripts: ${(e as Error).message}`));
     const now = Date.now();
     const liveIds=new Set(rows.map(r=>r.id));
     for(const id of this.meta.keys())if(!liveIds.has(id)){this.meta.delete(id);this.quotes.delete(id);this.history.forget(id);}
@@ -362,6 +363,31 @@ export class MarketDataService implements MarketDataProvider, OnModuleInit, OnMo
       changed = true;
     }
     return changed;
+  }
+
+  /**
+   * Watchlist rows still on a separate MCX mini contract (GOLDM, SILVERM ... from before Minis followed the Mega rate)
+   * move to the nearest linked Mini, so the watchlist shows the same rate as the Mega. Open positions are not touched.
+   */
+  private async moveWatchlistsToLinkedMinis(rows: InstrumentRow[]) {
+    const nearest = new Map<string, InstrumentRow>();
+    for (const r of rows) {
+      if (!r.priceSourceId || !r.expiry) continue;
+      const b = baseSymbol(r.symbol), cur = nearest.get(b);
+      if (!cur || cur.expiry! > r.expiry) nearest.set(b, r);
+    }
+    if (!nearest.size) return;
+    const real = new Map(rows.filter((r) => r.exchange === 'MCX' && !r.priceSourceId && nearest.has(baseSymbol(r.symbol))).map((r) => [r.id, r]));
+    if (!real.size) return;
+    const items = await this.dbs.db.select().from(watchlistItems).where(inArray(watchlistItems.instrumentId, [...real.keys()]));
+    for (const w of items) {
+      const to = nearest.get(baseSymbol(real.get(w.instrumentId)!.symbol))!;
+      await this.dbs.db.transaction(async (tx) => {
+        await tx.insert(watchlistItems).values({ userId: w.userId, listIndex: w.listIndex, instrumentId: to.id, sortOrder: w.sortOrder, createdAt: w.createdAt, archivedAt: w.archivedAt }).onConflictDoNothing();
+        await tx.delete(watchlistItems).where(eq(watchlistItems.id, w.id));
+      });
+    }
+    if (items.length) this.log.log(`Moved ${items.length} watchlist row(s) to linked Mini scripts.`);
   }
 
   private emit(changed: Quote[]) {

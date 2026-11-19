@@ -179,7 +179,7 @@ function useTick(v?: string, high?: string, low?: string) {
     if (!move) return;
     setCls('');
     const frame = requestAnimationFrame(() => setCls(`tick-${move.extreme ? 'dark-' : ''}${move.up ? 'up' : 'down'}`));
-    const timer = setTimeout(() => setCls(''), 700);
+    const timer = setTimeout(() => setCls(''), 900); // matches the 0.9s blink in globals.css
     return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
   }, [v, high, low]);
   return cls;

@@ -390,6 +390,18 @@ describe('paper trading', () => {
     await gql(PLACE, { i: { instrumentId: mini.id, side: 'SELL', type: 'MARKET', quantity: 1, idempotencyKey: randomUUID() } }, { token: t.accessToken });
   });
 
+  it('moves a watchlist row on a separate MCX mini contract to the linked Mini (same rate as the Mega)', async () => {
+    const t = await login('trader.three');
+    const id = async (sym: string) => (await pg.query(`SELECT id FROM instruments WHERE symbol = $1`, [sym])).rows[0].id as string;
+    const user = (await pg.query(`SELECT id FROM users WHERE username = 'trader.three'`)).rows[0].id;
+    await pg.query(`INSERT INTO watchlist_items (user_id, list_index, instrument_id) VALUES ($1, 1, $2) ON CONFLICT DO NOTHING`, [user, await id('SILVERM26NOVFUT')]);
+    await app.get(MarketDataService).reload();
+    const W = `query{ watchlist(listIndex:1){ instrument{ symbol } } }`;
+    const syms = (await gql(W, {}, { token: t.accessToken })).data.watchlist.map((w: { instrument: { symbol: string } }) => w.instrument.symbol);
+    expect(syms).toContain('SILVERM-24Nov2026-LNK');
+    expect(syms).not.toContain('SILVERM26NOVFUT');
+  });
+
   it('lists the nearest MCX contract under Mega and Mini, whatever lot class a row was saved with', async () => {
     const t = await login('trader.two');
     const Q = `query($l:String){ searchInstruments(query:"", category:"MCX", lotClass:$l){ symbol lotClass } }`;

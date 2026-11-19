@@ -23,7 +23,7 @@ import { Icon } from './icons';
 import { CTL, inr, initials, R, S, shortSymbol, toneOfValue, useTheme, when } from './theme';
 import {
   Badge, Button, Change, Chips, DateField, Divider, Empty, ErrorState, Field, IconButton, IconMark, ListRow, Lines, Mark, Metrics, Notice, Row, Screen, SearchBox,
-  Flash, Section, Sheet, Skeleton, Spread, StatusBadge, SwipeRow, T, Tabs, tap, toast, useQuery, VList, ymdLabel,
+  Flash, PriceBox, Section, Sheet, Skeleton, Spread, StatusBadge, SwipeRow, T, Tabs, tap, toast, useQuery, VList, ymdLabel,
 } from './ui';
 
 export interface Quote { instrumentId: string; ltp: string; bid?: string; ask?: string; high?: string; low?: string; change?: string; changePct?: string; ts?: string; source: string }
@@ -65,11 +65,10 @@ function BidAsk({ id, qq, onPick, compact, slim }: { id: string; qq?: Quote; onP
         const v = sd === 'BUY' ? qq?.ask : qq?.bid;
         return (
           <Pressable key={sd} onPress={() => { tap(); if (onPick) onPick(sd); else router.push(`/instrument/${id}?side=${sd}`); }} accessibilityRole="button" accessibilityLabel={`${sd === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ width: columnWidth, alignItems: 'stretch', gap: slim ? 2 : compact ? 3 : 5 }}>
-            <Flash over high={qq?.high} low={qq?.low} value={v} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden' }}>
-              <View style={{ width: columnWidth, minHeight: slim ? 34 : CTL.tap, paddingVertical: slim ? 5 : compact ? 8 : 12, paddingHorizontal: 3, backgroundColor: sd === 'BUY' ? t.pos : t.negSoft, alignItems: 'center', justifyContent: 'center' }}>
-                <T v="num" c={sd === 'BUY' ? 'text' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{ fontSize: compact ? 13 : 14, ...(sd === 'BUY' ? { color: '#fff' } : {}) }}>{scriptPrice(v)}</T>
-              </View>
-            </Flash>
+            {/* Blinks dark green when the price rises, dark red when it falls. */}
+            <PriceBox high={qq?.high} low={qq?.low} value={v} bg={sd === 'BUY' ? t.posSoft : t.negSoft} border={sd === 'BUY' ? t.posText + '59' : t.negText + '59'} style={{ borderRadius: compact ? 10 : 12, overflow: 'hidden', width: columnWidth, minHeight: slim ? 34 : CTL.tap, paddingVertical: slim ? 5 : compact ? 8 : 12, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center' }}>
+              {(blink) => <T v="num" c={sd === 'BUY' ? 'pos' : 'neg'} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={{ fontSize: compact ? 13 : 14, ...(blink ? { color: '#fff' } : {}) }}>{scriptPrice(v)}</T>}
+            </PriceBox>
             {slim
               ? <T v="xs" n w="600" c="text2" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ textAlign: 'center', fontSize: 10, lineHeight: 12 }}>{sd === 'BUY' ? `H: ${scriptPrice(qq?.high)}` : `L: ${scriptPrice(qq?.low)}`}</T>
               : <T v="xs" numberOfLines={1} adjustsFontSizeToFit style={{ textAlign: 'center', fontSize: 10 }}>{sd === 'BUY' ? `H ${scriptPrice(qq?.high)}` : `L ${scriptPrice(qq?.low)}`}</T>}

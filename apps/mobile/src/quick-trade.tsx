@@ -15,7 +15,7 @@ import { gql, newKey } from './api';
 import { tradeFeedback } from './prefs';
 import { useLiveQuotes, type Quote } from './screens';
 import { inr, ohlcTone, R, S, shortSymbol, toneOfValue, useTheme } from './theme';
-import { Badge, Button, Chips, DateField, Empty, ErrorState, Field, Flash, Lines, LotStepper, Notice, Row, SearchBox, Sheet, Skeleton, Spread, T, Tabs, tap, toast, useQuery, VList } from './ui';
+import { Badge, Button, Chips, DateField, Empty, ErrorState, Field, Lines, LotStepper, Notice, PriceBox, Row, SearchBox, Sheet, Skeleton, Spread, T, Tabs, tap, toast, useQuery, VList } from './ui';
 import { Icon } from './icons';
 
 type Side = 'BUY' | 'SELL';
@@ -81,11 +81,9 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
     const v = side === 'BUY' ? q?.ask : q?.bid;
     return (
       <Pressable onPress={() => void place(side)} disabled={!!busy || !i} accessibilityRole="button" accessibilityLabel={`${side === 'BUY' ? 'Buy' : 'Sell'} at ${v ?? ''}`} style={{ alignItems: 'center', gap: 2 }}>
-        <Flash over high={q?.high} low={q?.low} value={v} style={{ borderRadius: R.md, overflow: 'hidden' }}>
-          <View style={{ minWidth: 92, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: side === 'BUY' ? t.posSoft : t.negSoft, alignItems: 'center' }}>
-            <T v="num" c={side === 'BUY' ? 'pos' : 'neg'}>{inr(v)}</T>
-          </View>
-        </Flash>
+        <PriceBox high={q?.high} low={q?.low} value={v} bg={side === 'BUY' ? t.posSoft : t.negSoft} border={side === 'BUY' ? t.posText + '59' : t.negText + '59'} style={{ borderRadius: R.md, overflow: 'hidden', minWidth: 92, paddingVertical: 6, paddingHorizontal: 8, alignItems: 'center' }}>
+          {(blink) => <T v="num" c={side === 'BUY' ? 'pos' : 'neg'} style={blink ? { color: '#fff' } : undefined}>{inr(v)}</T>}
+        </PriceBox>
         <T v="xs">{side === 'BUY' ? `H: ${inr(q?.high)}` : `L: ${inr(q?.low)}`}</T>
       </Pressable>
     );
@@ -93,7 +91,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
   const go = (path: string) => { onClose(); router.push(`${path}&from=${allowAdvanced ? 'positions' : 'watchlist'}` as never); };
 
   return (
-    <Sheet instrumentTitle visible title={i ? titleOf(i) : '…'} sub={i ? `${i.category === 'FOREX' ? 'Forex' : i.exchange}${i.lotLabel ? ` · 1 lot = ${i.lotLabel}` : ''}` : undefined} onClose={onClose}>
+    <Sheet instrumentTitle visible title={i ? titleOf(i) : '…'} titleNode={i ? <ScriptName i={i} size={20} /> : undefined} sub={i?.lotLabel ? `1 lot = ${i.lotLabel}` : undefined} onClose={onClose}>
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
       <Spread style={{ alignItems: 'center' }}>
         <View style={{ gap: 2 }}>
