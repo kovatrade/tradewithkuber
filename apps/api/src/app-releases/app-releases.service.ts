@@ -37,6 +37,23 @@ export class AppReleasesService {
     return env().APP_FILES_DIR;
   }
 
+  /** A plain reason for an unexpected upload failure (storage or database), safe to show to the uploader. */
+  explainFailure(e: unknown): string {
+    const err = e as { code?: string; message?: string; cause?: { code?: string; message?: string } };
+    const code = err?.code ?? err?.cause?.code;
+    const dir = this.filesDir ?? '(not set)';
+    switch (code) {
+      case 'EACCES': case 'EPERM': case 'EROFS':
+        return `The server cannot write APK files to APP_FILES_DIR (${dir}): no permission or read-only. Attach a persistent disk mounted at that path, or point APP_FILES_DIR to a writable folder.`;
+      case 'ENOENT':
+        return `APP_FILES_DIR (${dir}) does not exist on the server and could not be created. Attach the disk or fix the path.`;
+      case 'ENOSPC':
+        return `The disk for APP_FILES_DIR (${dir}) is full. Remove old APKs or enlarge the disk.`;
+    }
+    if (code && /^[0-9A-Z]{5}$/.test(code)) return `Database error ${code} while recording the release (${(err.cause?.message ?? err.message ?? '').slice(0, 160)}). Check that migrations ran on the current DATABASE_URL.`;
+    return `Unexpected error while saving the APK: ${(err?.message ?? String(e)).slice(0, 200)}`;
+  }
+
   async latest(platform: 'ANDROID' | 'IOS', abi?: 'armeabi-v7a'): Promise<AppReleaseRow | undefined> {
     const [r] = await this.dbs.db.select().from(appReleases)
       .where(and(eq(appReleases.platform, platform), eq(appReleases.active, true), platform === 'ANDROID' ? abi ? eq(appReleases.abi, abi) : or(isNull(appReleases.abi), ne(appReleases.abi, 'armeabi-v7a')) : undefined))

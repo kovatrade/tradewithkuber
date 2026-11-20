@@ -1858,6 +1858,18 @@ describe('wipe out', () => {
 
 
 describe('architecture-specific Android downloads', () => {
+  it('tells the CI upload why it failed instead of a bare "Internal server error"', async () => {
+    const service = app.get(AppReleasesService);
+    const auth = jest.spyOn(service, 'verifyCiToken').mockImplementation(() => undefined);
+    const store = jest.spyOn(service, 'receiveFromCi').mockRejectedValue(Object.assign(new Error('EACCES: permission denied, mkdir'), { code: 'EACCES' }));
+    try {
+      const res = await fetch(url.replace('/graphql', '/app-files/ci-upload/variant?version=0.2.0&abi=arm64-v8a'), { method: 'POST', headers: { authorization: 'Bearer x', 'content-type': 'application/vnd.android.package-archive' }, body: Buffer.alloc(10) });
+      expect(res.status).toBe(500);
+      expect((await res.json()).message).toMatch(/cannot write APK files to APP_FILES_DIR/);
+      expect(service.explainFailure(Object.assign(new Error('x'), { cause: { code: '42P01', message: 'relation "app_releases" does not exist' } }))).toMatch(/Database error 42P01/);
+    } finally { auth.mockRestore(); store.mockRestore(); }
+  });
+
   it('keeps a later 32-bit upload out of the main download and serves both files independently', async () => {
     const service = app.get(AppReleasesService);
     const folder = mkdtempSync(join(tmpdir(), 'tradedesk-apk-test-'));

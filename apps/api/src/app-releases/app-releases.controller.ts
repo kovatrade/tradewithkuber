@@ -1,4 +1,4 @@
-import { Controller, Get, HttpException, Post, Query, Req, Res } from '@nestjs/common';
+import { Controller, Get, HttpException, Logger, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AppError } from '../common/errors';
 import { clientIp, requestContext } from '../common/request-context';
@@ -13,6 +13,7 @@ import { AppReleasesService } from './app-releases.service';
  */
 @Controller('app-files')
 export class AppReleasesController {
+  private readonly log = new Logger('AppReleases');
   constructor(private readonly releases: AppReleasesService, private readonly activity: ActivityLogService) {}
 
   @Post('upload')
@@ -60,9 +61,16 @@ export class AppReleasesController {
       res.status(201).json({ id: r.id, version: r.version, fileName: r.fileName, size: r.fileSize, sha256: r.sha256 });
     } catch (e) {
       const unauth = e instanceof AppError && e.extensions.code === 'UNAUTHENTICATED';
-      if (!unauth && !(e instanceof HttpException) && !(e instanceof AppError)) throw e;
-      errorCode = unauth ? 'UNAUTHENTICATED' : 'BAD_USER_INPUT';
       if (!req.complete) req.resume();
+      if (!unauth && !(e instanceof HttpException) && !(e instanceof AppError)) {
+        // Say what went wrong (shown in the GitHub Actions log) instead of a bare "Internal server error".
+        const why = this.releases.explainFailure(e);
+        this.log.error(`CI APK upload failed: ${why}`, (e as Error).stack);
+        errorCode = 'INTERNAL';
+        res.status(500).json({ message: why });
+        return;
+      }
+      errorCode = unauth ? 'UNAUTHENTICATED' : 'BAD_USER_INPUT';
       res.status(unauth ? 401 : 400).json({ message: (e as Error).message });
     }
   }
