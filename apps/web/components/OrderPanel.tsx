@@ -6,6 +6,7 @@ import { Chips, Confirm, Dialog, ErrorState, SkeletonRows, useToast } from '@/co
 import { gql, newKey, pollingPaused } from '@/lib/api';
 import { inr, scriptTitle } from '@/lib/format';
 import { ScriptName } from '@/components/ScriptName';
+import { ModifyOrderDialog, type PendingOrder } from '@/components/ModifyOrder';
 import { useMutation, useQuery } from '@/lib/hooks';
 import { playTone, usePrefs } from '@/lib/prefs';
 
@@ -127,6 +128,7 @@ export function OrderPanel({ allowAdvanced, instrument: i, q, initialSide, initi
             {session.isOpen ? `${i.exchange} open · ${session.open}–${session.close} IST` : session.message}
           </div>
         )}
+        <PendingOrders instrumentId={i.id} />
         <div className="order-types"><Chips label="Order type" value={type} onChange={(t) => { setType(t); setPrice(''); }} items={((allowAdvanced ? ['MARKET', 'LIMIT', 'STOP_LOSS'] : ['MARKET']) as OType[]).map((t) => ({ v: t, label: t === 'STOP_LOSS' ? 'SL' : TYPE_LABEL[t], title: TYPE_LABEL[t] }))} /></div>
         <div className="field">
           <label htmlFor="qty">Quantity (lots)</label>
@@ -217,5 +219,27 @@ export function PositionTradeDialog({ instrumentId, side, qty, onClose }: { inst
     <Dialog title={i ? scriptTitle(i) : 'Trade'} onClose={onClose}>
       {inst.error ? <ErrorState error={inst.error} retry={inst.refetch} /> : !i ? <SkeletonRows rows={4} /> : <OrderPanel allowAdvanced instrument={i} q={q} initialSide={side} initialQty={qty} />}
     </Dialog>
+  );
+}
+
+/** Waiting limit / stop-loss orders on this script, each with Modify: shown with the ticket so they can be changed. */
+function PendingOrders({ instrumentId }: { instrumentId: string }) {
+  const { data, refetch } = useQuery<{ orders: (PendingOrder & { status: string })[] }>(
+    `query($s:[OrderStatus!]){ orders(status:$s, limit:50){ id instrumentId status side type quantity limitPrice triggerPrice instrument{ symbol name expiry exchange category } } }`, { s: ['OPEN'] }, { pollMs: 5000 });
+  const [editing, setEditing] = useState<PendingOrder | null>(null);
+  const waiting = (data?.orders ?? []).filter((o) => o.instrumentId === instrumentId && o.type !== 'MARKET');
+  if (!waiting.length) return null;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="t2 sm w6">Pending orders</div>
+      {waiting.map((o) => (
+        <button key={o.id} type="button" className="pending-order" onClick={() => setEditing(o)}>
+          <span className={o.side === 'BUY' ? 'pos w6' : 'neg w6'}>{o.side}</span>
+          <span className="grow">{o.type === 'LIMIT' ? 'Limit' : o.type === 'STOP_LOSS' ? 'SL' : 'Target'} · {o.quantity} lot{o.quantity > 1 ? 's' : ''} @ ₹{inr(o.type === 'LIMIT' ? o.limitPrice : o.triggerPrice)}</span>
+          <span className="brand w6">Modify</span>
+        </button>
+      ))}
+      {editing && <ModifyOrderDialog o={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); void refetch(); }} />}
+    </div>
   );
 }

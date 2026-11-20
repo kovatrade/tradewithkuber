@@ -973,6 +973,9 @@ tr.clickable { cursor: pointer; }
 .script-table-head > :not(:first-child) { text-align: center; }
 .script-row { align-items: center; border-bottom: 1px solid var(--line); }
 .script-row:last-child { border-bottom: 0; }
+.pending-order { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; font: inherit; color: var(--text); background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+.pending-order:hover { border-color: var(--brand); }
+.pending-order .brand { color: var(--brand); }
 .script-grip { border: 0; background: transparent; color: var(--text-3); display: grid; place-items: center; width: 22px; height: 28px; margin-left: -6px; cursor: grab; border-radius: 6px; touch-action: none; }
 .script-grip:hover { color: var(--text-2); background: var(--bg-3); }
 .script-grip:active { cursor: grabbing; }

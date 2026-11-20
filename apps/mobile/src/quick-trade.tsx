@@ -8,7 +8,7 @@
  */
 import { scriptTitle } from './names';
 import { ScriptName } from './script-name';
-import { ModifyOrderSheet } from './modify-order';
+import { ModifyOrderSheet, type PendingOrder } from './modify-order';
 import { router } from 'expo-router';
 import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -56,6 +56,11 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
     `query($id:ID!,$s:OrderSide!,$n:Int!,$l:String,$t:String){orderPreview(instrumentId:$id,side:$s,quantity:$n,limitPrice:$l,triggerPrice:$t){price value brokerage intradayMargin carryForwardMargin}}`,
     { id: instrumentId, s: previewSide, n: Number.isSafeInteger(n) && n > 0 ? n : 1, l: type === 'LIMIT' ? price || undefined : undefined, t: type === 'STOP_LOSS' ? price || undefined : undefined }, closed ? 30000 : 3000, !i || !Number.isSafeInteger(n) || n <= 0 || (type !== 'MARKET' && !price));
   const preview = estimate.data?.orderPreview;
+  // Waiting limit / stop-loss orders on this script: shown here so they can be changed from the position.
+  const pending = useQuery<{ orders: (PendingOrder & { status: string })[] }>(
+    `query($s:[OrderStatus!]){ orders(status:$s, limit:50){ id instrumentId status side type quantity limitPrice triggerPrice instrument{ symbol name expiry exchange } } }`, { s: ['OPEN'] }, 5000);
+  const waiting = (pending.data?.orders ?? []).filter((o) => o.instrumentId === instrumentId && o.type !== 'MARKET');
+  const [editing, setEditing] = useState<PendingOrder | null>(null);
 
 
   const qtyErr = !qty ? 'Enter lots' : !Number.isInteger(n) || n <= 0 ? 'Whole lots only' : r && n > r.maxQtyPerOrder ? `Max ${r.maxQtyPerOrder} lots per order` : null;
@@ -73,6 +78,7 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
       setKey(newKey());
       if (o.status === 'REJECTED') { tradeFeedback('reject'); setErr(o.rejectReason ?? 'Rejected'); return; }
       tradeFeedback(o.status === 'FILLED' ? 'fill' : 'placed');
+      void pending.refetch();
       toast(o.status === 'FILLED' ? `${side === 'BUY' ? 'Bought' : 'Sold'} ${n} lot${n > 1 ? 's' : ''} at ₹${inr(o.fillPrice)}` : `${side === 'BUY' ? 'Buy' : 'Sell'} order placed`);
       onClose();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
@@ -91,6 +97,9 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
   };
   const go = (path: string) => { onClose(); router.push(`${path}&from=${allowAdvanced ? 'positions' : 'watchlist'}` as never); };
 
+  // One sheet at a time: Modify replaces this sheet, and closing it comes back here.
+  if (editing) return <ModifyOrderSheet o={editing} onClose={() => setEditing(null)} onDone={() => { setEditing(null); void pending.refetch(); }} />;
+
   return (
     <Sheet instrumentTitle visible title={i ? titleOf(i) : '…'} titleNode={i ? <ScriptName i={i} size={20} /> : undefined} sub={i?.lotLabel ? `1 lot = ${i.lotLabel}` : undefined} onClose={onClose}>
       {inst.error ? <Notice tone="err">{inst.error}</Notice> : null}
@@ -102,6 +111,19 @@ export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAd
         <Row gap={S[2]}>{box('SELL')}{box('BUY')}</Row>
       </Spread>
 
+      {waiting.length > 0 && (
+        <View style={{ gap: S[1] }}>
+          <T v="sm" c="text2" w="600">Pending orders</T>
+          {waiting.map((o) => (
+            <Pressable key={o.id} onPress={() => setEditing(o)} accessibilityRole="button" accessibilityLabel={`Modify ${o.type === 'LIMIT' ? 'limit' : 'stop-loss'} order`}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: S[2], borderWidth: StyleSheet.hairlineWidth, borderColor: t.line, borderRadius: R.md, paddingVertical: 8, paddingHorizontal: S[3] }}>
+              <T v="sm" w="700" c={o.side === 'BUY' ? 'pos' : 'neg'}>{o.side}</T>
+              <T v="sm" w="600" style={{ flex: 1 }}>{o.type === 'LIMIT' ? 'Limit' : o.type === 'STOP_LOSS' ? 'SL' : 'Target'} · {o.quantity} lot{o.quantity > 1 ? 's' : ''} @ ₹{inr(o.type === 'LIMIT' ? o.limitPrice : o.triggerPrice)}</T>
+              <T v="sm" c="brand" w="700">Modify</T>
+            </Pressable>
+          ))}
+        </View>
+      )}
       <Chips fill value={type} onChange={(v) => { setType(v); setPrice(''); }} items={allowAdvanced ? [{ k: 'MARKET', label: 'Market' }, { k: 'LIMIT', label: 'Limit' }, { k: 'STOP_LOSS', label: 'SL' }] : [{ k: 'MARKET', label: 'Market' }]} />
       <Row style={{ alignItems: 'flex-start' }}>
         <View style={{ flex: 1, gap: 4 }}>
