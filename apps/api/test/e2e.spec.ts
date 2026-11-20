@@ -791,7 +791,7 @@ describe('stop-loss / take-profit orders', () => {
     // a protective exit requires an existing opposite position
     const naked = await gql(PLACE, { i: { instrumentId, side: 'SELL', type: 'STOP_LOSS', quantity: 1, triggerPrice: '2400.00', idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(naked.data.placeOrder.status).toBe('REJECTED');
-    expect(naked.data.placeOrder.rejectReason).toMatch(/must reduce an existing opposite position/);
+    expect(naked.data.placeOrder.rejectReason).toMatch(/protects an open position: first buy this script/);
     // a BUY stop-loss below the current LTP would fire immediately → rejected with a reason
     const hit = await gql(PLACE, { i: { instrumentId, side: 'BUY', type: 'STOP_LOSS', quantity: 1, triggerPrice: '2400.00', idempotencyKey: randomUUID() } }, { token: t.accessToken });
     expect(hit.data.placeOrder.status).toBe('REJECTED');

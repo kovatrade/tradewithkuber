@@ -248,7 +248,9 @@ export class OrdersService implements OnModuleInit {
       else if (isTrigger(input.type) && triggerHit(input.type, input.side, input.triggerPriceMinor!, q.ltpMinor))
         reject = `Trigger ${(Number(input.triggerPriceMinor) / 100).toFixed(2)} is already reached (LTP ${(Number(q.ltpMinor) / 100).toFixed(2)}). Use a market order or move the trigger.`;
       else if (reduceOnly && (net * signed >= 0 || input.quantity > abs(net)))
-        reject = 'This exit order must reduce an existing opposite position.';
+        reject = isTrigger(input.type)
+          ? `A ${input.type === 'STOP_LOSS' ? 'stop-loss' : 'take-profit'} protects an open position: first ${input.side === 'SELL' ? 'buy' : 'sell'} this script, then place it (at most the lots you hold).`
+          : 'This exit order must reduce an existing opposite position.';
       if (!reject && opening && u.riskState === 'CUT')
         reject = `Your loss reached ${cutPct}% of your funds, so your trades were cut and new trades are paused. Add funds to trade again.`;
       // Immediate fills replace current collateral; resting entries reserve their full size.

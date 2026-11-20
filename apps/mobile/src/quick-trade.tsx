@@ -31,7 +31,7 @@ const clock = (d?: string | Date) => (d ? new Date(d).toLocaleTimeString('en-IN'
 const val = (v?: string | number | null) => (v === undefined || v === null || v === '' ? '—' : String(v));
 
 /* ============================================================== quick trade sheet */
-export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAdvanced = false, onClose }: { allowAdvanced?: boolean; instrumentId: string; initialSide?: Side; initialQty?: number; onClose: () => void }) {
+export function QuickTradeSheet({ instrumentId, initialSide, initialQty, allowAdvanced = true, onClose }: { allowAdvanced?: boolean; instrumentId: string; initialSide?: Side; initialQty?: number; onClose: () => void }) {
   const t = useTheme();
   const inst = useQuery<{ instrument: Inst }>(`query($id:ID!){ instrument(id:$id){ id symbol name exchange segment expiry lotSize tickSize lotClass lotLabel category } }`, { id: instrumentId });
   const rules = useQuery<{ tradingRules: Rules }>(`{ tradingRules { minQty maxQtyPerOrder maxQtyPerInstrument brokeragePerLot brokeragePerMegaLot sessions { exchange isOpen message } } }`, undefined, 15000);

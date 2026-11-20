@@ -212,7 +212,7 @@ function StockPage() {
         ))}
       </div>
       <aside className="rail" id="order">
-        <OrderPanel allowAdvanced={sp.get('from') === 'positions'} instrument={i} q={q} initialSide={sp.get('side') === 'SELL' ? 'SELL' : 'BUY'} initialQty={sp.get('qty') ?? '1'} />
+        <OrderPanel allowAdvanced instrument={i} q={q} initialSide={sp.get('side') === 'SELL' ? 'SELL' : 'BUY'} initialQty={sp.get('qty') ?? '1'} />
       </aside>
     </div>
   );

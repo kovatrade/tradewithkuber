@@ -188,7 +188,7 @@ export default function StockScreen() {
           <T v="xs" c="text2">BRK is charged per lot on each buy and sell fill.</T>
         </Section>
       )}
-      {i && order && <OrderSheet allowAdvanced={from === 'positions'} i={i} q={q} side={order} setSide={setOrder} initialQty={q0 ?? '1'} onClose={() => setOrder(null)} />}
+      {i && order && <OrderSheet allowAdvanced i={i} q={q} side={order} setSide={setOrder} initialQty={q0 ?? '1'} onClose={() => setOrder(null)} />}
     </Screen>
   );
 }
