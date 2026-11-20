@@ -1295,16 +1295,13 @@ const DEFAULT_MARKET_MESSAGES = [
 export function Ticker() {
   const t = useTheme();
   const { settings } = useAuth();
-  const [now, setNow] = useState(new Date());
-  const active = useActive();
-  useEffect(() => { if (!active) return; setNow(new Date()); const h = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(h); }, [active]);
   const clean = (settings?.tickerMessages ?? []).filter((m) => m && !/simulated|virtual|paper trading/i.test(m));
   const msgs = clean.length > 0 ? clean : DEFAULT_MARKET_MESSAGES;
   const text = msgs.join('   •   ');
   return (
     <Row gap={S[2]} style={{ backgroundColor: t.bg2, borderRadius: R.md, paddingHorizontal: S[3], height: 34, overflow: 'hidden' }}>
+      {/* Only the market messages: the clock is already at the top right of the screen. */}
       <View style={{ flex: 1, overflow: 'hidden' }}>{!!text && <Marquee text={text} />}</View>
-      <T v="xs" c="text" w="600" style={{ fontVariant: ['tabular-nums'] }}>{new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(11, 19)} IST</T>
     </Row>
   );
 }
