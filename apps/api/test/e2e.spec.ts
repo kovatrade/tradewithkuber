@@ -1865,7 +1865,7 @@ describe('architecture-specific Android downloads', () => {
     try {
       const res = await fetch(url.replace('/graphql', '/app-files/ci-upload/variant?version=0.2.0&abi=arm64-v8a'), { method: 'POST', headers: { authorization: 'Bearer x', 'content-type': 'application/vnd.android.package-archive' }, body: Buffer.alloc(10) });
       expect(res.status).toBe(500);
-      expect((await res.json()).message).toMatch(/cannot write APK files to APP_FILES_DIR/);
+      expect(((await res.json()) as { message: string }).message).toMatch(/cannot write APK files to APP_FILES_DIR/);
       expect(service.explainFailure(Object.assign(new Error('x'), { cause: { code: '42P01', message: 'relation "app_releases" does not exist' } }))).toMatch(/Database error 42P01/);
     } finally { auth.mockRestore(); store.mockRestore(); }
   });
