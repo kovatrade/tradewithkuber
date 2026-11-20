@@ -10,6 +10,18 @@ import { createHash } from 'node:crypto';
 const KEY = 'market.quotes.v1';
 const money = (v: unknown) =>
   typeof v === 'number' && Number.isFinite(v) && v > 0 ? BigInt(Math.round(v * 100)) : undefined;
+/**
+ * Dhan does not always send trade times the same way: some arrive as true UTC, some as the IST wall clock written as
+ * if it were UTC (which reads 5½ hours in the future). A time can never be in the future, so one that is ~5½ h ahead
+ * is shifted back; a time that is not ahead is kept as it is. Anything still in the future is dropped.
+ */
+export function realTradeTime(ms: number, now = Date.now()): Date | undefined {
+  if (!Number.isFinite(ms) || new Date(ms).getUTCFullYear() < 2000) return undefined;
+  if (ms <= now + 300_000) return new Date(ms);
+  const shifted = ms - 19_800_000;
+  return shifted <= now + 300_000 ? new Date(shifted) : undefined;
+}
+
 export function dhanTradeTime(value: unknown): Date | undefined {
   if (typeof value !== 'string') return;
   const m = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2}:\d{2})$/.exec(value);
@@ -20,9 +32,7 @@ export function dhanTradeTime(value: unknown): Date | undefined {
         ? value
         : value.replace(' ', 'T') + '+05:30',
   );
-  return Number.isFinite(d.getTime()) && d.getUTCFullYear() >= 2000 && d.getTime() <= Date.now() + 300000
-    ? d
-    : undefined;
+  return realTradeTime(d.getTime());
 }
 
 export function snapshotQuote(i: InstrumentRow, value: any): Quote | undefined {

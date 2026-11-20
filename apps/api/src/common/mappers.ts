@@ -77,7 +77,8 @@ export function toQuote(q: QuoteData): Quote {
     low: q.lowMinor > 0n ? formatMoney(q.lowMinor) : undefined,
     change: ch === undefined ? undefined : formatMoney(ch),
     changePct: pct === undefined ? undefined : formatMoney(pct),
-    ts: q.lastTradeAt ?? (q.ts.getTime() > 0 ? q.ts : undefined),
+    // Last trade time, never later than now (a bad feed time must not show tomorrow's clock).
+    ts: (q.lastTradeAt && q.lastTradeAt.getTime() <= Date.now() + 300_000 ? q.lastTradeAt : undefined) ?? (q.ts.getTime() > 0 ? q.ts : undefined),
     source: q.source,
     open: openMinor > 0n ? formatMoney(openMinor) : undefined,
     close: q.prevCloseMinor > 0n ? formatMoney(q.prevCloseMinor) : undefined,

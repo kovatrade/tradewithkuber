@@ -1,3 +1,4 @@
+import { realTradeTime } from './quote-snapshot.service';
 import { DhanCredentialsService } from './dhan-credentials.service';
 import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import WebSocket from 'ws';
@@ -21,15 +22,9 @@ export interface DhanTick {
   lastTradeAt?: Date;
 }
 
-/**
- * Dhan's live feed sends the last trade time as epoch seconds of the *IST wall clock* (13:28 IST arrives as
- * 13:28 UTC). Read as UTC it lands 5½ hours in the future, which showed times like 18:58 at 13:28 and made every
- * later REST price look older than the stuck stream price. Shift it back to real UTC; drop anything still ahead.
- */
+/** Live feed trade time (epoch seconds): kept when it is real UTC, shifted back when it is the IST wall clock. */
 export function dhanFeedTime(epochSeconds: number, now = Date.now()): Date | undefined {
-  if (!epochSeconds) return undefined;
-  const d = new Date((epochSeconds - 19_800) * 1000);
-  return d.getUTCFullYear() >= 2000 && d.getTime() <= now + 300_000 ? d : undefined;
+  return epochSeconds ? realTradeTime(epochSeconds * 1000, now) : undefined;
 }
 
 export const DHAN_SEGMENT_MAP: Record<number, string> = {
